@@ -11,13 +11,11 @@ import stat
 import subprocess
 import sys
 import time
-import tomllib
 from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
-WORKSPACE_ROOT = PROJECT_ROOT.parent
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,7 +70,7 @@ def ensure_uv_is_available() -> None:
 
 
 def _handle_remove_error(
-    func: object, path: str, excinfo: tuple[object, BaseException, object]
+    func: object, path: str, excinfo: BaseException
 ) -> None:
     """Best-effort fixups for read-only files during recursive deletion."""
     _ = func  # unused but part of shutil callback contract
@@ -147,82 +145,6 @@ def create_uv_packaging_env(managed_install_dir: Path) -> dict[str, str]:
     }
 
 
-def build_local_wheel(package_path: Path, wheel_dir: Path, label: str) -> None:
-    if not package_path.exists():
-        raise RuntimeError(f"Source directory for {label} not found at {package_path}")
-    print(f"[INFO] Building wheel for {label}")
-    run(
-        ["uv", "build", str(package_path), "--wheel", "--out-dir", str(wheel_dir)],
-        cwd=package_path,
-    )
-
-
-def find_latest_wheel(wheel_dir: Path, prefix: str) -> Path:
-    # Note: prefix should be the normalized package name (e.g. underscores instead of dashes for filenames)
-    # But usually uv build outputs predictable names.
-    # We'll use glob.
-    matches = sorted(wheel_dir.glob(f"{prefix}-*.whl"))
-    if not matches:
-        raise RuntimeError(f"Expected wheel starting with {prefix}- in {wheel_dir}")
-    return matches[-1]
-
-
-def get_project_name(package_path: Path) -> str:
-    pyproject = package_path / "pyproject.toml"
-    if not pyproject.exists():
-        print(
-            f"[WARNING] No pyproject.toml found at {package_path}; using directory name."
-        )
-        return package_path.name
-
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(
-            f"[WARNING] Failed to parse pyproject.toml at {package_path}: {e}; using directory name."
-        )
-        return package_path.name
-
-    name = data.get("project", {}).get("name")
-    if not name:
-        print(f"[WARNING] No [project].name in {pyproject}; using directory name.")
-        return package_path.name
-    return str(name)
-
-
-def get_workspace_packages(workspace_root: Path) -> list[tuple[str, Path]]:
-    """Parse pyproject.toml to find workspace members."""
-    pyproject = workspace_root / "pyproject.toml"
-    if not pyproject.exists():
-        print(f"[WARNING] No pyproject.toml found at {workspace_root}.")
-        return []
-
-    try:
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception as e:
-        print(f"[WARNING] Failed to parse pyproject.toml: {e}")
-        return []
-
-    members = data.get("tool", {}).get("uv", {}).get("workspace", {}).get("members", [])
-    if not members:
-        print("[INFO] No workspace members found.")
-        return []
-
-    print(f"[INFO] Found workspace members: {members}")
-    packages: list[tuple[str, Path]] = []
-
-    for member_pattern in members:
-        # Glob handles both direct paths and wildcards
-        for path in workspace_root.glob(member_pattern):
-            # Skip if it is the backend itself, as we handle it separately
-            if path.resolve() == PROJECT_ROOT.resolve():
-                continue
-            if path.is_dir() and (path / "pyproject.toml").exists():
-                packages.append((get_project_name(path), path))
-
-    return packages
-
-
 def find_runtime_python(runtime_python_dir: Path) -> Path:
     """Locate the Python executable in a venv across platforms."""
     candidates = [
@@ -289,17 +211,34 @@ def ensure_venv_libpython(
     print(f"[INFO] Copied {libpython_name} to {target}")
 
 
+def sync_runtime_environment(*, runtime_python_dir: Path, uv_packaging_env: dict[str, str]) -> None:
+    print("[INFO] Syncing backend runtime environment from uv.lock")
+    sync_env = dict(uv_packaging_env)
+    sync_env["UV_PROJECT_ENVIRONMENT"] = str(runtime_python_dir)
+    sync_env["VIRTUAL_ENV"] = str(runtime_python_dir)
+    run(
+        [
+            "uv",
+            "sync",
+            "--frozen",
+            "--no-dev",
+            "--no-editable",
+        ],
+        cwd=PROJECT_ROOT,
+        extra_env=sync_env,
+    )
+
+
 def write_runtime_manifest(
     *,
     output_dir: Path,
     python_bin: Path,
     python_version: str,
-    built_wheels: list[Path],
 ) -> None:
     """Write a small manifest for debugging shipped runtime contents."""
     try:
         git_sha = run(
-            ["git", "rev-parse", "HEAD"], cwd=WORKSPACE_ROOT, capture_output=True
+            ["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True
         ).stdout.strip()
     except Exception:
         git_sha = "unknown"
@@ -309,7 +248,7 @@ def write_runtime_manifest(
         "python_version": python_version,
         "python_executable": str(python_bin),
         "git_sha": git_sha,
-        "wheels": [wheel.name for wheel in sorted(built_wheels)],
+        "install_method": "uv-sync",
     }
     manifest_path = output_dir / "runtime-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -353,10 +292,7 @@ def main() -> None:
 
     output_dir = Path(args.output).expanduser().resolve()
     dist_root = output_dir.parent
-    runtime_name = output_dir.name
     managed_python_dir = output_dir / "managed-python"
-    sanitized_lockfile = dist_root / f"{runtime_name}-thirdparty.txt"
-    wheel_dir = dist_root / "wheels"
     uv_packaging_env = create_uv_packaging_env(managed_python_dir)
 
     print("[INFO] Packaging backend runtime")
@@ -367,29 +303,8 @@ def main() -> None:
         print(f"[INFO] Removing previous dist at {dist_root}")
         remove_tree_with_retries(dist_root)
 
-    for d in (output_dir, dist_root, wheel_dir):
+    for d in (output_dir, dist_root):
         d.mkdir(parents=True, exist_ok=True)
-
-    if sanitized_lockfile.exists():
-        sanitized_lockfile.unlink()
-
-    print("[INFO] Exporting third-party dependencies from uv.lock...")
-    run(
-        [
-            "uv",
-            "export",
-            "--frozen",
-            "--python",
-            args.python_version,
-            "--no-editable",
-            "--no-emit-workspace",
-            "--no-header",
-            "--output-file",
-            str(sanitized_lockfile),
-        ],
-        cwd=WORKSPACE_ROOT,
-    )
-    print(f"[INFO] Third-party lockfile exported to {sanitized_lockfile}")
 
     print("[INFO] Setting up Python runtime via uv venv...")
     run(
@@ -422,66 +337,10 @@ def main() -> None:
         python_version=args.python_version,
     )
 
-    # DYNAMIC PACKAGE DISCOVERY
-    workspace_packages = get_workspace_packages(WORKSPACE_ROOT)
-
-    # Also build the root package (backend)
-    # We infer the name from pyproject.toml or just use the dir name/hardcoded fallback
-    # The original script used "ldaca-web-app-backend"
-    workspace_packages.append((get_project_name(PROJECT_ROOT), PROJECT_ROOT))
-
-    built_wheels = []
-    for pkg_name, pkg_path in workspace_packages:
-        build_local_wheel(pkg_path, wheel_dir, pkg_name)
-        # We need to find the filename that was just built
-        # For simplicity, we find generic wheel match for the package name
-        # Package names in wheels are normalized (dashes -> underscores)
-        normalized_name = pkg_name.replace("-", "_")
-        try:
-            wheel = find_latest_wheel(wheel_dir, normalized_name)
-            built_wheels.append(wheel)
-        except RuntimeError:
-            raise RuntimeError(
-                "Failed to discover a built wheel for package "
-                f"{pkg_name} using prefix {normalized_name}. "
-                "Please ensure package name and wheel filename normalization match."
-            )
-
-    print("[INFO] Installing third-party dependencies")
-    run(
-        [
-            "uv",
-            "pip",
-            "install",
-            "--python",
-            str(python_bin),
-            "--link-mode",
-            "copy",
-            "-r",
-            str(sanitized_lockfile),
-        ],
-        cwd=PROJECT_ROOT,
-        extra_env=uv_packaging_env,
+    sync_runtime_environment(
+        runtime_python_dir=runtime_python_dir,
+        uv_packaging_env=uv_packaging_env,
     )
-
-    print("[INFO] Installing bundled workspace packages")
-    for wheel_path in built_wheels:
-        print(f"   Installing {wheel_path.name}")
-        run(
-            [
-                "uv",
-                "pip",
-                "install",
-                "--python",
-                str(python_bin),
-                "--link-mode",
-                "copy",
-                "--no-deps",
-                str(wheel_path),
-            ],
-            cwd=PROJECT_ROOT,
-            extra_env=uv_packaging_env,
-        )
 
     import_modules = ["ldaca_web_app_backend", "polars_text"]
     run_runtime_smoke_checks(
@@ -494,17 +353,12 @@ def main() -> None:
         output_dir=output_dir,
         python_bin=python_bin,
         python_version=args.python_version,
-        built_wheels=built_wheels,
     )
-
-    if sanitized_lockfile.exists():
-        sanitized_lockfile.unlink()
-        print("[INFO] Removed temporary third-party lockfile")
 
     print("[SUCCESS] Backend runtime created")
     print(f"   Runtime folder: {output_dir}")
     print(f"   Python entry:   {python_bin}")
-    print(f"   Wheels staged:  {wheel_dir}")
+    print("   Install mode:   uv sync --no-editable")
 
 
 if __name__ == "__main__":

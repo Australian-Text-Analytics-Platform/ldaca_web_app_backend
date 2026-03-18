@@ -102,4 +102,4 @@ include = ["src/ldaca_web_app_backend/resources/*.txt"]
 "src" = ""
 
 [tool.uv.sources]
-ldaca-loader = { workspace = true }
+ldaca-loader = { git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator", branch = "ldaca_web_app_integration" }

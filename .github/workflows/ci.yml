@@ -33,13 +33,6 @@ jobs:
             - name: Check out repository
               uses: actions/checkout@v6
 
-            - name: Check out ldaca-tabulator
-              uses: actions/checkout@v6
-              with:
-                  repository: Australian-Text-Analytics-Platform/ldaca-tabulator
-                  ref: ldaca_web_app_integration
-                  path: ldaca-tabulator
-
             - name: Set up Python
               uses: actions/setup-python@v6
               with:
@@ -47,21 +40,6 @@ jobs:
 
             - name: Set up uv
               uses: astral-sh/setup-uv@v6
-
-            - name: Patch ldaca-loader source for standalone CI
-              shell: python
-              run: |
-                  from pathlib import Path
-
-                  pyproject_path = Path("pyproject.toml")
-                  content = pyproject_path.read_text()
-                  old = 'ldaca-loader = { workspace = true }'
-                  new = 'ldaca-loader = { path = "ldaca-tabulator" }'
-
-                  if old not in content:
-                      raise SystemExit("Expected ldaca-loader workspace source override was not found")
-
-                  pyproject_path.write_text(content.replace(old, new))
 
             - name: Install dependencies
               shell: bash

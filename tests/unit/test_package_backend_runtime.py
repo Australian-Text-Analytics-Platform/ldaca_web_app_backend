@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 def _load_package_backend_runtime_module():
     repo_root = Path(__file__).resolve().parents[3]
@@ -17,13 +19,38 @@ def _load_package_backend_runtime_module():
     return module
 
 
-def test_get_workspace_packages_discovers_root_level_python_members() -> None:
+def test_sync_runtime_environment_uses_frozen_non_editable_sync(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_package_backend_runtime_module()
-    repo_root = Path(__file__).resolve().parents[3]
+    calls: list[tuple[list[str], Path | None, dict[str, str] | None]] = []
 
-    packages = module.get_workspace_packages(repo_root)
-    package_map = {name: path.resolve() for name, path in packages}
+    def fake_run(cmd, *, cwd=None, capture_output=False, extra_env=None):
+        assert capture_output is False
+        calls.append((cmd, cwd, extra_env))
+        return None
 
-    assert package_map["ldaca-loader"] == (repo_root / "ldaca-tabulator").resolve()
-    assert "docworkspace" not in package_map
-    assert "polars-text" not in package_map
+    monkeypatch.setattr(module, "run", fake_run)
+
+    runtime_python_dir = Path("/tmp/runtime")
+    env = {"UV_LINK_MODE": "copy"}
+
+    module.sync_runtime_environment(
+        runtime_python_dir=runtime_python_dir,
+        uv_packaging_env=env,
+    )
+
+    assert calls == [
+        (
+            [
+                "uv",
+                "sync",
+                "--frozen",
+                "--no-dev",
+                "--no-editable",
+            ],
+            module.PROJECT_ROOT,
+            {
+                "UV_LINK_MODE": "copy",
+                "UV_PROJECT_ENVIRONMENT": str(runtime_python_dir),
+            },
+        )
+    ]

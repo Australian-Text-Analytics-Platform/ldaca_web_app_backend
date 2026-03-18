@@ -14,15 +14,15 @@ def test_python_uv_workspace_is_rooted_in_repository_directory() -> None:
     root_config = _load_toml(repo_root / "pyproject.toml")
     backend_config = _load_toml(repo_root / "ldaca_web_app_backend" / "pyproject.toml")
 
-    root_workspace = root_config["tool"]["uv"]["workspace"]
-
-    assert root_workspace["members"] == [
-        "ldaca-tabulator",
-    ]
     assert root_config["project"]["dependencies"] == [
         "ldaca-web-app-backend>=0.2.0",
+        "ldaca-loader",
     ]
-    assert "sources" not in root_config.get("tool", {}).get("uv", {})
+    assert "workspace" not in root_config.get("tool", {}).get("uv", {})
+    assert root_config["tool"]["uv"]["sources"]["ldaca-loader"] == {
+        "git": "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator",
+        "branch": "ldaca_web_app_integration",
+    }
     assert "workspace" not in backend_config.get("tool", {}).get("uv", {})
 
 
@@ -31,6 +31,9 @@ def test_backend_workspace_declares_local_sources_only_for_workspace_members() -
     backend_config = _load_toml(repo_root / "ldaca_web_app_backend" / "pyproject.toml")
     backend_sources = backend_config["tool"]["uv"]["sources"]
 
-    assert backend_sources["ldaca-loader"] == {"workspace": True}
+    assert backend_sources["ldaca-loader"] == {
+        "git": "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator",
+        "branch": "ldaca_web_app_integration",
+    }
     assert "docworkspace" not in backend_sources
     assert "polars-text" not in backend_sources
