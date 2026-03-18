@@ -1,0 +1,11 @@
+.DS_Store
+.coverage
+.mypy_cache/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+
+.venv/
+build/
+dist/
+dist-tauri/
