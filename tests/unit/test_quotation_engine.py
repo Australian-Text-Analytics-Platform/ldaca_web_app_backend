@@ -106,8 +106,8 @@ async def test_remote_compute_chunks_based_on_settings(monkeypatch):
         ["2", "3"],
         ["4"],
     ]
-    assert set(result.columns) >= {"quote"}
-    assert sorted(result["quote"].to_list()) == [
+    assert set(result.columns) >= {"QUOTE_quote"}
+    assert sorted(result["QUOTE_quote"].to_list()) == [
         "quote-0",
         "quote-1",
         "quote-2",
