@@ -1,54 +1,54 @@
 name: CI
 
 on:
-    push:
-        branches:
-            - "**"
-    pull_request:
-    workflow_dispatch:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
-    group: ldaca-web-app-backend-ci-${{ github.ref }}
-    cancel-in-progress: true
+  group: ldaca-web-app-backend-ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
-    contents: read
+  contents: read
 
 jobs:
-    test:
-        name: Test ${{ matrix.name }}
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                include:
-                    - name: linux
-                      os: ubuntu-latest
-                    - name: macos
-                      os: macos-latest
-                    - name: windows
-                      os: windows-latest
+  test:
+    name: Test ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: macos
+            os: macos-latest
+          - name: windows
+            os: windows-latest
 
-        steps:
-            - name: Check out repository
-              uses: actions/checkout@v6
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
 
-            - name: Set up Python
-              uses: actions/setup-python@v6
-              with:
-                  python-version: "3.14"
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
 
-            - name: Set up uv
-              uses: astral-sh/setup-uv@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
 
-            - name: Install dependencies
-              shell: bash
-              run: uv sync --group dev
+      - name: Install dependencies
+        shell: bash
+        run: uv sync --group dev
 
-            - name: Run tests
-              shell: bash
-              run: uv run pytest -q
+      - name: Run tests
+        shell: bash
+        run: uv run pytest -q
 
-            - name: Build distributions
-              shell: bash
-              run: uv build
+      - name: Build distributions
+        shell: bash
+        run: uv build

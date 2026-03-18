@@ -69,9 +69,7 @@ def ensure_uv_is_available() -> None:
         raise RuntimeError("The 'uv' CLI is required but was not found in PATH")
 
 
-def _handle_remove_error(
-    func: object, path: str, excinfo: BaseException
-) -> None:
+def _handle_remove_error(func: object, path: str, excinfo: BaseException) -> None:
     """Best-effort fixups for read-only files during recursive deletion."""
     _ = func  # unused but part of shutil callback contract
     _ = excinfo
@@ -211,7 +209,9 @@ def ensure_venv_libpython(
     print(f"[INFO] Copied {libpython_name} to {target}")
 
 
-def sync_runtime_environment(*, runtime_python_dir: Path, uv_packaging_env: dict[str, str]) -> None:
+def sync_runtime_environment(
+    *, runtime_python_dir: Path, uv_packaging_env: dict[str, str]
+) -> None:
     print("[INFO] Syncing backend runtime environment from uv.lock")
     sync_env = dict(uv_packaging_env)
     sync_env["UV_PROJECT_ENVIRONMENT"] = str(runtime_python_dir)

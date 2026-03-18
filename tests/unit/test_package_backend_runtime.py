@@ -8,7 +8,9 @@ import pytest
 
 def _load_package_backend_runtime_module():
     repo_root = Path(__file__).resolve().parents[3]
-    module_path = repo_root / "ldaca_web_app_backend" / "scripts" / "package_backend_runtime.py"
+    module_path = (
+        repo_root / "ldaca_web_app_backend" / "scripts" / "package_backend_runtime.py"
+    )
     spec = importlib.util.spec_from_file_location(
         "package_backend_runtime", module_path
     )
@@ -19,7 +21,9 @@ def _load_package_backend_runtime_module():
     return module
 
 
-def test_sync_runtime_environment_uses_frozen_non_editable_sync(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sync_runtime_environment_uses_frozen_non_editable_sync(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     module = _load_package_backend_runtime_module()
     calls: list[tuple[list[str], Path | None, dict[str, str] | None]] = []
 
