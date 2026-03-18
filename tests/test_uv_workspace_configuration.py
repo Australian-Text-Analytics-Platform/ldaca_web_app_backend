@@ -17,9 +17,12 @@ def test_python_uv_workspace_is_rooted_in_repository_directory() -> None:
     root_workspace = root_config["tool"]["uv"]["workspace"]
 
     assert root_workspace["members"] == [
-        "ldaca_web_app_backend",
         "ldaca-tabulator",
     ]
+    assert root_config["project"]["dependencies"] == [
+        "ldaca-web-app-backend>=0.2.0",
+    ]
+    assert "sources" not in root_config.get("tool", {}).get("uv", {})
     assert "workspace" not in backend_config.get("tool", {}).get("uv", {})
 
 
