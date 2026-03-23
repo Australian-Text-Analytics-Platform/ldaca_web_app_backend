@@ -55,6 +55,7 @@ def test_sync_runtime_environment_uses_frozen_non_editable_sync(
             {
                 "UV_LINK_MODE": "copy",
                 "UV_PROJECT_ENVIRONMENT": str(runtime_python_dir),
+                "VIRTUAL_ENV": str(runtime_python_dir),
             },
         )
     ]

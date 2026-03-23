@@ -456,46 +456,6 @@ async def upload_workspace_zip(
         )
 
 
-@router.post("/save-as")
-async def save_workspace_as(
-    folder_name: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """Clone a workspace into a new id/name and persist it as a separate copy.
-
-    Used by:
-    - frontend “Save As” flow
-
-    Why:
-    - Creates branch-like workspace copies without mutating source workspace.
-
-    """
-    user_id = current_user["id"]
-    source = workspace_manager.get_current_workspace(user_id)
-    try:
-        new_id = generate_workspace_id()
-        new_name = folder_name.replace(".json", "")
-
-        with tempfile.TemporaryDirectory(prefix="workspace_clone_") as temp_dir:
-            source.save(temp_dir)
-            new_ws = Workspace.load(temp_dir)
-
-        new_ws.id = new_id
-        new_ws.name = new_name
-
-        update_workspace(user_id, new_id, new_ws)
-        workspace_manager.set_current_workspace(user_id, new_id)
-        return {
-            "state": "successful",
-            "message": "Workspace cloned",
-            "new_workspace": new_ws.info_json(),
-        }
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(
-            status_code=500, detail=f"Failed to save workspace copy: {e}"
-        )
-
-
 @router.get("/info")
 async def get_workspace_info(
     current_user: dict = Depends(get_current_user),
@@ -530,4 +490,5 @@ async def get_workspace_nodes(
     user_id = current_user["id"]
     workspace = workspace_manager.get_current_workspace(user_id)
     graph_data = workspace.graph_json()
+    return {"nodes": graph_data.get("nodes", [])}
     return {"nodes": graph_data.get("nodes", [])}
