@@ -26,9 +26,13 @@ def run_quotation_detach_task(
     configure_worker_environment()
 
     try:
+        if progress_callback:
+            progress_callback(0.02, "Loading quotation extractor...")
+
         import os
 
         import polars as pl
+
         from docworkspace import Node
         from ldaca_web_app_backend.api.workspaces.analyses.quotation_core import (
             ensure_quote_dataframe,
@@ -38,7 +42,7 @@ def run_quotation_detach_task(
         print(f"[Worker {os.getpid()}] Starting quotation detach task")
 
         if progress_callback:
-            progress_callback(0.2, "Preparing corpus...")
+            progress_callback(0.2, "Preparing text data...")
 
         corpus = [str(v) if v is not None else "" for v in (node_corpus or [])]
         non_empty_mask = [bool(value.strip()) for value in corpus]
@@ -81,7 +85,7 @@ def run_quotation_detach_task(
             quote_df = quote_df.filter(pl.col(QUOTE_QUOTE_COLUMN).is_not_null())
 
         if progress_callback:
-            progress_callback(0.8, "Serializing detached node...")
+            progress_callback(0.82, "Serializing detached data block...")
 
         detached_node = Node(
             data=quote_df.lazy(),
@@ -94,7 +98,7 @@ def run_quotation_detach_task(
         node_payload = detached_node.to_dict(base_dir=workspace_dir)
 
         if progress_callback:
-            progress_callback(1.0, "Task completed successfully")
+            progress_callback(1.0, "Quotation detach completed")
 
         print(f"[Worker {os.getpid()}] Quotation detach task completed successfully")
 

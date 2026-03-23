@@ -31,16 +31,20 @@ def run_concordance_detach_task(
     configure_worker_environment()
 
     try:
+        if progress_callback:
+            progress_callback(0.02, "Loading concordance libraries...")
+
         import os
 
         import polars as pl
         import polars_text as pt
+
         from docworkspace import Node
 
         print(f"[Worker {os.getpid()}] Starting concordance detach task")
 
         if progress_callback:
-            progress_callback(0.2, "Preparing corpus...")
+            progress_callback(0.2, "Preparing text data...")
 
         corpus = [str(v) if v is not None else "" for v in (node_corpus or [])]
 
@@ -49,7 +53,7 @@ def run_concordance_detach_task(
         corpus = [v for v, keep in zip(corpus, non_empty_mask) if keep]
 
         if progress_callback:
-            progress_callback(0.5, "Generating concordance...")
+            progress_callback(0.55, "Generating concordance matches...")
 
         source_column_name = "__concordance_source__"
         data: dict[str, list] = {source_column_name: corpus}
@@ -93,7 +97,7 @@ def run_concordance_detach_task(
         )
 
         if progress_callback:
-            progress_callback(0.8, "Serializing detached node...")
+            progress_callback(0.82, "Serializing detached data block...")
 
         detached_node = Node(
             data=result.lazy(),
@@ -106,7 +110,7 @@ def run_concordance_detach_task(
         node_payload = detached_node.to_dict(base_dir=workspace_dir)
 
         if progress_callback:
-            progress_callback(1.0, "Task completed successfully")
+            progress_callback(1.0, "Concordance detach completed")
 
         print(f"[Worker {os.getpid()}] Concordance detach task completed successfully")
 

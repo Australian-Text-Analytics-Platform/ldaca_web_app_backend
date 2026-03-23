@@ -57,6 +57,8 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
 
 
 def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_path):
+    progress_updates: list[tuple[float, str]] = []
+
     result = run_concordance_detach_task(
         configure_worker_environment=lambda: None,
         workspace_dir=str(tmp_path),
@@ -70,6 +72,10 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
         case_sensitive=False,
         new_node_name="detached_concordance",
         include_document_column=True,
+        progress_callback=lambda progress, message: progress_updates.append((
+            progress,
+            message,
+        )),
     )
 
     assert result["state"] == "successful"
@@ -82,3 +88,8 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
 
     restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
     assert restored.collect().height >= 1
+    assert progress_updates[0][1].startswith("Loading concordance")
+    assert any(
+        "Preparing text data" in message for _progress, message in progress_updates
+    )
+    assert progress_updates[-1] == (1.0, "Concordance detach completed")

@@ -143,9 +143,19 @@ def create_uv_packaging_env(managed_install_dir: Path) -> dict[str, str]:
     }
 
 
-def find_runtime_python(runtime_python_dir: Path) -> Path:
-    """Locate the Python executable in a venv across platforms."""
+def find_runtime_python(runtime_root: Path, runtime_python_dir: Path) -> Path:
+    """Locate the preferred Python executable in packaged runtime.
+
+    Prefer managed-python's real interpreter first for relocatability.
+    Fall back to venv launchers across platforms if needed.
+    """
+    managed_python_dir = runtime_root / "managed-python"
+    managed_candidates = [
+        *managed_python_dir.glob("cpython-*/python.exe"),
+        *managed_python_dir.glob("cpython-*/bin/python3"),
+    ]
     candidates = [
+        *managed_candidates,
         runtime_python_dir / "bin" / "python3",
         runtime_python_dir / "bin" / "python",
         runtime_python_dir / "Scripts" / "python.exe",
@@ -329,7 +339,7 @@ def main() -> None:
 
     remove_externally_managed_markers(runtime_python_dir)
 
-    python_bin = find_runtime_python(runtime_python_dir)
+    python_bin = find_runtime_python(output_dir, runtime_python_dir)
     assert_runtime_python_is_relocatable(python_bin, output_dir)
     ensure_venv_libpython(
         managed_install_dir=managed_python_dir,

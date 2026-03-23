@@ -53,6 +53,12 @@ def run_topic_modeling_task(
     configure_worker_environment()
 
     try:
+        if progress_callback:
+            progress_callback(
+                0.02,
+                "Loading topic modeling resources. First runs may download model files...",
+            )
+
         from pathlib import Path
 
         import numpy as np
@@ -81,7 +87,7 @@ def run_topic_modeling_task(
         ]
 
         if progress_callback:
-            progress_callback(0.5, "Payload ready; running topic modeling...")
+            progress_callback(0.45, "Loading embedding model...")
 
         if progress_callback:
             progress_callback(0.6, "Running topic modeling...")
@@ -397,7 +403,7 @@ def run_topic_modeling_task(
             raise RuntimeError(f"BERTopic topic modeling failed: {e}") from e
 
         if progress_callback:
-            progress_callback(0.9, "Finalizing results...")
+            progress_callback(0.9, "Writing topic-modeling results...")
 
         result = {
             "topics": tv["topics"],
@@ -408,7 +414,7 @@ def run_topic_modeling_task(
         }
 
         if progress_callback:
-            progress_callback(1.0, "Completed successfully")
+            progress_callback(1.0, "Topic modeling completed")
 
         print(f"[Worker {os.getpid()}] Topic modeling completed successfully")
         return result

@@ -1,13 +1,17 @@
 from pathlib import Path
 
 import polars as pl
-from ldaca_web_app_backend.core.worker_tasks_quotation import run_quotation_detach_task
+
+from ldaca_web_app_backend.core.worker_tasks_quotation import \
+    run_quotation_detach_task
 
 
 def test_quotation_detach_task_writes_node_payload_without_internal_source_column(
     tmp_path,
     monkeypatch,
 ):
+    progress_updates: list[tuple[float, str]] = []
+
     def fake_quotation_via_polars_text(input_df: pl.DataFrame, source_column: str):
         assert source_column == "__quotation_source__"
         return pl.DataFrame({
@@ -44,6 +48,9 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         new_node_name="detached_quotation",
         include_document_column=True,
         extra_columns_data={"speaker_label": ["narrator"]},
+        progress_callback=lambda progress, message: progress_updates.append(
+            (progress, message)
+        ),
     )
 
     assert result["state"] == "successful"
@@ -88,3 +95,10 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         "QUOTE_is_floating_quote",
         "QUOTE_quote_row_idx",
     ]
+    assert progress_updates[0][1].startswith("Loading quotation")
+    assert any(
+        "Extracting quotations" in message for _progress, message in progress_updates
+    )
+    assert progress_updates[-1] == (1.0, "Quotation detach completed")
+    )
+    assert progress_updates[-1] == (1.0, "Quotation detach completed")

@@ -40,6 +40,9 @@ def run_token_frequencies_task(
     configure_worker_environment()
 
     try:
+        if progress_callback:
+            progress_callback(0.02, "Loading token frequency resources...")
+
         import polars as pl
         import polars_text as pt
 
@@ -52,7 +55,7 @@ def run_token_frequencies_task(
             progress_callback(0.1, "Validating payload...")
 
         if progress_callback:
-            progress_callback(0.2, "Preparing corpora...")
+            progress_callback(0.2, "Preparing text data...")
 
         requested_stop_words = sanitize_stop_words(stop_words)
         effective_limit = int(token_limit) if int(token_limit) > 0 else 10
@@ -77,7 +80,7 @@ def run_token_frequencies_task(
             if progress_callback:
                 progress_callback(
                     0.2 + 0.3 * (i + 1) / max(len(node_ids), 1),
-                    f"Prepared corpus for {node_name}",
+                    f"Prepared text data for {node_name}",
                 )
 
         if progress_callback:
@@ -99,7 +102,7 @@ def run_token_frequencies_task(
             )
 
         if progress_callback:
-            progress_callback(0.85, "Formatting results...")
+            progress_callback(0.85, "Writing token-frequency results...")
 
         node_artifacts: list[dict[str, Any]] = []
         for frame_key, freq_dict in frequency_results.items():
@@ -160,7 +163,7 @@ def run_token_frequencies_task(
         }
 
         if progress_callback:
-            progress_callback(1.0, "Completed successfully")
+            progress_callback(1.0, "Token frequency analysis completed")
 
         print("[Worker] Token frequencies completed successfully")
         return result_payload
