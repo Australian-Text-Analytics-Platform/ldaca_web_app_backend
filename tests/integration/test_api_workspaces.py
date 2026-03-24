@@ -201,8 +201,10 @@ class TestWorkspaceAPI:
             mock_get.return_value = None
             mock_current_entry.return_value = "nonexistent-123"
 
-            with pytest.raises(AttributeError):
-                await authenticated_client.get("/api/workspaces/info")
+            response = await authenticated_client.get("/api/workspaces/info")
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Workspace not found"
 
     async def test_delete_workspace(self, authenticated_client):
         """Test deleting a workspace"""
@@ -302,9 +304,6 @@ class TestWorkspaceAPI:
                 "ldaca_web_app_backend.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app_backend.api.workspaces.workspace_manager.get_current_workspace_id"
-            ) as mock_current_id,
-            patch(
                 "ldaca_web_app_backend.api.workspaces.workspace_manager.get_workspace_dir"
             ) as mock_get_dir,
             patch(
@@ -315,7 +314,6 @@ class TestWorkspaceAPI:
             ) as mock_get_tm,
         ):
             mock_current_entry.return_value = "ws-1"
-            mock_current_id.return_value = None
             mock_get_dir.return_value = workspace_dir
             mock_get_ws.return_value = mock_ws
             mock_get_tm.return_value = mock_tm
@@ -495,6 +493,7 @@ class TestWorkspaceAPI:
         from ldaca_web_app_backend.core.workspace import workspace_manager
 
         workspace = workspace_manager.get_current_workspace("test")
+        assert workspace is not None
         node = workspace.nodes[tiny_node_id]
         node.data = pl.DataFrame(
             {

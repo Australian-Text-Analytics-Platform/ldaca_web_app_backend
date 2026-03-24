@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+
 from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
 
 
@@ -27,11 +28,13 @@ class _DummyWorkspace:
 async def test_compute_column_preview_adds_new_column(
     authenticated_client, monkeypatch
 ):
-    frame = pl.DataFrame({
-        "A": [1, 2, 3],
-        "B": [10, 20, 30],
-        "Total Count": [5, 6, 7],
-    })
+    frame = pl.DataFrame(
+        {
+            "A": [1, 2, 3],
+            "B": [10, 20, 30],
+            "Total Count": [5, 6, 7],
+        }
+    )
     node = _DummyNode(frame)
     workspace_id = "ws-alpha"
     dummy_ws = _DummyWorkspace({"count": 0}, nodes={"node-123": node})
@@ -70,10 +73,12 @@ async def test_compute_column_preview_adds_new_column(
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_compute_column_apply_mutates_node(authenticated_client, monkeypatch):
-    frame = pl.DataFrame({
-        "A": [1, 2],
-        "B": [3, 4],
-    })
+    frame = pl.DataFrame(
+        {
+            "A": [1, 2],
+            "B": [3, 4],
+        }
+    )
     node = _DummyNode(frame)
     workspace_id = "ws-alpha"
     persist_calls = {"count": 0}
@@ -117,6 +122,7 @@ async def test_compute_column_apply_mutates_node(authenticated_client, monkeypat
     assert payload["column_name"] == "A_plus_B"
     assert payload["state"] == "successful"
     collected = node.data.collect()
+    assert isinstance(collected, pl.DataFrame)
     assert "A_plus_B" in collected.columns
     assert collected["A_plus_B"].to_list() == ["4", "6"]
     assert persist_calls["count"] == 1

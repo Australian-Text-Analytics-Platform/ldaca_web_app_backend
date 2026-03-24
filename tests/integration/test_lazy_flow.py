@@ -5,6 +5,7 @@ Migrated from test_complete_lazy_flow.py with proper pytest structure.
 
 import polars as pl
 import pytest
+
 from docworkspace import Node, Workspace
 
 
@@ -14,21 +15,25 @@ class TestLazyFlowIntegration:
     @pytest.fixture
     def sample_dataframe(self):
         """Create a sample DataFrame for testing"""
-        return pl.DataFrame({
-            "id": [1, 2, 3, 4, 5],
-            "name": ["Alice", "Bob", "Charlie", "David", "Eve"],
-            "age": [25, 30, 35, 40, 45],
-            "salary": [50000, 60000, 70000, 80000, 90000],
-        })
+        return pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5],
+                "name": ["Alice", "Bob", "Charlie", "David", "Eve"],
+                "age": [25, 30, 35, 40, 45],
+                "salary": [50000, 60000, 70000, 80000, 90000],
+            }
+        )
 
     @pytest.fixture
     def lazy_dataframe(self):
         """Create a lazy DataFrame for testing"""
-        return pl.DataFrame({
-            "id": [1, 2, 3, 4, 5, 6],
-            "department": ["IT", "HR", "Finance", "IT", "HR", "Finance"],
-            "budget": [100000, 80000, 120000, 110000, 85000, 125000],
-        }).lazy()
+        return pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4, 5, 6],
+                "department": ["IT", "HR", "Finance", "IT", "HR", "Finance"],
+                "budget": [100000, 80000, 120000, 110000, 85000, 125000],
+            }
+        ).lazy()
 
     def test_node_info_includes_lazy_field(self, sample_dataframe):
         """Test that Node.info() returns basic node metadata."""
@@ -102,10 +107,12 @@ class TestLazyFlowIntegration:
 
         # Force collection by accessing data
         collected_data = lazy_node.data.collect()
+        assert isinstance(collected_data, pl.DataFrame)
 
         # Create new node with collected data
         collected_node = Node(collected_data.lazy(), name="collected")
         collected_info = collected_node.info()
 
         assert collected_info["name"] == "collected"
+        assert set(collected_info["columns"]) == {"id", "department", "budget"}
         assert set(collected_info["columns"]) == {"id", "department", "budget"}

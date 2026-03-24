@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
+from pydantic import AnyHttpUrl, TypeAdapter
+
 from ldaca_web_app_backend.api.workspaces.analyses.quotation_core import (
     compute_quote_dataframe,
     prepare_documents_payload,
@@ -14,10 +16,12 @@ from ldaca_web_app_backend.core.services.quotation_client import (
 from ldaca_web_app_backend.models import QuotationEngineConfig, QuotationEngineType
 from ldaca_web_app_backend.settings import settings
 
+HTTP_URL = TypeAdapter(AnyHttpUrl).validate_python
+
 
 def test_engine_config_local_clears_url():
     cfg = QuotationEngineConfig(
-        type=QuotationEngineType.LOCAL, url="http://example.com"
+        type=QuotationEngineType.LOCAL, url=HTTP_URL("http://example.com")
     )
     assert cfg.type is QuotationEngineType.LOCAL
     assert cfg.url is None
@@ -59,19 +63,24 @@ def test_prepare_documents_payload_stable_order():
 
 @pytest.mark.asyncio
 async def test_remote_compute_chunks_based_on_settings(monkeypatch):
-    engine = QuotationEngineConfig(type=QuotationEngineType.REMOTE, url="http://engine")
+    engine = QuotationEngineConfig(
+        type=QuotationEngineType.REMOTE,
+        url=HTTP_URL("http://engine"),
+    )
     df = pl.DataFrame({"body": [f"doc-{i}" for i in range(5)]})
     node = SimpleNamespace(data=df)
 
     calls = []
 
     async def fake_extract(cfg, documents, *, options=None, timeout=None):
-        calls.append({
-            "cfg": cfg,
-            "documents": documents,
-            "options": options,
-            "timeout": timeout,
-        })
+        calls.append(
+            {
+                "cfg": cfg,
+                "documents": documents,
+                "options": options,
+                "timeout": timeout,
+            }
+        )
         return {
             "results": [
                 {

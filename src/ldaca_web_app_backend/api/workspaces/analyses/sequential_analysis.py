@@ -8,7 +8,7 @@ Exposes updated paths:
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException
@@ -71,7 +71,7 @@ def _run_sequential_analysis(
         )
 
     # Collect to DataFrame for aggregation
-    df = lf.collect()
+    df = cast(pl.DataFrame, lf.collect())
 
     time_format = ""
     numeric_interval_value: float | None = None
@@ -393,7 +393,7 @@ async def run_sequential_analysis(
             ):
                 inherited_chart_type = previous_result["chart_type"]
 
-        result_payload = {
+        result_payload: dict[str, Any] = {
             "state": "successful",
             "data": sequential_result.to_dicts(),
             "columns": list(sequential_result.columns),
@@ -410,16 +410,20 @@ async def run_sequential_analysis(
 
         if existing_task:
             task = existing_task
-            task.request = req_model
-            task.complete(GenericAnalysisResult(result_payload))
-            task_manager.save_task(task)
         else:
             task_id = task_manager.create_task(req_model)
             task = task_manager.get_task(task_id)
-            task.request = req_model
-            task.complete(GenericAnalysisResult(result_payload))
-            task_manager.save_task(task)
             task_manager.set_current_task("sequential_analysis", task_id)
+
+        if task is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to load sequential analysis task",
+            )
+
+        task.request = req_model
+        task.complete(GenericAnalysisResult(result_payload))
+        task_manager.save_task(task)
 
         result_payload["metadata"] = {"task_id": task.task_id}
         return result_payload

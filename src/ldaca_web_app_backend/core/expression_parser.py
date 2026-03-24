@@ -137,7 +137,7 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
     def _literal_sequence(self, node: ast.AST, *, context: str) -> Sequence[Any]:
         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
             values: List[Any] = []
-            for element in node.elts:  # type: ignore[attr-defined]
+            for element in node.elts:
                 wrapped = self.visit(element)
                 values.append(self._ensure_literal(wrapped, context=context))
             return values
@@ -206,10 +206,12 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
                 right.is_literal and isinstance(right.literal_value, str)
             ):
                 return self._wrap(
-                    pl.concat_str([
-                        left.expr.cast(pl.Utf8, strict=False),
-                        right.expr.cast(pl.Utf8, strict=False),
-                    ])
+                    pl.concat_str(
+                        [
+                            left.expr.cast(pl.Utf8, strict=False),
+                            right.expr.cast(pl.Utf8, strict=False),
+                        ]
+                    )
                 )
             return self._wrap(left.expr + right.expr)
         if isinstance(op, ast.Sub):
@@ -327,7 +329,7 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
         self._ensure_column_exists(node.id)
         return self._wrap(pl.col(node.id))
 
-    def visit_Constant(self, node: ast.Constant) -> _ExprWrapper:  # type: ignore[override]
+    def visit_Constant(self, node: ast.Constant) -> _ExprWrapper:
         value = node.value
         if isinstance(value, (int, float, bool)) or value is None:
             return self._literal_from_constant(value)

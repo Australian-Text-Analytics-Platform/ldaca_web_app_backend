@@ -1,9 +1,11 @@
 import sys
 from types import ModuleType
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 import polars as pl
+
 from ldaca_web_app_backend.core import worker_tasks_topic
 
 
@@ -47,9 +49,9 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
     def fake_select_topic_representation(*_args, **_kwargs):
         return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
 
-    bertopic_module = ModuleType("bertopic")
+    bertopic_module = cast(Any, ModuleType("bertopic"))
     bertopic_module.BERTopic = FakeBERTopic
-    bertopic_utils_module = ModuleType("bertopic._utils")
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
     monkeypatch.setattr(
@@ -74,10 +76,12 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
         artifact_dir=str(tmp_path),
         artifact_prefix="topic_modeling_test",
         min_topic_size=2,
-        progress_callback=lambda progress, message: progress_updates.append((
-            progress,
-            message,
-        )),
+        progress_callback=lambda progress, message: progress_updates.append(
+            (
+                progress,
+                message,
+            )
+        ),
     )
 
     meanings = pl.read_parquet(tmp_path / "topic_modeling_test_topic_meanings.parquet")

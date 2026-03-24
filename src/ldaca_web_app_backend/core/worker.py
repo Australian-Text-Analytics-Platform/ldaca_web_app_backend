@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import logging
 import os
 import time
@@ -61,8 +63,6 @@ def _configure_worker_environment() -> None:
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     try:
-        import importlib
-
         tbb_available = False
         try:
             if importlib.util.find_spec("tbb"):
@@ -193,8 +193,8 @@ def quotation_detach_task(
 def topic_modeling_task(
     user_id: str,
     workspace_id: str,
-    corpora: Dict[str, list[str]],
-    node_infos: Dict[str, Dict[str, str]],
+    corpora: list[list[str]],
+    node_infos: list[Dict[str, Any]],
     artifact_dir: str,
     artifact_prefix: str,
     min_topic_size: int,

@@ -3,10 +3,12 @@ Tests for core utilities
 """
 
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+
 from ldaca_web_app_backend.core.utils import (
     detect_file_type,
     generate_workspace_id,
@@ -113,29 +115,16 @@ class TestFileOperations:
         """Test loading CSV file"""
         df = load_data_file(sample_csv_file)
 
-        # Function returns polars LazyFrame by default for efficiency
-        # Handle both LazyFrame and DataFrame cases
-        try:
-            # Try LazyFrame collect method
-            actual_df = df.collect()
-            assert actual_df.shape[0] == 3  # 3 rows
-            assert actual_df.shape[1] == 3  # 3 columns
-        except AttributeError:
-            # Not a LazyFrame, should be a DataFrame with shape
-            assert hasattr(df, "shape")
-            assert df.shape[0] == 3  # 3 rows
-            assert df.shape[1] == 3  # 3 columns
-
-        # Check column names (handle LazyFrame vs DataFrame)
-        try:
-            # LazyFrame - use collect_schema() to get column names
+        if isinstance(df, pl.LazyFrame):
+            actual_df = cast(pl.DataFrame, df.collect())
             columns = list(df.collect_schema().names())
-        except AttributeError:
-            # DataFrame - use columns directly
-            if hasattr(df, "columns"):
-                columns = list(df.columns)
-            else:
-                columns = df.columns.tolist()
+        else:
+            assert isinstance(df, pl.DataFrame)
+            actual_df = df
+            columns = list(df.columns)
+
+        assert actual_df.shape[0] == 3
+        assert actual_df.shape[1] == 3
         assert "name" in columns
         assert "age" in columns
         assert "city" in columns
@@ -184,27 +173,16 @@ class TestFileOperations:
         """Test loading a CSV file"""
         df = load_data_file(sample_csv_file)
 
-        # Handle both LazyFrame and DataFrame results
-        if hasattr(df, "collect"):
-            # It's a LazyFrame
-            actual_df = df.collect()
-            assert actual_df.shape[0] == 3  # 3 rows
-            assert actual_df.shape[1] == 3  # 3 columns
+        if isinstance(df, pl.LazyFrame):
+            actual_df = cast(pl.DataFrame, df.collect())
+            columns = list(df.collect_schema().names())
         else:
-            # It's a DataFrame
-            assert df.shape[0] == 3  # 3 rows
-            assert df.shape[1] == 3  # 3 columns
+            assert isinstance(df, pl.DataFrame)
+            actual_df = df
+            columns = list(df.columns)
 
-        # Check columns based on type
-        if hasattr(df, "collect_schema"):
-            columns = list(df.collect_schema().keys())
-        elif hasattr(df, "columns"):
-            if callable(df.columns):
-                columns = df.columns()
-            else:
-                columns = list(df.columns)
-        else:
-            columns = []
+        assert actual_df.shape[0] == 3
+        assert actual_df.shape[1] == 3
 
         assert "name" in columns
         assert "age" in columns
@@ -214,25 +192,15 @@ class TestFileOperations:
         """Test loading a JSON file"""
         df = load_data_file(sample_json_file)
 
-        # Handle both LazyFrame and DataFrame results
-        if hasattr(df, "collect"):
-            # It's a LazyFrame
-            actual_df = df.collect()
-            assert actual_df.shape[0] == 3  # 3 rows
+        if isinstance(df, pl.LazyFrame):
+            actual_df = cast(pl.DataFrame, df.collect())
+            columns = list(df.collect_schema().names())
         else:
-            # It's a DataFrame
-            assert df.shape[0] == 3  # 3 rows
+            assert isinstance(df, pl.DataFrame)
+            actual_df = df
+            columns = list(df.columns)
 
-        # Check columns based on type
-        if hasattr(df, "collect_schema"):
-            columns = list(df.collect_schema().keys())
-        elif hasattr(df, "columns"):
-            if callable(df.columns):
-                columns = df.columns()
-            else:
-                columns = list(df.columns)
-        else:
-            columns = []
+        assert actual_df.shape[0] == 3
 
         assert "name" in columns
         assert "age" in columns
@@ -242,26 +210,22 @@ class TestFileOperations:
         """Test loading file - should use polars by default"""
         result = load_data_file(sample_csv_file)
 
-        # Handle both LazyFrame and DataFrame results
-        if hasattr(result, "collect"):
-            # It's a LazyFrame
-            actual_df = result.collect()
+        if isinstance(result, pl.LazyFrame):
+            actual_df = cast(pl.DataFrame, result.collect())
             assert actual_df.shape[0] == 3
         else:
-            # It's a DataFrame
+            assert isinstance(result, pl.DataFrame)
             assert result.shape[0] == 3
 
     def test_load_data_file_polars_fallback(self, sample_csv_file):
         """Test loading file with fallback behavior"""
         df = load_data_file(sample_csv_file)
 
-        # Handle both LazyFrame and DataFrame results
-        if hasattr(df, "collect"):
-            # It's a LazyFrame
-            actual_df = df.collect()
+        if isinstance(df, pl.LazyFrame):
+            actual_df = cast(pl.DataFrame, df.collect())
             assert actual_df.shape[0] == 3
         else:
-            # It's a DataFrame
+            assert isinstance(df, pl.DataFrame)
             assert df.shape[0] == 3
 
     @patch("ldaca_web_app_backend.core.utils.pl.read_excel")

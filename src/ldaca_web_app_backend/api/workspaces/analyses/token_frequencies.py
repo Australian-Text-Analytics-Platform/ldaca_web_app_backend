@@ -12,6 +12,7 @@ import asyncio
 import logging
 import math
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 import polars as pl
@@ -95,7 +96,7 @@ def _unwrap_task_manager_result(raw_result):
 def _coerce_limit_value(value) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
-        candidate = int(value)  # type: ignore[arg-type]
+        candidate = int(value)
     except TypeError, ValueError:
         return DEFAULT_TOKEN_LIMIT
     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
@@ -187,7 +188,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         if stop_word_set:
             token_lf = token_lf.filter(~pl.col("token").is_in(list(stop_word_set)))
 
-        token_df = token_lf.collect()
+        token_df = cast(pl.DataFrame, token_lf.collect())
         rows = token_df.to_dicts()
         total_tokens = len(rows)
         display_name = str(node_entry.get("node_name") or node_id)
@@ -220,7 +221,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
             raise HTTPException(
                 status_code=404, detail="Token statistics artifact is missing"
             )
-        stats_df = pl.scan_parquet(stats_path).collect()
+        stats_df = cast(pl.DataFrame, pl.scan_parquet(stats_path).collect())
         statistics_payload = [
             {
                 "token": str(row.get("token") or ""),

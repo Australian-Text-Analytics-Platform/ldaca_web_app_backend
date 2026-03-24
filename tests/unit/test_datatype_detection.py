@@ -14,7 +14,7 @@ class TestDocWorkspaceTypeMapping:
 
         # Test with Polars type object
         assert (
-            DocWorkspaceDataTypeUtils.polars_dtype_to_ldaca_dtype(pl.Categorical)
+            DocWorkspaceDataTypeUtils.polars_dtype_to_ldaca_dtype(pl.Categorical())
             == "categorical"
         )
 

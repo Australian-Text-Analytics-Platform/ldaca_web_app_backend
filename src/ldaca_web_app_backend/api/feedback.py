@@ -22,7 +22,7 @@ try:
     _HAS_PYAIRTABLE = _il_util.find_spec("pyairtable") is not None
 except Exception:  # pragma: no cover
     _HAS_PYAIRTABLE = False
-Table = None  # type: ignore
+Table = None
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -82,13 +82,13 @@ async def submit_feedback(
 
     try:
         # Import only when needed
-        from pyairtable import Table as _Table  # type: ignore
+        from pyairtable import Table as _Table  # type: ignore[unresolved-import]
 
         # pyairtable.Table signature: Table(api_key, base_id, table_name)
-        table = _Table(  # type: ignore[call-arg]
-            settings.airtable_api_key,  # type: ignore[arg-type]
-            settings.airtable_base_id,  # type: ignore[arg-type]
-            settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+        table = _Table(
+            settings.airtable_api_key,
+            settings.airtable_base_id,
+            settings.airtable_table_id,
         )
         # Build Airtable fields using configured field IDs if present; fallback to field names.
         # (pyairtable docs use field NAMES. Field IDs also work; we support both.)
@@ -105,7 +105,7 @@ async def submit_feedback(
             fields[reply_key] = email_value
 
         # Minimal create (avoid adding unspecified columns to prevent UNKNOWN_FIELD_NAME)
-        record = table.create(fields)  # type: ignore[operator]
+        record = table.create(fields)
         record_id = record.get("id") if isinstance(record, dict) else None
 
         return FeedbackResponse(

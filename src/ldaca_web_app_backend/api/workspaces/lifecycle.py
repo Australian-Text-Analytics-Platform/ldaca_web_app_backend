@@ -23,6 +23,20 @@ from .utils import update_workspace
 router = APIRouter(prefix="/workspaces", tags=["lifecycle"])
 
 
+def _require_current_workspace_id(user_id: str) -> str:
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if workspace_id is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace_id
+
+
+def _require_current_workspace(user_id: str) -> Workspace:
+    workspace = workspace_manager.get_current_workspace(user_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
 def _safe_download_name(name: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
     return cleaned or "workspace"
@@ -159,8 +173,8 @@ async def rename_workspace(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
     try:
         is_valid, reason = validate_workspace_name(new_name)
         if not is_valid:
@@ -182,8 +196,8 @@ async def update_workspace_description(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
     try:
         workspace.description = description.strip()
         update_workspace(user_id, workspace_id, workspace)
@@ -199,8 +213,8 @@ async def save_workspace(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    ws = _require_current_workspace(user_id)
     try:
         update_workspace(user_id, workspace_id, ws)
         return {"state": "successful", "message": "Workspace saved"}
@@ -222,8 +236,8 @@ async def start_workspace_download(
       track progress and the UI stays responsive.
     """
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    ws = _require_current_workspace(user_id)
 
     # Persist latest state if this is the current in-memory workspace
     if workspace_manager.get_current_workspace_id(user_id) == workspace_id:
@@ -273,9 +287,7 @@ async def download_workspace_artifact(
       download to avoid unbounded disk usage.
     """
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+    workspace_id = _require_current_workspace_id(user_id)
 
     tm = workspace_manager.get_task_manager(user_id)
     task_info = await tm.get_task(task_id)
@@ -480,7 +492,7 @@ async def get_workspace_info(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace = _require_current_workspace(user_id)
     return workspace.info_json()
 
 
@@ -498,7 +510,7 @@ async def get_workspace_graph(
       graph configuration.
     """
     user_id = current_user["id"]
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace = _require_current_workspace(user_id)
     return workspace.graph_json()
 
 
@@ -507,7 +519,6 @@ async def get_workspace_nodes(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace = _require_current_workspace(user_id)
     graph_data = workspace.graph_json()
-    return {"nodes": graph_data.get("nodes", [])}
     return {"nodes": graph_data.get("nodes", [])}

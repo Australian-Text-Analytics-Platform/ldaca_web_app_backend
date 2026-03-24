@@ -6,6 +6,7 @@ import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 
 from ....models import QuotationEngineConfig, QuotationEngineType
 from .generated_columns import (
@@ -219,7 +220,7 @@ def prepare_documents_payload(
     """
     try:
         series = base_df.get_column(column)
-    except pl.ColumnNotFoundError as exc:  # pragma: no cover
+    except ColumnNotFoundError as exc:  # pragma: no cover
         raise ValueError(str(exc)) from exc
 
     docs: Dict[str, Dict[str, Any]] = {}
@@ -386,7 +387,9 @@ def quotation_via_polars_text(df: pl.DataFrame, column: str) -> pl.DataFrame:
     Why:
     - Provides the in-process quotation path when remote engine is not selected.
     """
-    tmp = df.with_columns(pl.col(column).text.quotation().alias("__quotation__"))
+    import polars_text as pt
+
+    tmp = df.with_columns(pt.quotation(pl.col(column)).alias("__quotation__"))
     exploded = tmp.explode("__quotation__")
     quote_dtype = exploded.schema.get("__quotation__")
     available_fields: set[str] = set()

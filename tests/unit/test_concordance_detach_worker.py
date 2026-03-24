@@ -1,6 +1,8 @@
 from pathlib import Path
+from typing import cast
 
 import polars as pl
+
 from ldaca_web_app_backend.core import worker
 from ldaca_web_app_backend.core.worker_tasks_concordance import (
     run_concordance_detach_task,
@@ -72,10 +74,12 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
         case_sensitive=False,
         new_node_name="detached_concordance",
         include_document_column=True,
-        progress_callback=lambda progress, message: progress_updates.append((
-            progress,
-            message,
-        )),
+        progress_callback=lambda progress, message: progress_updates.append(
+            (
+                progress,
+                message,
+            )
+        ),
     )
 
     assert result["state"] == "successful"
@@ -87,7 +91,8 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
     assert data_file.exists()
 
     restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
-    assert restored.collect().height >= 1
+    restored_df = cast(pl.DataFrame, restored.collect())
+    assert restored_df.height >= 1
     assert progress_updates[0][1].startswith("Loading concordance")
     assert any(
         "Preparing text data" in message for _progress, message in progress_updates

@@ -1,4 +1,8 @@
 import pytest
+
+from ldaca_web_app_backend.analysis.implementations.topic_modeling import (
+    TopicModelingRequest as AnalysisTopicModelingRequest,
+)
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.models import AnalysisStatus, AnalysisTask
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
@@ -43,7 +47,13 @@ async def test_topic_modeling_result_returns_payload(
             task_id=task_id,
             user_id=user_id,
             workspace_id=workspace_id,
-            request={"analysis_type": "topic_modeling"},
+            request=AnalysisTopicModelingRequest(
+                node_ids=["node-1"],
+                node_columns={"node-1": "document"},
+                min_topic_size=5,
+                random_seed=42,
+                representative_words_count=5,
+            ),
             status=AnalysisStatus.COMPLETED,
             result=GenericAnalysisResult(payload),
         )

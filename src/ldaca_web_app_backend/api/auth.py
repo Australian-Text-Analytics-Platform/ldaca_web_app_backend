@@ -240,7 +240,7 @@ async def auth_status(current_user: dict = Depends(get_current_user)):
     Why:
     - Allows cheap auth verification without full `get_auth_info` metadata.
     """
-    response = {
+    response: dict[str, object] = {
         "authenticated": True,
         "user": {
             "id": current_user["id"],

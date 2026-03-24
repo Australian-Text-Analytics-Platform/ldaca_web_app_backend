@@ -136,6 +136,7 @@ class TestApplicationConfiguration:
         """Test that required features are properly imported and available"""
         # These imports should work with proper package installation
         import polars_text
+
         from docworkspace import Node, Workspace
 
         # Basic validation that classes exist
@@ -173,7 +174,7 @@ class TestApplicationConfiguration:
 
             # Check that routers are included by looking at the app's routes
             route_prefixes = {
-                route.path_regex.pattern
+                getattr(route.path_regex, "pattern", "")
                 for route in app.routes
                 if hasattr(route, "path_regex")
             }
@@ -183,4 +184,5 @@ class TestApplicationConfiguration:
             assert any("/files" in pattern for pattern in route_prefixes)
             assert any("/workspaces" in pattern for pattern in route_prefixes)
             assert any("/user" in pattern for pattern in route_prefixes)
+            assert any("/admin" in pattern for pattern in route_prefixes)
             assert any("/admin" in pattern for pattern in route_prefixes)

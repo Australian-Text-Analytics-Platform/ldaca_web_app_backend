@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
+
 from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
 from ldaca_web_app_backend.api.workspaces import utils as workspace_utils
 from ldaca_web_app_backend.models import SliceRequest
@@ -89,10 +90,12 @@ class FakeWorkspaceManager:
 
 @pytest.fixture
 def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch):
-    df = pl.DataFrame({
-        "value": [1, 2, 3, 4, 5],
-        "label": ["a", "b", "c", "d", "e"],
-    })
+    df = pl.DataFrame(
+        {
+            "value": [1, 2, 3, 4, 5],
+            "label": ["a", "b", "c", "d", "e"],
+        }
+    )
     original_node = DummyNode("node_base", df.lazy(), "base_node")
     manager = FakeWorkspaceManager({"node_base": original_node})
     monkeypatch.setattr(nodes_api, "workspace_manager", manager)
@@ -152,11 +155,11 @@ async def test_slice_preview_respects_offset_and_length(fake_workspace_manager):
         current_user={"id": "user"},
     )
 
-    assert preview["columns"] == ["value", "label"]
-    assert preview["pagination"]["total_rows"] == 3
-    assert preview["pagination"]["page"] == 1
-    assert len(preview["data"]) == 2
-    assert [row["value"] for row in preview["data"]] == [2, 3]
+    assert preview.columns == ["value", "label"]
+    assert preview.pagination.total_rows == 3
+    assert preview.pagination.page == 1
+    assert len(preview.data) == 2
+    assert [row["value"] for row in preview.data] == [2, 3]
 
     preview_page_two = await nodes_api.slice_preview(
         "node_base",
@@ -166,6 +169,6 @@ async def test_slice_preview_respects_offset_and_length(fake_workspace_manager):
         current_user={"id": "user"},
     )
 
-    assert preview_page_two["pagination"]["page"] == 2
-    assert len(preview_page_two["data"]) == 1
-    assert preview_page_two["data"][0]["value"] == 4
+    assert preview_page_two.pagination.page == 2
+    assert len(preview_page_two.data) == 1
+    assert preview_page_two.data[0]["value"] == 4

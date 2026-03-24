@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 import polars as pl
@@ -20,6 +21,7 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import (
+    TopicModelingData,
     TopicModelingDetachOptionsResponse,
     TopicModelingDetachRequest,
     TopicModelingDetachResponse,
@@ -161,7 +163,10 @@ async def run_topic_modeling(
                 exc,
             )
 
-        sel_df = node_data.select(pl.col(column_name).alias("__doc_col__")).collect()
+        sel_df = cast(
+            pl.DataFrame,
+            node_data.select(pl.col(column_name).alias("__doc_col__")).collect(),
+        )
         docs = [
             str(v) if v is not None else "" for v in sel_df["__doc_col__"].to_list()
         ]
@@ -222,12 +227,22 @@ async def run_topic_modeling(
         )
 
     analysis_tm = get_task_manager(user_id)
+    min_topic_size = (
+        request.min_topic_size if request.min_topic_size is not None else 10
+    )
+    random_seed = request.random_seed if request.random_seed is not None else 42
+    representative_words_count = (
+        request.representative_words_count
+        if request.representative_words_count is not None
+        else 5
+    )
+
     analysis_request = AnalysisTopicModelingRequest(
         node_ids=request.node_ids,
         node_columns=request.node_columns,
-        min_topic_size=request.min_topic_size,
-        random_seed=request.random_seed,
-        representative_words_count=request.representative_words_count,
+        min_topic_size=min_topic_size,
+        random_seed=random_seed,
+        representative_words_count=representative_words_count,
     )
     analysis_tm.save_task(
         AnalysisTask(
@@ -328,10 +343,11 @@ async def topic_modeling_task_result(
         payload = task.result.to_json()
         if not isinstance(payload, dict):
             payload = {}
+        result_data = TopicModelingData.model_validate(payload)
         return TopicModelingResponse(
             state="successful",
             message="Topic Modeling analysis complete",
-            data=payload,
+            data=result_data,
             metadata={"task_id": task_id},
         )
 

@@ -2,7 +2,11 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
+
 from docworkspace import Node
+from ldaca_web_app_backend.analysis.implementations.topic_modeling import (
+    TopicModelingRequest as AnalysisTopicModelingRequest,
+)
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.models import AnalysisStatus, AnalysisTask
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
@@ -38,13 +42,15 @@ async def test_topic_modeling_request_persists_random_seed_and_word_count(
     assert workspace is not None
 
     node = Node(
-        data=pl.DataFrame({
-            "document": [
-                "alpha beta gamma",
-                "beta gamma delta",
-                "gamma delta epsilon",
-            ]
-        }).lazy(),
+        data=pl.DataFrame(
+            {
+                "document": [
+                    "alpha beta gamma",
+                    "beta gamma delta",
+                    "gamma delta epsilon",
+                ]
+            }
+        ).lazy(),
         name="topic_source",
         workspace=workspace,
         operation="test_setup",
@@ -88,10 +94,12 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     assert workspace is not None
 
     source_node = Node(
-        data=pl.DataFrame({
-            "document": ["alpha beta", "beta gamma"],
-            "source": ["a", "b"],
-        }).lazy(),
+        data=pl.DataFrame(
+            {
+                "document": ["alpha beta", "beta gamma"],
+                "source": ["a", "b"],
+            }
+        ).lazy(),
         name="topic_source",
         workspace=workspace,
         operation="test_setup",
@@ -153,7 +161,13 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
             task_id=task_id,
             user_id=user_id,
             workspace_id=workspace_id,
-            request={"analysis_type": "topic_modeling"},
+            request=AnalysisTopicModelingRequest(
+                node_ids=[source_node.id],
+                node_columns={source_node.id: "document"},
+                min_topic_size=5,
+                random_seed=42,
+                representative_words_count=5,
+            ),
             status=AnalysisStatus.COMPLETED,
             result=GenericAnalysisResult(payload),
         )
@@ -169,15 +183,13 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
 
     assert detach_response.status_code == 200, detach_response.text
     detached_node_id = (
-        detach_response
-        .json()
+        detach_response.json()
         .get("data", {})
         .get("detached_nodes", [{}])[0]
         .get("new_node_id")
     )
     topic_meanings_node_id = (
-        detach_response
-        .json()
+        detach_response.json()
         .get("data", {})
         .get("detached_nodes", [{}])[0]
         .get("topic_meanings_node_id")
@@ -208,4 +220,5 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
 
     assert "TOPIC_topic_meaning" not in detached_schema
     assert support_schema["TOPIC_topic_meaning"] in {"list_string", "List(String)"}
+    assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}
     assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}

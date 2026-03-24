@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
+
 from ldaca_web_app_backend.analysis.implementations.quotation import QuotationRequest
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
@@ -37,7 +38,7 @@ def _prime_workspace_state():
             self.metadata[key] = value
 
     dummy_ws = DummyWorkspace(base_df)
-    workspace_manager._current[USER_ID] = {  # type: ignore[attr-defined]
+    workspace_manager._current[USER_ID] = {
         "wid": WORKSPACE_ID,
         "workspace": dummy_ws,
         "path": None,
@@ -45,7 +46,7 @@ def _prime_workspace_state():
 
 
 def _cleanup_workspace_state():
-    workspace_manager._current.pop(USER_ID, None)  # type: ignore[attr-defined]
+    workspace_manager._current.pop(USER_ID, None)
     task_manager = get_task_manager(USER_ID)
     task_manager.clear_all()
 
@@ -56,6 +57,7 @@ def _seed_paginated_analysis(rows: List[Dict[str, Any]], context_length: int = 1
     request = QuotationRequest(node_id="node-1", column="text")
     task_id = task_manager.create_task(request)
     task = task_manager.get_task(task_id)
+    assert task is not None
 
     result_dict = {
         "data": [rows[0]] if rows else [],
@@ -97,12 +99,15 @@ def seeded_quotation_analysis():
     request = QuotationRequest(node_id="node-1", column="text")
     task_id = task_manager.create_task(request)
     task = task_manager.get_task(task_id)
+    assert task is not None
 
-    result = GenericAnalysisResult({
-        "data": [],
-        "columns": [],
-        "preferences": {"context_length": 15},
-    })
+    result = GenericAnalysisResult(
+        {
+            "data": [],
+            "columns": [],
+            "preferences": {"context_length": 15},
+        }
+    )
     task.complete(result)
     task_manager.save_task(task)
     task_manager.set_current_task("quotation", task_id)
@@ -127,6 +132,7 @@ async def test_update_context_length_persists_preference(
     task_manager = get_task_manager(USER_ID)
     task = task_manager.get_task(task_id)
     assert task is not None
+    assert task.result is not None
     assert task.result.data["preferences"]["context_length"] == 42
 
 
@@ -138,6 +144,7 @@ async def test_update_context_length_clamps_bounds(authenticated_client):
     request = QuotationRequest(node_id="node-1", column="text")
     task_id = task_manager.create_task(request)
     task = task_manager.get_task(task_id)
+    assert task is not None
 
     result = GenericAnalysisResult({"data": [], "columns": []})
     task.complete(result)

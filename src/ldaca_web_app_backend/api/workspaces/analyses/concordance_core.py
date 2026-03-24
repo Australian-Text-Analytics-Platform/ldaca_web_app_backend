@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import polars as pl
 from fastapi import HTTPException
@@ -208,7 +208,8 @@ def compute_concordance_page(
     - Produces a stable page payload shape shared by single-node and combined
       result views.
     """
-    total_source_rows = base_lf.select(pl.len()).collect().item()
+    total_rows_df = cast(pl.DataFrame, base_lf.select(pl.len()).collect())
+    total_source_rows = total_rows_df.item()
 
     effective_sort_by: Optional[str] = None
     if sort_by:
@@ -232,7 +233,7 @@ def compute_concordance_page(
         concordance_lf = concordance_lf.with_columns(
             pl.lit(node_label).alias("__source_node")
         )
-    result_df = concordance_lf.collect()
+    result_df = cast(pl.DataFrame, concordance_lf.collect())
 
     columns = result_df.columns if result_df.height > 0 else []
     page_rows = result_df.to_dicts()

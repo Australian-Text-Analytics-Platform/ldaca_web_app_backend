@@ -16,9 +16,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from docworkspace import Workspace  # type: ignore
+from docworkspace import Workspace
 from docworkspace.workspace.io import read_workspace_metadata
-
 from ldaca_web_app_backend.models import WorkspaceSummary
 
 from .utils import (
@@ -240,7 +239,7 @@ class WorkspaceManager:
     def delete_workspace(self, user_id: str, workspace_id: str) -> bool:
         cid = self.get_current_workspace_id(user_id)
         cws = self.get_current_workspace(user_id)
-        if cid == workspace_id and cws is not None:
+        if cid is not None and cws is not None and cid == workspace_id:
             try:
                 cws.modified_at = datetime.now().isoformat()
                 target_dir = self._resolve_workspace_dir(

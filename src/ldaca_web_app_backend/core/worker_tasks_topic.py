@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import random
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.generated_columns import (
     TOPIC_COLUMN,
@@ -118,20 +118,26 @@ def run_topic_modeling_task(
                         artifact_root
                         / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
                     )
-                    pl.DataFrame({
-                        "__row_nr__": list(range(len(corpus))),
-                        TOPIC_COLUMN: [],
-                    }).with_columns([
-                        pl.col("__row_nr__").cast(pl.Int64),
-                        pl.col(TOPIC_COLUMN).cast(pl.Int64),
-                    ]).lazy().sink_parquet(assignments_path)
-                    node_artifacts.append({
-                        "node_id": node_id,
-                        "node_name": node_name,
-                        "text_column": text_column,
-                        "original_columns": original_columns,
-                        "assignments_parquet_path": str(assignments_path),
-                    })
+                    pl.DataFrame(
+                        {
+                            "__row_nr__": list(range(len(corpus))),
+                            TOPIC_COLUMN: [],
+                        }
+                    ).with_columns(
+                        [
+                            pl.col("__row_nr__").cast(pl.Int64),
+                            pl.col(TOPIC_COLUMN).cast(pl.Int64),
+                        ]
+                    ).lazy().sink_parquet(assignments_path)
+                    node_artifacts.append(
+                        {
+                            "node_id": node_id,
+                            "node_name": node_name,
+                            "text_column": text_column,
+                            "original_columns": original_columns,
+                            "assignments_parquet_path": str(assignments_path),
+                        }
+                    )
 
                 return {
                     "topics": [],
@@ -206,20 +212,26 @@ def run_topic_modeling_task(
                     artifact_root
                     / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
                 )
-                pl.DataFrame({
-                    "__row_nr__": list(range(size)),
-                    TOPIC_COLUMN: normalized_topics,
-                }).with_columns([
-                    pl.col("__row_nr__").cast(pl.Int64),
-                    pl.col(TOPIC_COLUMN).cast(pl.Int64),
-                ]).lazy().sink_parquet(assignments_path)
-                node_artifacts.append({
-                    "node_id": node_id,
-                    "node_name": node_name,
-                    "text_column": text_column,
-                    "original_columns": original_columns,
-                    "assignments_parquet_path": str(assignments_path),
-                })
+                pl.DataFrame(
+                    {
+                        "__row_nr__": list(range(size)),
+                        TOPIC_COLUMN: normalized_topics,
+                    }
+                ).with_columns(
+                    [
+                        pl.col("__row_nr__").cast(pl.Int64),
+                        pl.col(TOPIC_COLUMN).cast(pl.Int64),
+                    ]
+                ).lazy().sink_parquet(assignments_path)
+                node_artifacts.append(
+                    {
+                        "node_id": node_id,
+                        "node_name": node_name,
+                        "text_column": text_column,
+                        "original_columns": original_columns,
+                        "assignments_parquet_path": str(assignments_path),
+                    }
+                )
                 offset = end
 
             per_corpus_topic_counts: list[dict[int, int]] = []
@@ -232,26 +244,27 @@ def run_topic_modeling_task(
             # External BERTopic output is pandas; convert to polars before processing.
             topic_freq_pd = topic_model.get_topic_freq()
             topic_freq = (
-                pl.from_pandas(topic_freq_pd)
+                cast(pl.DataFrame, pl.from_pandas(topic_freq_pd))
                 if topic_freq_pd is not None
                 else pl.DataFrame(schema={"Topic": pl.Int64})
             )
 
             topic_ids: list[int] = []
             if "Topic" in topic_freq.columns and not topic_freq.is_empty():
+                topic_series = topic_freq.get_column("Topic")
                 topic_ids = [
                     int(topic_id)
-                    for topic_id in topic_freq
-                    .filter(pl.col("Topic") != -1)
-                    .get_column("Topic")
-                    .to_list()
-                    if isinstance(topic_id, (int, np.integer))
+                    for topic_id in topic_series.to_list()
+                    if isinstance(topic_id, (int, np.integer)) and int(topic_id) != -1
                 ]
 
+            topics_by_id = cast(
+                dict[int, list[tuple[str, float]]], topic_model.get_topics()
+            )
             representative_words_by_topic: list[list[str]] = []
             labels: list[str] = []
             for topic_id in topic_ids:
-                words = topic_model.get_topic(topic_id) or []
+                words = topics_by_id.get(topic_id, [])
                 top_words = [
                     word
                     for word, _score in words[:max_representative_words]
@@ -262,7 +275,7 @@ def run_topic_modeling_task(
                     " | ".join(top_words) if top_words else f"Topic {topic_id}"
                 )
 
-            all_topics_sorted = sorted(list(topic_model.get_topics().keys()))
+            all_topics_sorted = sorted(topics_by_id.keys())
             indices = (
                 np.array([all_topics_sorted.index(topic_id) for topic_id in topic_ids])
                 if topic_ids
@@ -291,10 +304,12 @@ def run_topic_modeling_task(
                     n_components=comps, random_state=random_state
                 ).fit_transform(embeddings)
                 if comps == 1:
-                    coords = np.column_stack([
-                        projected[:, 0],
-                        np.zeros_like(projected[:, 0]),
-                    ])
+                    coords = np.column_stack(
+                        [
+                            projected[:, 0],
+                            np.zeros_like(projected[:, 0]),
+                        ]
+                    )
                 else:
                     coords = projected
             else:
@@ -337,10 +352,12 @@ def run_topic_modeling_task(
                         n_components=comps, random_state=random_state
                     ).fit_transform(embeddings)
                     if comps == 1:
-                        coords = np.column_stack([
-                            projected[:, 0],
-                            np.zeros_like(projected[:, 0]),
-                        ])
+                        coords = np.column_stack(
+                            [
+                                projected[:, 0],
+                                np.zeros_like(projected[:, 0]),
+                            ]
+                        )
                     else:
                         coords = projected
 
@@ -350,17 +367,19 @@ def run_topic_modeling_task(
                     per_corpus_topic_counts[j].get(topic_id, 0)
                     for j in range(len(per_corpus_topic_counts))
                 ]
-                topic_payloads.append({
-                    "id": topic_id,
-                    "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
-                    "representative_words": representative_words_by_topic[i]
-                    if i < len(representative_words_by_topic)
-                    else [],
-                    "size": per_sizes,
-                    "total_size": int(sum(per_sizes)),
-                    "x": float(coords[i, 0]) if i < len(coords) else 0.0,
-                    "y": float(coords[i, 1]) if i < len(coords) else 0.0,
-                })
+                topic_payloads.append(
+                    {
+                        "id": topic_id,
+                        "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
+                        "representative_words": representative_words_by_topic[i]
+                        if i < len(representative_words_by_topic)
+                        else [],
+                        "size": per_sizes,
+                        "total_size": int(sum(per_sizes)),
+                        "x": float(coords[i, 0]) if i < len(coords) else 0.0,
+                        "y": float(coords[i, 1]) if i < len(coords) else 0.0,
+                    }
+                )
 
             topic_meanings_path = (
                 artifact_root / f"{artifact_prefix}_topic_meanings.parquet"

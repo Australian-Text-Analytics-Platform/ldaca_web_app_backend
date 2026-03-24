@@ -2,7 +2,7 @@ import secrets
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
@@ -10,6 +10,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
+from sqlalchemy.sql.elements import ColumnElement
 
 from .settings import settings
 
@@ -119,7 +120,9 @@ async def get_or_create_user(
     """
     async with async_session_maker() as session:
         # Try to get existing user by email
-        result = await session.execute(select(User).where(User.email == email))
+        result = await session.execute(
+            select(User).where(cast(ColumnElement[bool], User.email == email))
+        )
         user = result.scalar_one_or_none()
 
         if user:
@@ -224,7 +227,10 @@ async def validate_access_token(access_token: str) -> Optional[Dict[str, Any]]:
     async with async_session_maker() as session:
         result = await session.execute(
             select(User, UserSession)
-            .join(UserSession, User.id == UserSession.user_id)
+            .join(
+                UserSession,
+                cast(ColumnElement[bool], User.id == UserSession.user_id),
+            )
             .where(UserSession.access_token == access_token)
             .where(UserSession.expires_at > datetime.now(UTC).replace(tzinfo=None))
         )
@@ -260,7 +266,9 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
     - Provides a consistent dict payload shape for caller code.
     """
     async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.email == email))
+        result = await session.execute(
+            select(User).where(cast(ColumnElement[bool], User.email == email))
+        )
         user = result.scalar_one_or_none()
 
         if user:
@@ -312,7 +320,7 @@ async def update_user_folder_path(user_id: str, folder_path: str) -> None:
     """
     async with async_session_maker() as session:
         result = await session.execute(
-            select(User).where(User.id == uuid.UUID(user_id))
+            select(User).where(cast(ColumnElement[bool], User.id == uuid.UUID(user_id)))
         )
         user = result.scalar_one_or_none()
 

@@ -24,7 +24,8 @@ except ImportError:
 
 # Optional IPython dependencies for Jupyter/Colab deployment
 try:
-    from IPython.display import Javascript, Markdown, display
+    from IPython.display import (Javascript,  # type: ignore[unresolved-import]
+                                 Markdown, display)
 
     IPYTHON_AVAILABLE = True
 except ImportError:
@@ -33,7 +34,7 @@ except ImportError:
     Javascript: Any = None
     Markdown: Any = None
 
-    def display(x):
+    def display(x: Any) -> None:
         """No-op placeholder when IPython is not available."""
         pass
 
@@ -235,6 +236,10 @@ def start_frontend(
                 Markdown(
                     f"Click the following link to open the web app:\n# [Open web app]({url})"
                 )
+            )
+        else:
+            print(f"Open web app: {url}")
+    return _nginx_proc
             )
         else:
             print(f"Open web app: {url}")

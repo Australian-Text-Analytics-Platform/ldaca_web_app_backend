@@ -5,12 +5,14 @@ These endpoints are now simple HTTP wrappers around DocWorkspace methods.
 All business logic is handled by the DocWorkspace library itself.
 """
 
+import importlib
+import importlib.util
 import logging
 import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -127,7 +129,8 @@ def _export_node_artifact(
         else:
             # Polars does not currently expose LazyFrame.sink_json, so JSON
             # remains the single explicit eager export path.
-            export_data.collect().write_json(output_path)
+            collected_data = cast(pl.DataFrame, export_data.collect())
+            collected_data.write_json(output_path)
     except HTTPException:
         raise
     except Exception as exc:
@@ -308,8 +311,6 @@ def _configure_numba_threading():
         should converge to one shared helper.
     """
     try:
-        import importlib
-
         # Presence in THREADING_LAYER_PRIORITY is only a preference list, not
         # evidence that the TBB runtime is installed/usable.
         numba_available = bool(importlib.util.find_spec("numba"))
@@ -438,9 +439,12 @@ async def add_node_to_workspace(
 
         # Normalize to an eager Polars DataFrame
         try:
+            eager_data: pl.DataFrame
             if isinstance(data, pl.LazyFrame):
-                data = data.collect()
-            elif not isinstance(data, pl.DataFrame):
+                eager_data = cast(pl.DataFrame, data.collect())
+            elif isinstance(data, pl.DataFrame):
+                eager_data = data
+            else:
                 raise TypeError(
                     f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}"
                 )
@@ -472,7 +476,7 @@ async def add_node_to_workspace(
                 break
 
         lazy_data = stage_dataframe_as_lazy(
-            data,
+            eager_data,
             workspace_dir,
             node_name=node_name,
             document_column=None,

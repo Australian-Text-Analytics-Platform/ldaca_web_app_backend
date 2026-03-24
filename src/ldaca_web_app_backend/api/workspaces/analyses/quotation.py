@@ -328,7 +328,11 @@ async def get_quotation(
     task_manager = get_task_manager(user_id)
 
     try:
-        node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+        workspace = workspace_manager.get_current_workspace(user_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="No active workspace selected")
+
+        node = workspace.nodes[node_id]
         try:
             node.document = request.column
             update_workspace(user_id, workspace_id, best_effort=True)
@@ -362,7 +366,7 @@ async def get_quotation(
         except Exception:  # pragma: no cover
             context_length_pref = DEFAULT_CONTEXT_LENGTH
 
-        result_payload = {
+        result_payload: dict[str, Any] = {
             **page_payload,
             "preferences": {"context_length": context_length_pref},
         }
@@ -392,17 +396,21 @@ async def get_quotation(
                 )
 
             task = existing_task
-            task.request = analysis_request
-            task.complete(GenericAnalysisResult(result_payload))
-            task_manager.save_task(task)
 
         else:
             task_id = task_manager.create_task(analysis_request)
             task = task_manager.get_task(task_id)
-            task.request = analysis_request
-            task.complete(GenericAnalysisResult(result_payload))
-            task_manager.save_task(task)
             task_manager.set_current_task("quotation", task_id)
+
+        if task is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to load quotation task",
+            )
+
+        task.request = analysis_request
+        task.complete(GenericAnalysisResult(result_payload))
+        task_manager.save_task(task)
 
         result_payload["metadata"] = {"task_id": task.task_id}
         return result_payload

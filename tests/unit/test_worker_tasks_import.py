@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any, cast
 
 from ldaca_web_app_backend.core import worker_tasks_import
 
@@ -35,8 +36,8 @@ def test_run_ldaca_import_task_uses_data_root_cache_and_restores_cwd(
             observed_cwds.append(Path.cwd())
             return FakeDataFrame()
 
-    fake_package = ModuleType("ldacatabulator")
-    fake_tabulator_module = ModuleType("ldacatabulator.tabulator")
+    fake_package = cast(Any, ModuleType("ldacatabulator"))
+    fake_tabulator_module = cast(Any, ModuleType("ldacatabulator.tabulator"))
     fake_tabulator_module.LDaCATabulator = FakeTabulator
 
     monkeypatch.setitem(sys.modules, "ldacatabulator", fake_package)

@@ -1,8 +1,10 @@
 from concurrent.futures import Future
+from typing import cast
 from unittest.mock import AsyncMock
 
 import polars as pl
 import pytest
+
 from docworkspace import Node
 from ldaca_web_app_backend.core.worker_task_manager import (
     TaskInfo,
@@ -14,7 +16,7 @@ from ldaca_web_app_backend.core.workspace import workspace_manager
 
 @pytest.mark.asyncio
 async def test_detach_task_restores_node_payload_into_workspace_before_persist(
-    authenticated_client, workspace_id
+    authenticated_client, workspace_id, monkeypatch
 ):
     user_id = "test"
     workspace = workspace_manager.get_current_workspace(user_id)
@@ -28,10 +30,12 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     )
     parent_node.document = "text"
 
-    expected_df = pl.DataFrame({
-        "text": ["alpha beta"],
-        "CONC_matched_text": ["alpha"],
-    })
+    expected_df = pl.DataFrame(
+        {
+            "text": ["alpha beta"],
+            "CONC_matched_text": ["alpha"],
+        }
+    )
     detached_node = Node(
         data=expected_df.lazy(),
         name="source_node_concordance",
@@ -49,12 +53,14 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     assert (workspace_dir / node_payload["data_path"]).exists()
 
     future = Future()
-    future.set_result({
-        "state": "successful",
-        "result": {
-            "node_payload": node_payload,
-        },
-    })
+    future.set_result(
+        {
+            "state": "successful",
+            "result": {
+                "node_payload": node_payload,
+            },
+        }
+    )
     task_info = TaskInfo(
         id="task-detach-handoff",
         future=future,
@@ -64,7 +70,8 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     )
 
     manager = WorkerTaskManager()
-    manager.emit = AsyncMock()
+    emit_mock = AsyncMock()
+    monkeypatch.setattr(manager, "emit", cast(object, emit_mock))
 
     await manager._monitor_task_completion(task_info, user_id, workspace_id)
 
@@ -75,7 +82,8 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     detached_node = current_workspace.get_node_by_name("source_node_concordance")
     assert detached_node is not None
     assert detached_node.document == "text"
-    assert detached_node.data.collect().equals(expected_df)
+    detached_df = cast(pl.DataFrame, detached_node.data.collect())
+    assert detached_df.equals(expected_df)
 
     with (workspace_dir / "metadata.json").open("r", encoding="utf-8") as fh:
         persisted = __import__("json").load(fh)
@@ -88,7 +96,8 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     persisted_file = workspace_dir / detached_entry["data_path"]
     assert persisted_file.exists()
     restored = pl.LazyFrame.deserialize(persisted_file.open("rb"), format="binary")
-    assert restored.collect().equals(expected_df)
+    restored_df = cast(pl.DataFrame, restored.collect())
+    assert restored_df.equals(expected_df)
 
     assert workspace_manager.unload_workspace(user_id, workspace_id, save=True) is True
 
@@ -100,4 +109,6 @@ async def test_detach_task_restores_node_payload_into_workspace_before_persist(
     )
     assert reloaded_detached_node is not None
     assert reloaded_detached_node.document == "text"
-    assert reloaded_detached_node.data.collect().equals(expected_df)
+    reloaded_df = cast(pl.DataFrame, reloaded_detached_node.data.collect())
+    assert reloaded_df.equals(expected_df)
+    assert reloaded_df.equals(expected_df)

@@ -4,7 +4,7 @@ import logging
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 try:
     import fastexcel
 except Exception:  # pragma: no cover - optional import hardening
-    fastexcel = None
+    fastexcel: Any | None = None
 
 from ..core.auth import get_current_user
 from ..core.utils import (
@@ -327,18 +327,20 @@ async def get_user_files(current_user: dict = Depends(get_current_user)):
                     )
                 readme_content = folder_readme_cache[folder_rel]
 
-            files.append({
-                "filename": rel_str,  # full path relative to user data root
-                "full_path": rel_str,
-                "display_name": file_path.name,
-                "size": file_path.stat().st_size,
-                "created_at": file_path.stat().st_ctime,
-                "file_type": detect_file_type(file_path.name),
-                "folder": folder_rel,
-                "is_sample": is_sample,
-                "path_type": "sample" if is_sample else "user",
-                "readme": readme_content,
-            })
+            files.append(
+                {
+                    "filename": rel_str,  # full path relative to user data root
+                    "full_path": rel_str,
+                    "display_name": file_path.name,
+                    "size": file_path.stat().st_size,
+                    "created_at": file_path.stat().st_ctime,
+                    "file_type": detect_file_type(file_path.name),
+                    "folder": folder_rel,
+                    "is_sample": is_sample,
+                    "path_type": "sample" if is_sample else "user",
+                    "readme": readme_content,
+                }
+            )
 
     return {
         "files": files,
@@ -615,7 +617,7 @@ async def unified_file_preview(
         else:
             # Non-Excel: prefer lazy scan where available
             lf = _lazy_scan(file_path, file_type).slice(offset, page_size)
-            df = lf.collect()
+            df = cast(pl.DataFrame, lf.collect())
             columns = list(df.columns)
             preview = df.fill_null("None").to_dicts()
             total_rows = 0  # unknown unless we count eagerly

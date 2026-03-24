@@ -11,8 +11,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel
-
 from .models import AnalysisStatus, AnalysisTask, BaseAnalysisRequest
 
 # In-memory storage: user_id -> TaskManagerStore
@@ -76,7 +74,7 @@ class TaskManager:
 
     def create_task(
         self,
-        request: BaseModel | dict | BaseAnalysisRequest,
+        request: BaseAnalysisRequest | dict[str, Any],
     ) -> str:
         """Create and store a new pending analysis task.
 
@@ -133,9 +131,9 @@ class TaskManager:
         return self.store.get_all_tasks()
 
     def _normalize_request(
-        self, request: BaseModel | dict | BaseAnalysisRequest
-    ) -> BaseModel:
-        if isinstance(request, BaseModel):
+        self, request: BaseAnalysisRequest | dict[str, Any]
+    ) -> BaseAnalysisRequest:
+        if isinstance(request, BaseAnalysisRequest):
             return request
         return BaseAnalysisRequest.model_validate(request)
 

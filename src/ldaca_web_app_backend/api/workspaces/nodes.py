@@ -8,12 +8,13 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime
-from typing import Any, List, Optional, cast
+from typing import Any, List, Literal, Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from docworkspace import Node
+from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
@@ -26,6 +27,7 @@ from ...models import (
     ExpressionTransformRequest,
     FilterPreviewResponse,
     FilterRequest,
+    PaginationInfo,
     SliceRequest,
 )
 from .utils import update_workspace
@@ -251,6 +253,20 @@ def _unwrap_lazyframe(data: Any, *, purpose: str) -> pl.LazyFrame:
     return cast(pl.LazyFrame, data)
 
 
+def _require_current_workspace(user_id: str) -> Workspace:
+    workspace = workspace_manager.get_current_workspace(user_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
+def _require_current_workspace_id(user_id: str) -> str:
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if workspace_id is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace_id
+
+
 def _get_node_display_name(node: Any) -> str:
     name = getattr(node, "name", None)
     if name:
@@ -267,7 +283,7 @@ def _get_concat_nodes(user_id: str, node_ids: List[str]) -> List[Any]:
         raise HTTPException(
             status_code=400, detail="At least two node IDs are required"
         )
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     nodes: List[Any] = []
     seen: set[str] = set()
     for raw_node_id in node_ids:
@@ -357,7 +373,9 @@ def _calculate_concat_row_count(
     total = 0
     for lazy_frame in aligned_frames:
         try:
-            count_df = lazy_frame.select(pl.len().alias("_len")).collect()
+            count_df = cast(
+                pl.DataFrame, lazy_frame.select(pl.len().alias("_len")).collect()
+            )
             total += int(count_df.to_series(0).item())
         except Exception:
             return None
@@ -387,7 +405,8 @@ async def compute_column_preview(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    workspace = _require_current_workspace(user_id)
+    data_obj = workspace.nodes[node_id].data
 
     try:
         lazy_data = _unwrap_lazyframe(data_obj, purpose="Compute column preview")
@@ -412,7 +431,10 @@ async def compute_column_preview(
     preview_limit = max(1, min(preview_limit, 500))
 
     try:
-        preview_df = lazy_data.with_columns(expr).limit(preview_limit).collect()
+        preview_df = cast(
+            pl.DataFrame,
+            lazy_data.with_columns(expr).limit(preview_limit).collect(),
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=400,
@@ -438,8 +460,8 @@ async def compute_column_apply(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     data_obj = node.data
     try:
@@ -506,7 +528,7 @@ async def get_node_info(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     try:
         return node.info()
@@ -522,12 +544,12 @@ async def get_node_data(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     data_obj = node.data
     try:
         lazyframe = _unwrap_lazyframe(data_obj, purpose="Get node data")
-        df = lazyframe.collect()
+        df = cast(pl.DataFrame, lazyframe.collect())
         total_rows = len(df)
         start_idx = (page - 1) * page_size
         paginated_df = df.slice(start_idx, page_size)
@@ -554,7 +576,7 @@ async def get_node_shape(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     try:
         return {"shape": node.shape}
@@ -572,7 +594,7 @@ async def get_column_unique_values(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     data_obj = node.data
     try:
@@ -581,10 +603,11 @@ async def get_column_unique_values(
         schema_map: dict[str, Any] = dict(schema.items())
         try:
             if _is_string_list_dtype(schema_map.get(column_name)):
-                unique_df = (
+                unique_df = cast(
+                    pl.DataFrame,
                     lazyframe.select(pl.col(column_name).explode().alias(column_name))
                     .unique(maintain_order=True)
-                    .collect()
+                    .collect(),
                 )
                 raw_values = unique_df.get_column(column_name).to_list()
                 has_null = any(value is None for value in raw_values)
@@ -601,10 +624,11 @@ async def get_column_unique_values(
                     "has_null": has_null,
                 }
 
-            unique_df = (
+            unique_df = cast(
+                pl.DataFrame,
                 lazyframe.select(pl.col(column_name).alias(column_name))
                 .unique(maintain_order=True)
-                .collect()
+                .collect(),
             )
             raw_values = unique_df.get_column(column_name).to_list()
             has_null = any(value is None for value in raw_values)
@@ -638,16 +662,13 @@ async def describe_column(
     from ...models import ColumnDescribeResponse
 
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
+    ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
     data_obj = node.data
 
     try:
         lazyframe = _unwrap_lazyframe(data_obj, purpose="Describe column")
-        df = lazyframe.collect()
-
-        # Check if column is datetime type
-        import polars as pl
+        df = cast(pl.DataFrame, lazyframe.collect())
 
         column_dtype = df.schema[column_name]
         is_datetime_column = column_dtype in (
@@ -730,10 +751,8 @@ async def describe_column(
 @router.delete("/nodes/{node_id}")
 async def delete_node(node_id: str, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
     success = workspace.remove_node(node_id)
     if success:
         update_workspace(user_id, workspace_id)
@@ -749,8 +768,9 @@ async def update_node_name(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
+    node = workspace.nodes[node_id]
     try:
         node.name = new_name
         update_workspace(user_id, workspace_id, best_effort=True)
@@ -770,11 +790,9 @@ async def clone_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
+    node = workspace.nodes[node_id]
 
     def _unique_clone_name(original: str) -> str:
         base = original or node_id
@@ -817,17 +835,15 @@ async def filter_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
+    node = workspace.nodes[node_id]
     data_obj = node.data
     lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter node")
     schema_map: dict[str, Any] = dict(lazy_data.collect_schema().items())
     filter_expr = _build_filter_expression(request, column_dtypes=schema_map)
     filtered_data = lazy_data.filter(filter_expr)
     new_node_name = request.new_node_name or f"{node.name}_filtered"
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
     new_node = Node(
         data=filtered_data,
         name=new_node_name,
@@ -852,7 +868,8 @@ async def filter_preview(
     current_user: dict = Depends(get_current_user),
 ) -> FilterPreviewResponse:
     user_id = current_user["id"]
-    data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    workspace = _require_current_workspace(user_id)
+    data_obj = workspace.nodes[node_id].data
     lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter preview")
 
     try:
@@ -864,9 +881,11 @@ async def filter_preview(
     try:
         filtered_lazy = lazy_data.filter(filter_expr)
 
-        total_rows_series = (
-            filtered_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+        total_rows_df = cast(
+            pl.DataFrame,
+            filtered_lazy.select(pl.len().alias("_len")).collect(),
         )
+        total_rows_series = total_rows_df.to_series(0)
         total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
 
         normalized_page_size = page_size
@@ -875,9 +894,15 @@ async def filter_preview(
         start_idx = (normalized_page - 1) * normalized_page_size if total_rows else 0
 
         preview_df = (
-            filtered_lazy.slice(start_idx, normalized_page_size).collect()
+            cast(
+                pl.DataFrame,
+                filtered_lazy.slice(start_idx, normalized_page_size).collect(),
+            )
             if total_rows
-            else filtered_lazy.slice(0, normalized_page_size).collect()
+            else cast(
+                pl.DataFrame,
+                filtered_lazy.slice(0, normalized_page_size).collect(),
+            )
         )
     except HTTPException:
         raise
@@ -891,19 +916,19 @@ async def filter_preview(
     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
     data_rows = preview_df.to_dicts()
 
-    return {
-        "data": data_rows,
-        "columns": columns,
-        "dtypes": dtypes,
-        "pagination": {
-            "page": normalized_page,
-            "page_size": normalized_page_size,
-            "total_rows": total_rows,
-            "total_pages": total_pages,
-            "has_next": normalized_page < total_pages,
-            "has_prev": normalized_page > 1 and total_rows > 0,
-        },
-    }
+    return FilterPreviewResponse(
+        data=data_rows,
+        columns=columns,
+        dtypes=dtypes,
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=normalized_page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=normalized_page < total_pages,
+            has_prev=normalized_page > 1 and total_rows > 0,
+        ),
+    )
 
 
 @router.post("/nodes/{node_id}/slice")
@@ -913,8 +938,9 @@ async def slice_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
+    node = workspace.nodes[node_id]
     data_obj = node.data
     lazy_data = _unwrap_lazyframe(data_obj, purpose="Slice node")
     offset = int(request.offset or 0)
@@ -924,9 +950,6 @@ async def slice_node(
     slice_args = f"offset={offset}"
     if length is not None:
         slice_args = f"{slice_args}, length={length}"
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
     new_node = Node(
         data=sliced_data,
         name=new_node_name,
@@ -951,7 +974,8 @@ async def slice_preview(
     current_user: dict = Depends(get_current_user),
 ) -> FilterPreviewResponse:
     user_id = current_user["id"]
-    data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    workspace = _require_current_workspace(user_id)
+    data_obj = workspace.nodes[node_id].data
 
     offset = int(request.offset or 0)
     length = request.length if request.length is None else int(request.length)
@@ -960,9 +984,11 @@ async def slice_preview(
         lazy_data = _unwrap_lazyframe(data_obj, purpose="Slice preview")
         sliced_lazy = lazy_data.slice(offset, length)
 
-        total_rows_series = (
-            sliced_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+        total_rows_df = cast(
+            pl.DataFrame,
+            sliced_lazy.select(pl.len().alias("_len")).collect(),
         )
+        total_rows_series = total_rows_df.to_series(0)
         total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
 
         normalized_page_size = page_size
@@ -972,7 +998,10 @@ async def slice_preview(
             (normalized_page - 1) * normalized_page_size if total_rows else 0
         )
 
-        preview_df = sliced_lazy.slice(preview_offset, normalized_page_size).collect()
+        preview_df = cast(
+            pl.DataFrame,
+            sliced_lazy.slice(preview_offset, normalized_page_size).collect(),
+        )
     except HTTPException:
         raise
     except Exception as exc:  # pragma: no cover
@@ -985,19 +1014,19 @@ async def slice_preview(
     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
     data_rows = preview_df.to_dicts()
 
-    return {
-        "data": data_rows,
-        "columns": columns,
-        "dtypes": dtypes,
-        "pagination": {
-            "page": normalized_page,
-            "page_size": normalized_page_size,
-            "total_rows": total_rows,
-            "total_pages": total_pages,
-            "has_next": preview_offset + normalized_page_size < total_rows,
-            "has_prev": normalized_page > 1 and total_rows > 0,
-        },
-    }
+    return FilterPreviewResponse(
+        data=data_rows,
+        columns=columns,
+        dtypes=dtypes,
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=normalized_page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=preview_offset + normalized_page_size < total_rows,
+            has_prev=normalized_page > 1 and total_rows > 0,
+        ),
+    )
 
 
 @router.post("/nodes/concat/preview")
@@ -1026,7 +1055,10 @@ async def concat_nodes_preview(
             normalized_page = max(page, 1)
             offset = (normalized_page - 1) * normalized_page_size
 
-        preview_df = concat_lazy.slice(offset, normalized_page_size).collect()
+        preview_df = cast(
+            pl.DataFrame,
+            concat_lazy.slice(offset, normalized_page_size).collect(),
+        )
         data_rows = preview_df.to_dicts()
 
         if total_rows is None:
@@ -1070,7 +1102,7 @@ async def concat_nodes(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
     try:
         nodes = _get_concat_nodes(user_id, request.node_ids)
         aligned_frames, _, _ = _validate_and_align_concat_nodes(nodes)
@@ -1082,9 +1114,7 @@ async def concat_nodes(
         else:
             operation_args = ", ".join(labels)
         operation_label = f"concat({operation_args})"
-        workspace = workspace_manager.get_current_workspace(user_id)
-        if workspace is None:
-            raise HTTPException(status_code=404, detail="Workspace not found")
+        workspace = _require_current_workspace(user_id)
         new_node = Node(
             data=concat_lazy,
             name=node_name,
@@ -1113,7 +1143,7 @@ async def join_nodes_preview(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace = _require_current_workspace(user_id)
     left_node = workspace.nodes[left_node_id]
     right_node = workspace.nodes[right_node_id]
     try:
@@ -1124,6 +1154,10 @@ async def join_nodes_preview(
                 status_code=400,
                 detail="Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",
             )
+        join_how = cast(
+            Literal["inner", "left", "right", "full", "semi", "anti", "cross"],
+            how_val,
+        )
 
         left_lazy = _unwrap_lazyframe(
             left_node.data, purpose="Join preview requires lazy left node"
@@ -1132,7 +1166,7 @@ async def join_nodes_preview(
             right_node.data, purpose="Join preview requires lazy right node"
         )
 
-        if how_val == "cross":
+        if join_how == "cross":
             joined_lazy = left_lazy.join(right_lazy, how="cross")
         else:
             if not left_on or not right_on:
@@ -1141,20 +1175,24 @@ async def join_nodes_preview(
                     detail="left_on and right_on must be provided for non-cross joins",
                 )
             joined_lazy = left_lazy.join(
-                right_lazy, left_on=left_on, right_on=right_on, how=how_val
+                right_lazy, left_on=left_on, right_on=right_on, how=join_how
             )
 
         try:
-            total_rows_series = (
-                joined_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+            total_rows_df = cast(
+                pl.DataFrame,
+                joined_lazy.select(pl.len().alias("_len")).collect(),
             )
+            total_rows_series = total_rows_df.to_series(0)
             total_rows = int(total_rows_series.item())
         except Exception:
             total_rows = None
 
         offset = (page - 1) * page_size
         try:
-            preview_df = joined_lazy.slice(offset, page_size).collect()
+            preview_df = cast(
+                pl.DataFrame, joined_lazy.slice(offset, page_size).collect()
+            )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Join preview failed: {exc}")
 
@@ -1204,8 +1242,8 @@ async def join_nodes(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    workspace = workspace_manager.get_current_workspace(user_id)
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
     left_node = workspace.nodes[left_node_id]
     right_node = workspace.nodes[right_node_id]
     try:
@@ -1222,14 +1260,17 @@ async def join_nodes(
                 status_code=400,
                 detail="Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",
             )
-        if how_val == "cross":
+        join_how = cast(
+            Literal["inner", "left", "right", "full", "semi", "anti", "cross"],
+            how_val,
+        )
+        if join_how == "cross":
             joined_data = left_data.join(right_data, how="cross")
         else:
             joined_data = left_data.join(
-                right_data, left_on=left_on, right_on=right_on, how=how_val
+                right_data, left_on=left_on, right_on=right_on, how=join_how
             )
         node_name = new_node_name or f"{left_node.name}_join_{right_node.name}"
-        workspace = workspace_manager.get_current_workspace(user_id)
         new_node = Node(
             data=joined_data,
             name=node_name,

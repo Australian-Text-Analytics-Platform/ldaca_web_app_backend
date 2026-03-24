@@ -7,6 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -152,9 +153,7 @@ async def lifespan(app: FastAPI):
 
         worker_pool = get_worker_pool()
         if worker_pool.is_running:
-            print(
-                f"Shutting down worker pool ({worker_pool.active_task_count} active tasks)..."
-            )
+            print("Shutting down worker pool...")
             worker_pool.shutdown(wait=True, timeout=5.0)
             print("Worker pool shutdown complete")
     except Exception as e:
@@ -180,7 +179,7 @@ app = FastAPI(
 # - tauri://localhost and https://tauri.localhost for Tauri desktop app (v1 and v2)
 # - Allow all origins via regex to ensure no blocking on desktop
 app.add_middleware(
-    CORSMiddleware,
+    cast(Any, CORSMiddleware),
     allow_origin_regex=r".*",
     allow_credentials=True,
     allow_methods=["*"],
