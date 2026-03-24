@@ -183,7 +183,8 @@ def test_start_frontend_uses_existing_build_dir_and_cleans_nginx_runtime(
     assert commands[0] == f"nginx -p {nginx_dir} -c nginx.conf -s quit"
     assert f"FRONTEND_DIR={expected_build_dir}" in commands[1]
 
-    assert "MIME_TYPES_PATH=/opt/homebrew/etc/nginx/mime.types" in commands[1]
+    expected_mime_types = deploy._shell_quote(Path("/opt/homebrew/etc/nginx/mime.types"))
+    assert f"MIME_TYPES_PATH={expected_mime_types}" in commands[1]
     assert not (nginx_dir / "run" / "nginx.pid").exists()
     assert (nginx_dir / "logs").exists()
     assert (nginx_dir / "tmp").exists()
