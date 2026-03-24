@@ -160,10 +160,7 @@ async def quotation_task_result(
         except Exception:
             return base_result
 
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            return base_result
+        node = ws.nodes[node_id]
 
         normalized_page, normalized_size = qcore.normalize_pagination(
             page if page is not None else 1,
@@ -268,10 +265,7 @@ async def update_quotation_task_result(
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=400, detail=f"Invalid engine config: {exc}")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
+    node = ws.nodes[node_id]
 
     normalized_page, normalized_size = qcore.normalize_pagination(
         query.page if query.page is not None else 1,
@@ -447,21 +441,10 @@ async def quotation_detach_options(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400, detail="Selected node data must be a LazyFrame"
-        )
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     available_schema_columns = list(node_data.collect_schema().names())
-    if column not in available_schema_columns:
-        raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
-
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
     optional_columns = [
         col for col in [column, *available_schema_columns] if col not in mandatory_set
@@ -506,23 +489,9 @@ async def detach_quotation(
         raise HTTPException(status_code=404, detail="No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
+    node = ws.nodes[node_id]
+    node_data = node.data
 
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400, detail="Selected node data must be a LazyFrame"
-        )
-
-    if request.column not in node_data.collect_schema().names():
-        raise HTTPException(
-            status_code=400, detail=f"Column '{request.column}' not found"
-        )
-
-    schema_names = node_data.collect_schema().names()
     include_document_column = False
     columns_to_select: list[str] = []
     if request.selected_columns:
@@ -530,15 +499,14 @@ async def detach_quotation(
             if col == request.column:
                 include_document_column = True
                 continue
-            if col in schema_names:
-                columns_to_select.append(col)
+            columns_to_select.append(col)
 
     corpus_df = (
-        node_data
-        .select([pl.col(request.column)] + [pl.col(col) for col in columns_to_select])
+        node_data.select(
+            [pl.col(request.column)] + [pl.col(col) for col in columns_to_select]
+        )
         .filter(
-            pl
-            .col(request.column)
+            pl.col(request.column)
             .cast(pl.Utf8, strict=False)
             .str.strip_chars()
             .str.len_chars()

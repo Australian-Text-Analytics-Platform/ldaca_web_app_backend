@@ -81,6 +81,49 @@ class TestWorkspaceAPI:
             assert data["description"] == "New test workspace"
             assert data["total_nodes"] == 0  # Use latest docworkspace terminology
 
+    async def test_update_workspace_description(self, authenticated_client):
+        """Test updating the current workspace description"""
+        mock_workspace = Mock()
+        mock_workspace.description = "Existing description"
+        mock_workspace.info_json.return_value = {
+            "id": "workspace-123",
+            "name": "Test Workspace",
+            "description": "Updated description",
+            "created_at": "2024-01-01T00:00:00Z",
+            "modified_at": "2024-01-01T12:00:00Z",
+            "total_nodes": 0,
+        }
+
+        with (
+            patch(
+                "ldaca_web_app_backend.api.workspaces.lifecycle.workspace_manager.get_current_workspace_id"
+            ) as mock_get_current_id,
+            patch(
+                "ldaca_web_app_backend.api.workspaces.lifecycle.workspace_manager.get_current_workspace"
+            ) as mock_get_current_workspace,
+            patch(
+                "ldaca_web_app_backend.api.workspaces.lifecycle.update_workspace"
+            ) as mock_update_workspace,
+        ):
+            mock_get_current_id.return_value = "workspace-123"
+            mock_get_current_workspace.return_value = mock_workspace
+
+            response = await authenticated_client.put(
+                "/api/workspaces/description",
+                params={"description": "Updated description"},
+            )
+
+            assert response.status_code == 200
+            assert mock_workspace.description == "Updated description"
+            mock_update_workspace.assert_called_once_with(
+                "test",
+                "workspace-123",
+                mock_workspace,
+            )
+
+            data = response.json()
+            assert data["description"] == "Updated description"
+
     async def test_get_workspace_info(self, authenticated_client):
         """Test getting specific workspace information"""
         mock_workspace = Mock()
@@ -372,12 +415,14 @@ class TestWorkspaceAPI:
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(
                 "metadata.json",
-                json.dumps({
-                    "workspace_metadata": {
-                        "id": "imported-id",
-                        "name": "Imported Workspace",
+                json.dumps(
+                    {
+                        "workspace_metadata": {
+                            "id": "imported-id",
+                            "name": "Imported Workspace",
+                        }
                     }
-                }),
+                ),
             )
             zf.writestr("data/example.parquet", b"fake-bytes")
         zip_buffer.seek(0)
@@ -545,10 +590,12 @@ class TestWorkspaceAPI:
 
         # Create mock node with test data (use ISO format that Polars can auto-parse)
         mock_node = Mock()
-        test_df = pl.DataFrame({
-            "created_at": ["2024-01-01T10:30:15", "2024-01-02T14:45:30"],
-            "name": ["Alice", "Bob"],
-        })
+        test_df = pl.DataFrame(
+            {
+                "created_at": ["2024-01-01T10:30:15", "2024-01-02T14:45:30"],
+                "name": ["Alice", "Bob"],
+            }
+        )
         mock_node.data = test_df.lazy()
 
         with (
@@ -757,7 +804,7 @@ class TestWorkspaceAPI:
                 assert "Node not found" in response.json()["detail"]
 
     async def test_cast_node_invalid_column(self, authenticated_client):
-        """Test casting when column doesn't exist"""
+        """Test casting lets missing columns fail through normal execution."""
         import polars as pl
 
         mock_node = Mock()
@@ -779,9 +826,10 @@ class TestWorkspaceAPI:
                     "/api/workspaces/nodes/test-node/cast", json=cast_data
                 )
 
-                assert response.status_code == 400
+                assert response.status_code == 500
                 assert (
-                    "Column 'nonexistent_column' not found" in response.json()["detail"]
+                    "Unexpected error during casting operation"
+                    in response.json()["detail"]
                 )
 
     async def test_cast_node_invalid_request_data(self, authenticated_client):
@@ -803,10 +851,12 @@ class TestWorkspaceAPI:
 
         # Test with LazyFrame
         mock_node_lazy = Mock()
-        test_lazy_df = pl.DataFrame({
-            "created_at": ["2024-01-01T10:30:15", "2024-01-02T14:45:30"],
-            "name": ["Alice", "Bob"],
-        }).lazy()
+        test_lazy_df = pl.DataFrame(
+            {
+                "created_at": ["2024-01-01T10:30:15", "2024-01-02T14:45:30"],
+                "name": ["Alice", "Bob"],
+            }
+        ).lazy()
         mock_node_lazy.data = test_lazy_df
 
         with (
@@ -857,10 +907,12 @@ class TestWorkspaceAPI:
 
         mock_node = Mock()
         mock_node.document = "text"
-        lazy_data = pl.DataFrame({
-            "text": ["doc one", "doc two"],
-            "score": ["1", "2"],
-        }).lazy()
+        lazy_data = pl.DataFrame(
+            {
+                "text": ["doc one", "doc two"],
+                "score": ["1", "2"],
+            }
+        ).lazy()
         mock_node.data = lazy_data
 
         with (
@@ -895,13 +947,15 @@ class TestWorkspaceAPI:
         import polars as pl
 
         mock_node = Mock()
-        test_df = pl.DataFrame({
-            "created_at": [
-                datetime(2024, 1, 1, 10, 30, 15),
-                datetime(2024, 1, 2, 14, 45, 30),
-            ],
-            "name": ["Alice", "Bob"],
-        })
+        test_df = pl.DataFrame(
+            {
+                "created_at": [
+                    datetime(2024, 1, 1, 10, 30, 15),
+                    datetime(2024, 1, 2, 14, 45, 30),
+                ],
+                "name": ["Alice", "Bob"],
+            }
+        )
         mock_node.data = test_df.lazy()
 
         with (
@@ -1060,9 +1114,9 @@ class TestWorkspaceAPI:
         """String-list columns return flattened unique string elements."""
         import polars as pl
 
-        source_df = pl.DataFrame({
-            "topic": [["a", "b"], ["b", "c"], None, [], ["d"]]
-        }).lazy()
+        source_df = pl.DataFrame(
+            {"topic": [["a", "b"], ["b", "c"], None, [], ["d"]]}
+        ).lazy()
 
         class DummyNode:
             def __init__(self):
@@ -1117,17 +1171,21 @@ class TestWorkspaceAPI:
 
         # Create test nodes
         left_node = Mock()
-        left_node.data = pl.DataFrame({
-            "username": ["alice", "bob"],
-            "left_data": [1, 2],
-        }).lazy()
+        left_node.data = pl.DataFrame(
+            {
+                "username": ["alice", "bob"],
+                "left_data": [1, 2],
+            }
+        ).lazy()
         left_node.name = "left_node"
 
         right_node = Mock()
-        right_node.data = pl.DataFrame({
-            "username": ["alice", "bob"],
-            "right_data": [10, 20],
-        }).lazy()
+        right_node.data = pl.DataFrame(
+            {
+                "username": ["alice", "bob"],
+                "right_data": [10, 20],
+            }
+        ).lazy()
         right_node.name = "right_node"
 
         # Mock joined result node

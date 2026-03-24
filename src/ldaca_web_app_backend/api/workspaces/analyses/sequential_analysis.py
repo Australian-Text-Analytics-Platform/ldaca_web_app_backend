@@ -152,28 +152,31 @@ def _run_sequential_analysis(
     group_cols = ["time_period"] + (group_by_columns or [])
 
     # Perform aggregation
-    result_df = df.group_by(group_cols).agg([
-        pl.len().alias("sequential_count"),
-        pl.col(time_column).min().alias("period_start"),
-        pl.col(time_column).max().alias("period_end"),
-    ])
+    result_df = df.group_by(group_cols).agg(
+        [
+            pl.len().alias("sequential_count"),
+            pl.col(time_column).min().alias("period_start"),
+            pl.col(time_column).max().alias("period_end"),
+        ]
+    )
 
     # Add formatted time period for display
     if normalized_column_type == "datetime":
         if frequency == "weekly":
             result_df = result_df.with_columns(
-                pl
-                .col("time_period")
+                pl.col("time_period")
                 .dt.strftime("%Y-W%W")
                 .alias("time_period_formatted")
             )
         elif frequency == "quarterly":
-            result_df = result_df.with_columns([
-                pl.col("time_period").dt.year().alias("__year__"),
-                ((pl.col("time_period").dt.month() - 1).floordiv(3).add(1)).alias(
-                    "__quarter__"
-                ),
-            ])
+            result_df = result_df.with_columns(
+                [
+                    pl.col("time_period").dt.year().alias("__year__"),
+                    ((pl.col("time_period").dt.month() - 1).floordiv(3).add(1)).alias(
+                        "__quarter__"
+                    ),
+                ]
+            )
             result_df = result_df.with_columns(
                 pl.format(
                     "{}-Q{}",
@@ -183,44 +186,47 @@ def _run_sequential_analysis(
             ).drop(["__year__", "__quarter__"])
         else:
             result_df = result_df.with_columns(
-                pl
-                .col("time_period")
+                pl.col("time_period")
                 .dt.strftime(time_format)
                 .alias("time_period_formatted")
             )
     else:
         interval_lit = pl.lit(numeric_interval_value)
-        result_df = result_df.with_columns([
-            pl.col("time_period").round(6).alias("time_period"),
-            (pl.col("time_period") + interval_lit).alias("__numeric_period_end__"),
-        ])
+        result_df = result_df.with_columns(
+            [
+                pl.col("time_period").round(6).alias("time_period"),
+                (pl.col("time_period") + interval_lit).alias("__numeric_period_end__"),
+            ]
+        )
 
         def _format_numeric(value: Optional[float]) -> Optional[str]:
             if value is None:
                 return None
             return format(value, ".6g")
 
-        result_df = result_df.with_columns([
-            pl
-            .col("time_period")
-            .map_elements(_format_numeric, return_dtype=pl.String)
-            .alias("__numeric_period_label_start__"),
-            pl
-            .col("__numeric_period_end__")
-            .map_elements(_format_numeric, return_dtype=pl.String)
-            .alias("__numeric_period_label_end__"),
-        ])
+        result_df = result_df.with_columns(
+            [
+                pl.col("time_period")
+                .map_elements(_format_numeric, return_dtype=pl.String)
+                .alias("__numeric_period_label_start__"),
+                pl.col("__numeric_period_end__")
+                .map_elements(_format_numeric, return_dtype=pl.String)
+                .alias("__numeric_period_label_end__"),
+            ]
+        )
         result_df = result_df.with_columns(
             pl.format(
                 "[{}, {})",
                 pl.col("__numeric_period_label_start__"),
                 pl.col("__numeric_period_label_end__"),
             ).alias("time_period_formatted")
-        ).drop([
-            "__numeric_period_end__",
-            "__numeric_period_label_start__",
-            "__numeric_period_label_end__",
-        ])
+        ).drop(
+            [
+                "__numeric_period_end__",
+                "__numeric_period_label_start__",
+                "__numeric_period_label_end__",
+            ]
+        )
 
     # Sort by time if requested
     if sort_by_time:
@@ -278,19 +284,8 @@ async def run_sequential_analysis(
             )
 
     try:
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail="Node not found")
-        node_data = getattr(node, "data", None)
-        if node_data is None:
-            raise HTTPException(status_code=400, detail="Node has no data")
-
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail="Node data must be a LazyFrame",
-            )
+        node = ws.nodes[node_id]
+        node_data = node.data
 
         schema = node_data.collect_schema()
 
@@ -327,23 +322,11 @@ async def run_sequential_analysis(
         for name, raw in zip(schema.names(), schema.dtypes()):
             register_type(name, raw)
 
-        if available_columns and request.time_column not in available_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Time column '{request.time_column}' not found. Available columns: {available_columns}",
-            )
-
         if request.group_by_columns:
             if len(request.group_by_columns) > 3:
                 raise HTTPException(
                     status_code=400, detail="Maximum 3 group by columns allowed"
                 )
-            for col in request.group_by_columns:
-                if available_columns and col not in available_columns:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Group by column '{col}' not found. Available columns: {available_columns}",
-                    )
 
         inferred_type = column_type_lookup.get(request.time_column)
         numeric_types = {"integer", "float"}

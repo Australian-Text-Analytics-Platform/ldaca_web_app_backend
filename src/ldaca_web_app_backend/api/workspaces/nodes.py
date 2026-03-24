@@ -11,8 +11,9 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 import polars as pl
-from docworkspace import Node
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+from docworkspace import Node
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
@@ -581,17 +582,11 @@ async def get_column_unique_values(
     try:
         lazyframe = _unwrap_lazyframe(data_obj, purpose="Get unique column values")
         schema = lazyframe.collect_schema()
-        columns = list(schema.names())
         schema_map: dict[str, Any] = dict(schema.items())
-        if column_name not in columns:
-            raise HTTPException(
-                status_code=404, detail=f"Column '{column_name}' not found"
-            )
         try:
             if _is_string_list_dtype(schema_map.get(column_name)):
                 unique_df = (
-                    lazyframe
-                    .select(pl.col(column_name).explode().alias(column_name))
+                    lazyframe.select(pl.col(column_name).explode().alias(column_name))
                     .unique(maintain_order=True)
                     .collect()
                 )
@@ -611,8 +606,7 @@ async def get_column_unique_values(
                 }
 
             unique_df = (
-                lazyframe
-                .select(pl.col(column_name).alias(column_name))
+                lazyframe.select(pl.col(column_name).alias(column_name))
                 .unique(maintain_order=True)
                 .collect()
             )
@@ -654,13 +648,6 @@ async def describe_column(
 
     try:
         lazyframe = _unwrap_lazyframe(data_obj, purpose="Describe column")
-        columns = list(lazyframe.collect_schema().names())
-
-        if column_name not in columns:
-            raise HTTPException(
-                status_code=404, detail=f"Column '{column_name}' not found"
-            )
-
         df = lazyframe.collect()
 
         # Check if column is datetime type
@@ -1259,4 +1246,5 @@ async def join_nodes(
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Join failed: {e}")
         raise HTTPException(status_code=500, detail=f"Join failed: {e}")

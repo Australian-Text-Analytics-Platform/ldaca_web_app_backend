@@ -9,6 +9,7 @@ Includes:
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -27,6 +28,7 @@ from ....models import (
     ConcordanceDetachOptionsResponse,
     ConcordanceDetachRequest,
 )
+from ..utils import update_workspace
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     DEFAULT_CONCORDANCE_PAGE,
@@ -37,6 +39,7 @@ from .concordance_core import (
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
+logger = logging.getLogger(__name__)
 
 
 class ConcordanceResultQuery(BaseModel):
@@ -117,12 +120,22 @@ async def run_concordance(
             status_code=400, detail="At least one node ID must be provided"
         )
 
-    for nid in request.node_ids:
-        if nid not in request.node_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing text column selection for node {nid}",
-            )
+    workspace = workspace_manager.get_current_workspace(user_id)
+    if workspace is not None:
+        document_column_updated = False
+        for node_id in request.node_ids:
+            try:
+                workspace.nodes[node_id].document = request.node_columns[node_id]
+                document_column_updated = True
+            except Exception as exc:
+                logger.debug(
+                    "Failed to set concordance node.document for node %s column %s: %s",
+                    node_id,
+                    request.node_columns[node_id],
+                    exc,
+                )
+        if document_column_updated:
+            update_workspace(user_id, workspace_id, best_effort=True)
 
     try:
         from ....analysis.implementations.concordance import ConcordanceRequest
@@ -309,19 +322,8 @@ async def detach_concordance(
         raise HTTPException(status_code=404, detail="No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
     node = ws.nodes[node_id]
+    node_data = node.data
 
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400, detail="Selected node data must be a LazyFrame"
-        )
-
-    if request.column not in node_data.collect_schema().names():
-        raise HTTPException(
-            status_code=400, detail=f"Column '{request.column}' not found"
-        )
-
-    schema_names = node_data.collect_schema().names()
     include_document_column = False
     columns_to_select: list[str] = []
     if request.selected_columns:
@@ -329,15 +331,14 @@ async def detach_concordance(
             if col == request.column:
                 include_document_column = True
                 continue
-            if col in schema_names:
-                columns_to_select.append(col)
+            columns_to_select.append(col)
 
     corpus_df = (
-        node_data
-        .select([pl.col(request.column)] + [pl.col(c) for c in columns_to_select])
+        node_data.select(
+            [pl.col(request.column)] + [pl.col(c) for c in columns_to_select]
+        )
         .filter(
-            pl
-            .col(request.column)
+            pl.col(request.column)
             .cast(pl.Utf8, strict=False)
             .str.strip_chars()
             .str.len_chars()
@@ -420,21 +421,10 @@ async def concordance_detach_options(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400, detail="Selected node data must be a LazyFrame"
-        )
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     available_schema_columns = list(node_data.collect_schema().names())
-    if column not in available_schema_columns:
-        raise HTTPException(status_code=400, detail=f"Column '{column}' not found")
-
     mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
     mandatory_set = set(mandatory_columns)
     optional_columns = [

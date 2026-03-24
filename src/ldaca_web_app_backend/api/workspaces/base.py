@@ -13,8 +13,9 @@ from pathlib import Path
 from typing import Optional
 
 import polars as pl
-from docworkspace import Node
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+
+from docworkspace import Node
 
 from ...core.auth import get_current_user
 
@@ -72,8 +73,7 @@ def _stringify_value_for_csv(value: object) -> str | None:
 def _stringify_lazyframe_for_csv(data: pl.LazyFrame) -> pl.LazyFrame:
     """Convert every column to string for CSV exports only."""
     return data.select(
-        pl
-        .col(column_name)
+        pl.col(column_name)
         .map_elements(_stringify_value_for_csv, return_dtype=pl.String)
         .alias(column_name)
         for column_name in data.collect_schema().names()
@@ -629,16 +629,6 @@ async def cast_node(
             )
 
         schema = lazyframe.collect_schema()
-        columns = list(schema.keys())
-        if column_name not in columns:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Column '{column_name}' not found in data. "
-                    f"Available columns: {columns}"
-                ),
-            )
-
         original_dtype = schema[column_name]
         original_type = str(original_dtype)
 
@@ -697,8 +687,7 @@ async def cast_node(
                     if datetime_format:
                         # Use chrono-compatible formatting tokens
                         cast_expr = (
-                            pl
-                            .col(column_name)
+                            pl.col(column_name)
                             .dt.strftime(datetime_format)
                             .alias(column_name)
                         )
@@ -718,16 +707,14 @@ async def cast_node(
                 if "float" in orig_lower:
                     # Truncate decimals by casting directly (Polars truncates toward zero)
                     cast_expr = (
-                        col_expr
-                        .cast(pl.Float64, strict=False)
+                        col_expr.cast(pl.Float64, strict=False)
                         .cast(pl.Int64, strict=False)
                         .alias(column_name)
                     )
                 elif any(tok in orig_lower for tok in ["utf8", "string", "str"]):
                     # Attempt float parse (lenient) then truncate by casting to int
                     cast_expr = (
-                        col_expr
-                        .cast(pl.Float64, strict=False)
+                        col_expr.cast(pl.Float64, strict=False)
                         .cast(pl.Int64, strict=False)
                         .alias(column_name)
                     )
@@ -747,8 +734,7 @@ async def cast_node(
                     )
                 else:
                     cast_expr = (
-                        col_expr
-                        .cast(pl.Utf8, strict=False)
+                        col_expr.cast(pl.Utf8, strict=False)
                         .cast(pl.Categorical, strict=False)
                         .alias(column_name)
                     )
@@ -861,7 +847,9 @@ async def export_nodes(
             f"{now.hour:02d}-{now.minute:02d}-{now.second:02d}"
         )
 
-    with tempfile.TemporaryDirectory(prefix=f"workspace_export_{workspace_id}_") as temp_dir:
+    with tempfile.TemporaryDirectory(
+        prefix=f"workspace_export_{workspace_id}_"
+    ) as temp_dir:
         export_dir = Path(temp_dir)
         exported: list[tuple[str, Path]] = []
 
@@ -908,6 +896,7 @@ async def export_nodes(
 # ============================================================================
 
 
+# ============================================================================
 # ============================================================================
 # ============================================================================
 # ============================================================================

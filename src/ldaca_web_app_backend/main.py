@@ -253,6 +253,7 @@ async def root():
                 "nodes": "/api/workspaces/nodes",
                 "node_data": "/api/workspaces/nodes/{node_id}/data",
                 "save": "/api/workspaces/save",
+                "description": "/api/workspaces/description",
                 "unload": "/api/workspaces/unload",
             },
             "admin": {"users": "/api/admin/users", "cleanup": "/api/admin/cleanup"},

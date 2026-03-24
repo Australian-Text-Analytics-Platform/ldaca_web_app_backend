@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import polars as pl
 import pytest
 from httpx import AsyncClient
+
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
 from ldaca_web_app_backend.api.workspaces.analyses.token_frequencies import (
@@ -329,7 +330,7 @@ class TestTokenFrequencyPersistence:
     async def test_token_frequency_with_invalid_node_fails(
         self, authenticated_client, workspace_id
     ):
-        """Test that token frequency with invalid node ID fails gracefully."""
+        """Test that invalid token-frequency node IDs now propagate directly."""
         # Given: A request with non-existent node ID
         request_payload = {
             "node_ids": ["nonexistent_node"],
@@ -337,14 +338,12 @@ class TestTokenFrequencyPersistence:
         }
 
         # When: We call the token frequencies endpoint
-        response = await post_json(
-            authenticated_client,
-            "/api/workspaces/token-frequencies",
-            request_payload,
-        )
-
-        # Then: The response indicates failure
-        assert response.status_code == 404
+        with pytest.raises(KeyError):
+            await post_json(
+                authenticated_client,
+                "/api/workspaces/token-frequencies",
+                request_payload,
+            )
 
     async def test_token_frequency_multiple_nodes(
         self,
@@ -516,14 +515,16 @@ class TestSequentialAnalysisPersistence:
             "sort_by_time": True,
         }
 
-        dummy_df = pl.DataFrame({
-            "published_at": [
-                datetime(2024, 1, 1),
-                datetime(2024, 1, 1),
-                datetime(2024, 1, 2),
-            ],
-            "category": ["alpha", "alpha", "beta"],
-        })
+        dummy_df = pl.DataFrame(
+            {
+                "published_at": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                ],
+                "category": ["alpha", "alpha", "beta"],
+            }
+        )
         dummy_node = SimpleNamespace(data=dummy_df.lazy())
         dummy_workspace = SimpleNamespace(nodes={node_id: dummy_node})
 
@@ -853,11 +854,12 @@ class TestAnalysisPersistenceEdgeCases:
         }
 
         # When: We call the endpoint with invalid data
-        await post_json(
-            authenticated_client,
-            "/api/workspaces/token-frequencies",
-            invalid_request,
-        )
+        with pytest.raises(KeyError):
+            await post_json(
+                authenticated_client,
+                "/api/workspaces/token-frequencies",
+                invalid_request,
+            )
 
         # And: No analysis records were created
         analyses = _list_analysis_records(test_user["id"], workspace_id)

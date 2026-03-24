@@ -130,24 +130,10 @@ async def _build_response(
     for node_id in request.node_ids:
         items: List[Dict[str, Any]] = []
 
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-        node_data = getattr(node, "data", None)
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
+        node = ws.nodes[node_id]
+        node_data = node.data
 
         column_name = request.node_columns[node_id]
-        if column_name not in node_data.collect_schema().names():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Column '{column_name}' not in node {node_id}",
-            )
 
         total_rows = node_data.select(pl.len()).collect().item()
 
@@ -254,47 +240,26 @@ async def run_ai_annotation(
             status_code=400, detail="At least one node ID must be provided"
         )
 
-    for nid in request.node_ids:
-        if nid not in request.node_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing text column selection for node {nid}",
-            )
-
     for node_id in request.node_ids:
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-        node_data = getattr(node, "data", None)
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
-
-        column_name = request.node_columns[node_id]
-        if column_name not in node_data.collect_schema().names():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Column '{column_name}' not in node {node_id}",
-            )
+        node = ws.nodes[node_id]
+        node.data
 
     task_id = str(uuid4())
     task_manager = get_task_manager(user_id)
 
-    analysis_result = GenericAnalysisResult({
-        "analysis_params": {
-            "model": request.model,
-            "base_url": request.base_url,
-            "node_columns": request.node_columns,
-        },
-        "metadata": {
-            "task_id": task_id,
-            "annotation_columns": ["classification"],
-        },
-    })
+    analysis_result = GenericAnalysisResult(
+        {
+            "analysis_params": {
+                "model": request.model,
+                "base_url": request.base_url,
+                "node_columns": request.node_columns,
+            },
+            "metadata": {
+                "task_id": task_id,
+                "annotation_columns": ["classification"],
+            },
+        }
+    )
 
     task_manager.save_task(
         AnalysisTask(
@@ -468,21 +433,8 @@ async def detach_ai_annotation(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400, detail="Selected node data must be a LazyFrame"
-        )
-
-    if request.column not in node_data.collect_schema().names():
-        raise HTTPException(
-            status_code=400, detail=f"Column '{request.column}' not found"
-        )
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     sel_df = node_data.select(pl.col(request.column)).collect()
     texts = [
@@ -508,10 +460,12 @@ async def detach_ai_annotation(
     )
 
     annotation_col = request.annotation_column or "ai_annotation"
-    result_df = pl.DataFrame({
-        request.column: [r[request.column] for r in results],
-        annotation_col: [r["classification"] for r in results],
-    })
+    result_df = pl.DataFrame(
+        {
+            request.column: [r[request.column] for r in results],
+            annotation_col: [r["classification"] for r in results],
+        }
+    )
 
     artifact_dir = workspace_manager.ensure_workspace_artifacts_dir(
         user_id, workspace_id
@@ -563,14 +517,8 @@ async def save_ai_annotation(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise HTTPException(status_code=400, detail="Node data must be a LazyFrame")
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     annotation_col = request.annotation_column or "ai_annotation"
     df = node_data.collect()
@@ -623,22 +571,11 @@ async def get_ai_annotation_providers(
     if ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        return {"state": "successful", "data": {"providers": []}}
-
-    cols = node_data.collect_schema().names()
-    if annotation_column not in cols:
-        return {"state": "successful", "data": {"providers": []}}
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     values = (
-        node_data
-        .select(pl.col(annotation_column))
+        node_data.select(pl.col(annotation_column))
         .collect()
         .get_column(annotation_column)
         .drop_nulls()
@@ -663,22 +600,11 @@ async def get_ai_annotation_categories(
     if ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        node = ws.nodes[node_id]
-    except Exception:
-        raise HTTPException(status_code=404, detail="Node not found")
-
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        return {"state": "successful", "data": {"categories": []}}
-
-    cols = node_data.collect_schema().names()
-    if annotation_column not in cols:
-        return {"state": "successful", "data": {"categories": []}}
+    node = ws.nodes[node_id]
+    node_data = node.data
 
     values = (
-        node_data
-        .select(pl.col(annotation_column))
+        node_data.select(pl.col(annotation_column))
         .collect()
         .get_column(annotation_column)
         .drop_nulls()

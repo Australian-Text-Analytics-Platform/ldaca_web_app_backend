@@ -9,9 +9,10 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
-from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+
+from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.utils import generate_workspace_id, validate_workspace_name
@@ -173,6 +174,24 @@ async def rename_workspace(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to rename workspace: {e}")
+
+
+@router.put("/description")
+async def update_workspace_description(
+    description: str = "",
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    workspace = workspace_manager.get_current_workspace(user_id)
+    try:
+        workspace.description = description.strip()
+        update_workspace(user_id, workspace_id, workspace)
+        return workspace.info_json()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update workspace description: {e}"
+        )
 
 
 @router.post("/save")

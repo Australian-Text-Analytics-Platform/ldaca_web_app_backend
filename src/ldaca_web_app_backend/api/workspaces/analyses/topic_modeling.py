@@ -8,23 +8,20 @@ from pathlib import Path
 from uuid import uuid4
 
 import polars as pl
-from docworkspace import Node
 from fastapi import APIRouter, Depends, HTTPException
 
-from ....analysis.implementations.topic_modeling import (
-    TopicModelingRequest as AnalysisTopicModelingRequest,
-)
+from docworkspace import Node
+
+from ....analysis.implementations.topic_modeling import \
+    TopicModelingRequest as AnalysisTopicModelingRequest
 from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
-from ....models import (
-    TopicModelingDetachOptionsResponse,
-    TopicModelingDetachRequest,
-    TopicModelingDetachResponse,
-    TopicModelingRequest,
-    TopicModelingResponse,
-)
+from ....models import (TopicModelingDetachOptionsResponse,
+                        TopicModelingDetachRequest,
+                        TopicModelingDetachResponse, TopicModelingRequest,
+                        TopicModelingResponse)
 from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN
@@ -139,37 +136,25 @@ async def run_topic_modeling(
             status_code=400, detail="At least one node ID must be provided"
         )
 
-    for nid in request.node_ids:
-        if nid not in request.node_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing text column selection for node {nid}",
-            )
-
     corpora: list[list[str]] = []
     node_infos: list[dict[str, object]] = []
+    document_column_updated = False
     for node_id in request.node_ids:
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-        node_data = getattr(node, "data", None)
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
+        node = ws.nodes[node_id]
+        node_data = node.data
 
         column_name = request.node_columns[node_id]
         available_columns = list(node_data.collect_schema().names())
-        if column_name not in available_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Column '{column_name}' not in node {node_id}. "
-                    f"Available: {available_columns}"
-                ),
+
+        try:
+            node.document = column_name
+            document_column_updated = True
+        except Exception as exc:
+            logger.debug(
+                "Failed to set topic-modeling node.document for node %s column %s: %s",
+                node_id,
+                column_name,
+                exc,
             )
 
         sel_df = node_data.select(pl.col(column_name).alias("__doc_col__")).collect()
@@ -184,6 +169,10 @@ async def run_topic_modeling(
             "text_column": column_name,
             "original_columns": available_columns,
         })
+
+    if document_column_updated:
+        update_workspace(user_id, workspace_id, best_effort=True)
+
     tm = workspace_manager.get_task_manager(user_id)
     submission_lock = _topic_submission_lock(user_id, workspace_id)
     async with submission_lock:
@@ -409,13 +398,8 @@ async def topic_modeling_detach_options(
         node_id = payload.get("node_id")
         if not isinstance(node_id, str) or not node_id:
             continue
-        try:
-            source_node = ws.nodes[node_id]
-        except Exception:
-            continue
-        source_data = getattr(source_node, "data", None)
-        if not isinstance(source_data, pl.LazyFrame):
-            continue
+        source_node = ws.nodes[node_id]
+        source_data = source_node.data
         original_columns = list(source_data.collect_schema().names())
         topic_column_name = _resolve_topic_column_name(
             TOPIC_COLUMN, set(original_columns)
@@ -523,16 +507,8 @@ async def detach_topic_modeling(
             )
             join_how = "inner"
 
-        try:
-            source_node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-        source_data = getattr(source_node, "data", None)
-        if not isinstance(source_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
+        source_node = ws.nodes[node_id]
+        source_data = source_node.data
 
         original_columns = list(source_data.collect_schema().names())
         selected_columns = list((request.selected_columns or {}).get(node_id) or [])
@@ -615,4 +591,5 @@ async def detach_topic_modeling(
         message="Topic detach completed",
         data={"detached_nodes": detached_nodes},
         metadata={"task_id": task_id},
+    )
     )

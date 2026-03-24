@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
+
 from docworkspace import Node
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.core.workspace import workspace_manager
@@ -36,18 +37,20 @@ async def test_text_column_preference_persists_across_text_analyses(
     assert workspace is not None
 
     node = Node(
-        data=pl.DataFrame({
-            "text_a": [
-                "alpha from column a",
-                "beta from column a",
-                "gamma from column a",
-            ],
-            "text_b": [
-                "alpha from column b",
-                "delta from column b",
-                "epsilon from column b",
-            ],
-        }).lazy(),
+        data=pl.DataFrame(
+            {
+                "text_a": [
+                    "alpha from column a",
+                    "beta from column a",
+                    "gamma from column a",
+                ],
+                "text_b": [
+                    "alpha from column b",
+                    "delta from column b",
+                    "epsilon from column b",
+                ],
+            }
+        ).lazy(),
         name="dual_text_node",
         workspace=workspace,
         operation="test_setup",
@@ -87,17 +90,33 @@ async def test_text_column_preference_persists_across_text_analyses(
 
     refreshed = workspace.nodes.get(node.id)
     assert refreshed is not None
+    assert refreshed.document == "text_b"
+
+    quotation_response = await authenticated_client.post(
+        f"/api/workspaces/nodes/{node.id}/quotation",
+        json={
+            "column": "text_a",
+        },
+    )
+    assert quotation_response.status_code == 200, quotation_response.text
+
+    refreshed = workspace.nodes.get(node.id)
+    assert refreshed is not None
     assert refreshed.document == "text_a"
 
     topic_response = await authenticated_client.post(
         "/api/workspaces/topic-modeling",
         json={
             "node_ids": [node.id],
-            "node_columns": {node.id: "text_a"},
+            "node_columns": {node.id: "text_b"},
             "min_topic_size": 2,
         },
     )
     assert topic_response.status_code == 200, topic_response.text
+
+    refreshed = workspace.nodes.get(node.id)
+    assert refreshed is not None
+    assert refreshed.document == "text_b"
 
     payload = topic_response.json()
     task_id = payload.get("metadata", {}).get("task_id")
@@ -111,4 +130,5 @@ async def test_text_column_preference_persists_across_text_analyses(
         if hasattr(analysis_task.request, "model_dump")
         else analysis_task.request.dict()
     )
-    assert request_data["node_columns"][node.id] == "text_a"
+    assert request_data["node_columns"][node.id] == "text_b"
+    assert request_data["node_columns"][node.id] == "text_b"

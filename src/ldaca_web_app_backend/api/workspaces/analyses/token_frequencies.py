@@ -26,7 +26,7 @@ from ....core.analysis_helpers import sanitize_stop_words
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
-from ..utils import ensure_task_synced
+from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces")
@@ -432,41 +432,18 @@ async def calculate_token_frequencies(
             status_code=400, detail="token_limit must be a positive integer"
         )
 
-    for nid in request.node_ids:
-        if nid not in request.node_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Missing text column selection for node {nid}",
-            )
-
     node_corpora: dict[str, list[str]] = {}
     node_display_names: dict[str, str] = {}
+    document_column_updated = False
     for node_id in request.node_ids:
-        try:
-            node = ws.nodes[node_id]
-        except Exception:
-            raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-
-        node_data = getattr(node, "data", None)
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
+        node = ws.nodes[node_id]
+        node_data = node.data
 
         column_name = request.node_columns[node_id]
-        available_columns = list(node_data.collect_schema().names())
-        if column_name not in available_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Column '{column_name}' not found in node {node_id}. "
-                    f"Available columns: {available_columns}"
-                ),
-            )
 
         try:
             node.document = column_name
+            document_column_updated = True
         except Exception as exc:
             logger.debug(
                 "Failed to persist node.document for node %s column %s: %s",
@@ -480,6 +457,9 @@ async def calculate_token_frequencies(
             str(v) if v is not None else "" for v in docs_df["__doc_col__"].to_list()
         ]
         node_display_names[node_id] = str(getattr(node, "name", None) or node_id)
+
+    if document_column_updated:
+        update_workspace(user_id, workspace_id, best_effort=True)
 
     requested_stop_words = sanitize_stop_words(request.stop_words)
 

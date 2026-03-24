@@ -82,29 +82,28 @@ def concordance_non_empty_expr() -> pl.Expr:
     Why:
     - Drops rows with no meaningful matched/context text before pagination.
     """
-    return pl.any_horizontal([
-        pl
-        .col(CONC_MATCHED_TEXT_COLUMN)
-        .cast(pl.Utf8, strict=False)
-        .str.strip_chars()
-        .str.len_chars()
-        .fill_null(0)
-        > 0,
-        pl
-        .col(CONC_LEFT_CONTEXT_COLUMN)
-        .cast(pl.Utf8, strict=False)
-        .str.strip_chars()
-        .str.len_chars()
-        .fill_null(0)
-        > 0,
-        pl
-        .col(CONC_RIGHT_CONTEXT_COLUMN)
-        .cast(pl.Utf8, strict=False)
-        .str.strip_chars()
-        .str.len_chars()
-        .fill_null(0)
-        > 0,
-    ])
+    return pl.any_horizontal(
+        [
+            pl.col(CONC_MATCHED_TEXT_COLUMN)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0,
+            pl.col(CONC_LEFT_CONTEXT_COLUMN)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0,
+            pl.col(CONC_RIGHT_CONTEXT_COLUMN)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0,
+        ]
+    )
 
 
 def build_concordance_lazyframe(
@@ -132,13 +131,14 @@ def build_concordance_lazyframe(
         case_sensitive=request["case_sensitive"],
     )
     return (
-        node_data
-        .select([pl.all(), expr.alias("concordance")])
+        node_data.select([pl.all(), expr.alias("concordance")])
         .explode("concordance")
-        .select([
-            pl.exclude("concordance"),
-            *concordance_struct_projection("concordance"),
-        ])
+        .select(
+            [
+                pl.exclude("concordance"),
+                *concordance_struct_projection("concordance"),
+            ]
+        )
         .filter(concordance_non_empty_expr())
     )
 
@@ -170,18 +170,11 @@ def resolve_node_sources(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     for node_id in node_ids:
-        node = workspace.nodes.get(node_id)
-        if node is None:
-            continue
+        node = workspace.nodes[node_id]
         node_label = getattr(node, "name", None) or node_id
         label_to_node_map[node_label] = node_id
         node_labels[node_id] = node_label
-        node_data = getattr(node, "data", node)
-        if not isinstance(node_data, pl.LazyFrame):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} data must be a LazyFrame",
-            )
+        node_data = node.data
         column = node_columns.get(node_id)
         if not column:
             continue

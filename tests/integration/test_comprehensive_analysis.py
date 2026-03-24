@@ -5,6 +5,7 @@ Parametrized and comprehensive tests for analysis persistence.
 from types import SimpleNamespace
 
 import pytest
+
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
 from ldaca_web_app_backend.api.workspaces.analyses.token_frequencies import (
@@ -274,16 +275,21 @@ class TestAnalysisErrorHandling:
     """Test error handling and edge cases."""
 
     @pytest.mark.parametrize(
-        "invalid_param,expected_status",
+        "invalid_param,expected_status,expected_exception",
         [
-            ({"node_ids": []}, 400),  # Empty node list
-            ({"node_ids": ["nonexistent"]}, 400),  # Nonexistent node
-            ({"token_limit": -1}, 400),  # Invalid limit
-            ({"token_limit": "not_a_number"}, 422),  # Type error
+            ({"node_ids": []}, 400, None),  # Empty node list
+            ({"node_ids": ["nonexistent"]}, None, KeyError),  # Nonexistent node
+            ({"token_limit": -1}, 400, None),  # Invalid limit
+            ({"token_limit": "not_a_number"}, 422, None),  # Type error
         ],
     )
     async def test_token_frequency_validation_errors(
-        self, authenticated_client, workspace_id, invalid_param, expected_status
+        self,
+        authenticated_client,
+        workspace_id,
+        invalid_param,
+        expected_status,
+        expected_exception,
     ):
         """Test that invalid requests are properly rejected."""
         # Given: A request with invalid parameters
@@ -294,6 +300,13 @@ class TestAnalysisErrorHandling:
         base_request.update(invalid_param)
 
         # When: We call the endpoint
+        if expected_exception is not None:
+            with pytest.raises(expected_exception):
+                await authenticated_client.post(
+                    "/api/workspaces/token-frequencies", json=base_request
+                )
+            return
+
         response = await authenticated_client.post(
             "/api/workspaces/token-frequencies", json=base_request
         )

@@ -172,8 +172,7 @@ def ensure_quote_dataframe(
 
     if QUOTE_ROW_IDX_COLUMN not in result.columns:
         result = result.with_columns(
-            pl
-            .arange(0, result.height, eager=True)
+            pl.arange(0, result.height, eager=True)
             .cast(pl.Int64)
             .alias(QUOTE_ROW_IDX_COLUMN)
         )
@@ -253,21 +252,23 @@ def remote_payload_to_dataframe(payload: Dict[str, Any]) -> pl.DataFrame:
         for quote_idx, quote in enumerate(quotes):
             if not isinstance(quote, dict):
                 continue
-            rows.append({
-                QUOTE_ROW_IDX_COLUMN: quote_idx,
-                QUOTE_SPEAKER_COLUMN: quote.get("speaker"),
-                QUOTE_SPEAKER_START_IDX_COLUMN: quote.get("speaker_start_idx"),
-                QUOTE_SPEAKER_END_IDX_COLUMN: quote.get("speaker_end_idx"),
-                QUOTE_QUOTE_COLUMN: quote.get("quote"),
-                QUOTE_QUOTE_START_IDX_COLUMN: quote.get("quote_start_idx"),
-                QUOTE_QUOTE_END_IDX_COLUMN: quote.get("quote_end_idx"),
-                QUOTE_VERB_COLUMN: quote.get("verb"),
-                QUOTE_VERB_START_IDX_COLUMN: quote.get("verb_start_idx"),
-                QUOTE_VERB_END_IDX_COLUMN: quote.get("verb_end_idx"),
-                QUOTE_TYPE_COLUMN: quote.get("quote_type"),
-                QUOTE_TOKEN_COUNT_COLUMN: quote.get("quote_token_count"),
-                QUOTE_IS_FLOATING_COLUMN: quote.get("is_floating_quote"),
-            })
+            rows.append(
+                {
+                    QUOTE_ROW_IDX_COLUMN: quote_idx,
+                    QUOTE_SPEAKER_COLUMN: quote.get("speaker"),
+                    QUOTE_SPEAKER_START_IDX_COLUMN: quote.get("speaker_start_idx"),
+                    QUOTE_SPEAKER_END_IDX_COLUMN: quote.get("speaker_end_idx"),
+                    QUOTE_QUOTE_COLUMN: quote.get("quote"),
+                    QUOTE_QUOTE_START_IDX_COLUMN: quote.get("quote_start_idx"),
+                    QUOTE_QUOTE_END_IDX_COLUMN: quote.get("quote_end_idx"),
+                    QUOTE_VERB_COLUMN: quote.get("verb"),
+                    QUOTE_VERB_START_IDX_COLUMN: quote.get("verb_start_idx"),
+                    QUOTE_VERB_END_IDX_COLUMN: quote.get("verb_end_idx"),
+                    QUOTE_TYPE_COLUMN: quote.get("quote_type"),
+                    QUOTE_TOKEN_COUNT_COLUMN: quote.get("quote_token_count"),
+                    QUOTE_IS_FLOATING_COLUMN: quote.get("is_floating_quote"),
+                }
+            )
 
     if not rows:
         return empty_quote_dataframe()
@@ -416,10 +417,12 @@ def quotation_via_polars_text(df: pl.DataFrame, column: str) -> pl.DataFrame:
         if field_name in available_fields
     ]
 
-    return exploded.select([
-        pl.exclude("__quotation__"),
-        *struct_projection,
-    ])
+    return exploded.select(
+        [
+            pl.exclude("__quotation__"),
+            *struct_projection,
+        ]
+    )
 
 
 async def compute_quote_dataframe(
@@ -456,10 +459,7 @@ async def compute_quote_dataframe(
         return ensure_quote_dataframe(quote_df, text_column=column)
 
     if not use_base_only:
-        node_data = getattr(node, "data", None)
-        if node_data is None:
-            raise ValueError("Node has no data")
-
+        node_data = node.data
         source_df = to_polars_dataframe(node_data)
         quote_raw = quotation_via_polars_text(source_df, column)
         return ensure_quote_dataframe(quote_raw, text_column=column)
@@ -488,21 +488,12 @@ async def compute_on_demand_page(
     - Delays expensive quotation extraction to requested slices for responsive
       UI paging.
     """
-    node_data = getattr(node, "data", None)
-    if not isinstance(node_data, pl.LazyFrame):
-        raise ValueError("Node data must be a LazyFrame")
-
-    lazy_df = node_data
+    lazy_df = node.data
     try:
         schema = lazy_df.collect_schema()
         available_columns = set(schema.keys())
     except Exception:
         available_columns = set()
-
-    if column not in available_columns:
-        raise ValueError(
-            f"Column '{column}' not found. Available columns: {list(available_columns)}"
-        )
 
     effective_sort_by = sort_by if sort_by and sort_by in available_columns else None
 
