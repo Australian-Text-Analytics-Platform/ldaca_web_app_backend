@@ -9,11 +9,22 @@ def _load_toml(path: Path) -> dict:
         return tomllib.load(fh)
 
 
-def test_python_uv_workspace_is_rooted_in_repository_directory() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    root_config = _load_toml(repo_root / "pyproject.toml")
-    backend_config = _load_toml(repo_root / "ldaca_web_app_backend" / "pyproject.toml")
+def _backend_repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
+
+def test_python_uv_workspace_is_rooted_in_repository_directory() -> None:
+    backend_repo_root = _backend_repo_root()
+    backend_config = _load_toml(backend_repo_root / "pyproject.toml")
+
+    assert "workspace" not in backend_config.get("tool", {}).get("uv", {})
+
+    monorepo_root = backend_repo_root.parent
+    monorepo_pyproject = monorepo_root / "pyproject.toml"
+    if not monorepo_pyproject.exists():
+        return
+
+    root_config = _load_toml(monorepo_pyproject)
     assert root_config["project"]["dependencies"] == [
         "ldaca-web-app-backend>=0.2.0",
         "ldaca-loader",
@@ -23,12 +34,10 @@ def test_python_uv_workspace_is_rooted_in_repository_directory() -> None:
         "git": "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator",
         "branch": "ldaca_web_app_integration",
     }
-    assert "workspace" not in backend_config.get("tool", {}).get("uv", {})
 
 
 def test_backend_workspace_declares_local_sources_only_for_workspace_members() -> None:
-    repo_root = Path(__file__).resolve().parents[2]
-    backend_config = _load_toml(repo_root / "ldaca_web_app_backend" / "pyproject.toml")
+    backend_config = _load_toml(_backend_repo_root() / "pyproject.toml")
     backend_sources = backend_config["tool"]["uv"]["sources"]
 
     assert backend_sources["ldaca-loader"] == {
