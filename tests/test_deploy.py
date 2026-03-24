@@ -38,13 +38,15 @@ def test_start_backend_updates_settings_backend_port(
             return None
 
     def fake_config(app, host, port, reload, log_level):
-        created_config.update({
-            "app": app,
-            "host": host,
-            "port": port,
-            "reload": reload,
-            "log_level": log_level,
-        })
+        created_config.update(
+            {
+                "app": app,
+                "host": host,
+                "port": port,
+                "reload": reload,
+                "log_level": log_level,
+            }
+        )
         return SimpleNamespace(port=port)
 
     monkeypatch.setattr(deploy.uvicorn, "Config", fake_config)
@@ -183,7 +185,9 @@ def test_start_frontend_uses_existing_build_dir_and_cleans_nginx_runtime(
     assert commands[0] == f"nginx -p {nginx_dir} -c nginx.conf -s quit"
     assert f"FRONTEND_DIR={expected_build_dir}" in commands[1]
 
-    expected_mime_types = deploy._shell_quote(Path("/opt/homebrew/etc/nginx/mime.types"))
+    expected_mime_types = deploy._shell_quote(
+        Path("/opt/homebrew/etc/nginx/mime.types")
+    )
     assert f"MIME_TYPES_PATH={expected_mime_types}" in commands[1]
     assert not (nginx_dir / "run" / "nginx.pid").exists()
     assert (nginx_dir / "logs").exists()
