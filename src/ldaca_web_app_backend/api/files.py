@@ -116,6 +116,11 @@ def _read_sample_folder_readme(readme_path: Path) -> Optional[str]:
     return decoded
 
 
+def _relative_path_for_api(path: Path) -> str:
+    """Normalize relative paths for API responses using forward slashes."""
+    return path.as_posix()
+
+
 def _lazy_scan(file_path, file_type: str) -> pl.LazyFrame:
     """Return a Polars LazyFrame for the given file if possible.
 
@@ -308,11 +313,13 @@ async def get_user_files(current_user: dict = Depends(get_current_user)):
         if file_path.is_file() and not file_path.name.startswith("."):
             # Get relative path from the data folder
             relative_path = file_path.relative_to(data_folder)
-            rel_str = str(relative_path)
+            rel_str = _relative_path_for_api(relative_path)
             is_sample = rel_str.startswith("sample_data/")
             is_ldaca = rel_str.startswith("LDaCA/")
             folder_rel = (
-                str(relative_path.parent) if str(relative_path.parent) != "." else ""
+                _relative_path_for_api(relative_path.parent)
+                if _relative_path_for_api(relative_path.parent) != "."
+                else ""
             )
 
             readme_content: Optional[str] = None

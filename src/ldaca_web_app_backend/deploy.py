@@ -24,7 +24,8 @@ except ImportError:
 
 # Optional IPython dependencies for Jupyter/Colab deployment
 try:
-    from IPython.display import Markdown, display, Javascript  # type: ignore[unresolved-import]
+    from IPython.display import (Javascript,  # type: ignore[unresolved-import]
+                                 Markdown, display)
 
     IPYTHON_AVAILABLE = True
 except ImportError:
@@ -69,6 +70,18 @@ def _resolve_nginx_mime_types_path() -> Path:
             return inferred_path
 
     raise FileNotFoundError("Unable to locate nginx mime.types")
+
+
+def _resolve_nginx_runtime_dir() -> Path:
+    """Return the runtime directory used for nginx state and config.
+
+    Uses HOME when explicitly provided so tests and notebook environments can
+    control the runtime location consistently across platforms, including
+    Windows where `Path("~").expanduser()` may ignore HOME.
+    """
+    home_override = os.environ.get("HOME")
+    home_dir = Path(home_override).expanduser() if home_override else Path.home()
+    return home_dir / "nginx"
 
 
 def _validate_frontend_build(build_dir: str | os.PathLike[str]) -> Path:
@@ -181,7 +194,7 @@ def start_frontend(
     if build_dir is None:
         raise ValueError("build_dir must be provided explicitly")
 
-    NGINX_DIR = Path("~/nginx").expanduser()
+    NGINX_DIR = _resolve_nginx_runtime_dir()
     _cleanup_nginx_runtime(NGINX_DIR)
     NGINX_DIR.mkdir(parents=True, exist_ok=True)
     (NGINX_DIR / "logs").mkdir(parents=True, exist_ok=True)
@@ -235,6 +248,10 @@ def start_frontend(
                 Markdown(
                     f"Click the following link to open the web app:\n# [Open web app]({url})"
                 )
+            )
+        else:
+            print(f"Open web app: {url}")
+    return _nginx_proc
             )
         else:
             print(f"Open web app: {url}")
