@@ -24,11 +24,10 @@ except ImportError:
 
 # Optional IPython dependencies for Jupyter/Colab deployment
 try:
-    from IPython.display import (
-        Javascript,  # type: ignore[unresolved-import]
-        Markdown,
-        display,
-    )
+    ipython_display = import_module("IPython.display")
+    Javascript = getattr(ipython_display, "Javascript")
+    Markdown = getattr(ipython_display, "Markdown")
+    display = getattr(ipython_display, "display")
 
     IPYTHON_AVAILABLE = True
 except ImportError:
@@ -87,6 +86,14 @@ def _resolve_nginx_runtime_dir() -> Path:
     return home_dir / "nginx"
 
 
+def _shell_quote(value: str | os.PathLike[str]) -> str:
+    """Quote shell arguments using the current platform's shell rules."""
+    raw_value = str(value)
+    if os.name == "nt":
+        return subprocess.list2cmdline([raw_value])
+    return shlex.quote(raw_value)
+
+
 def _validate_frontend_build(build_dir: str | os.PathLike[str]) -> Path:
     """Return a prebuilt frontend directory after a minimal sanity check."""
     resolved_build_dir = Path(build_dir).resolve()
@@ -117,7 +124,7 @@ def _cleanup_nginx_runtime(nginx_dir: Path) -> None:
     config_path = nginx_dir / "nginx.conf"
     if config_path.exists():
         subprocess.run(
-            f"nginx -p {shlex.quote(str(nginx_dir))} -c nginx.conf -s quit",
+            f"nginx -p {_shell_quote(nginx_dir)} -c nginx.conf -s quit",
             check=False,
             shell=True,
             stdout=subprocess.DEVNULL,
@@ -215,19 +222,19 @@ def start_frontend(
             "BACKEND_PORT={backend_port} MIME_TYPES_PATH={mime_types_path} "
             "envsubst '$FRONTEND_DIR $FRONTEND_PORT $BACKEND_PORT "
             "$MIME_TYPES_PATH' < {template_path} > {config_path}".format(
-                frontend_dir=shlex.quote(str(DIST_DIR)),
+                frontend_dir=_shell_quote(DIST_DIR),
                 frontend_port=port,
                 backend_port=settings.backend_port,
-                mime_types_path=shlex.quote(str(mime_types_path)),
-                template_path=shlex.quote(str(nginx_conf_template)),
-                config_path=shlex.quote(str(NGINX_DIR / "nginx.conf")),
+                mime_types_path=_shell_quote(mime_types_path),
+                template_path=_shell_quote(nginx_conf_template),
+                config_path=_shell_quote(NGINX_DIR / "nginx.conf"),
             ),
             check=True,
             shell=True,
         )
     print(f"Using nginx config file: {NGINX_DIR / 'nginx.conf'}")
     _nginx_proc = subprocess.Popen(
-        f"nginx -p {shlex.quote(str(NGINX_DIR))} -c nginx.conf -g 'daemon off;'",
+        f"nginx -p {_shell_quote(NGINX_DIR)} -c nginx.conf -g 'daemon off;'",
         shell=True,
     )
 
