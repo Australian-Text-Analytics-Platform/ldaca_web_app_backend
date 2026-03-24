@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -247,12 +247,8 @@ def _build_filter_expression(
 
 
 def _unwrap_lazyframe(data: Any, *, purpose: str) -> pl.LazyFrame:
-    if isinstance(data, pl.LazyFrame):
-        return data
-    raise HTTPException(
-        status_code=500,
-        detail=f"{purpose} requires lazy node data but received {type(data).__name__}",
-    )
+    _ = purpose
+    return cast(pl.LazyFrame, data)
 
 
 def _get_node_display_name(node: Any) -> str:
@@ -1117,11 +1113,10 @@ async def join_nodes_preview(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
+    workspace = workspace_manager.get_current_workspace(user_id)
+    left_node = workspace.nodes[left_node_id]
+    right_node = workspace.nodes[right_node_id]
     try:
-        workspace = workspace_manager.get_current_workspace(user_id)
-        left_node = workspace.nodes[left_node_id]
-        right_node = workspace.nodes[right_node_id]
-
         allowed_hows = {"inner", "left", "right", "full", "semi", "anti", "cross"}
         how_val = (how or "inner").lower()
         if how_val not in allowed_hows:
@@ -1190,6 +1185,8 @@ async def join_nodes_preview(
                 "has_prev": page > 1,
             },
         }
+    except KeyError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
@@ -1208,10 +1205,10 @@ async def join_nodes(
 ):
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    workspace = workspace_manager.get_current_workspace(user_id)
+    left_node = workspace.nodes[left_node_id]
+    right_node = workspace.nodes[right_node_id]
     try:
-        workspace = workspace_manager.get_current_workspace(user_id)
-        left_node = workspace.nodes[left_node_id]
-        right_node = workspace.nodes[right_node_id]
         left_data = _unwrap_lazyframe(
             left_node.data, purpose="Join requires lazy left node"
         )
@@ -1243,8 +1240,9 @@ async def join_nodes(
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
         return new_node.info()
+    except KeyError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Join failed: {e}")
         raise HTTPException(status_code=500, detail=f"Join failed: {e}")

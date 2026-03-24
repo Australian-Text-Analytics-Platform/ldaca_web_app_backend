@@ -683,10 +683,10 @@ class TestWorkspaceAPI:
         assert body["id"] == "new-node-id"
         mock_node.drop.assert_called_once_with("value")
 
-    async def test_delete_node_column_missing_node_returns_404(
+    async def test_delete_node_column_missing_node_propagates_keyerror(
         self, authenticated_client
     ):
-        """Delete-column endpoint should return 404 for unknown node id."""
+        """Delete-column endpoint should let missing node ids fail directly."""
         mock_workspace = Mock()
         mock_workspace.nodes = {}
 
@@ -701,12 +701,10 @@ class TestWorkspaceAPI:
             mock_current_entry.return_value = "workspace-123"
             mock_current_ws.return_value = mock_workspace
 
-            response = await authenticated_client.delete(
-                "/api/workspaces/nodes/missing-node/columns/value"
-            )
-
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
+            with pytest.raises(KeyError):
+                await authenticated_client.delete(
+                    "/api/workspaces/nodes/missing-node/columns/value"
+                )
 
     async def test_rename_node_column_delegates_to_node_rename(
         self, authenticated_client
@@ -749,10 +747,10 @@ class TestWorkspaceAPI:
         assert body["id"] == "node-1"
         mock_node.rename.assert_called_once_with({"original_col": "renamed_col"})
 
-    async def test_rename_node_column_missing_node_returns_404(
+    async def test_rename_node_column_missing_node_propagates_keyerror(
         self, authenticated_client
     ):
-        """Rename endpoint should return 404 for unknown node id."""
+        """Rename endpoint should let missing node ids fail directly."""
         mock_workspace = Mock()
         mock_workspace.nodes = {}
 
@@ -767,27 +765,20 @@ class TestWorkspaceAPI:
             mock_current_entry.return_value = "workspace-123"
             mock_current_ws.return_value = mock_workspace
 
-            response = await authenticated_client.put(
-                "/api/workspaces/nodes/missing-node/columns/original_col",
-                json={"new_name": "renamed_col"},
-            )
+            with pytest.raises(KeyError):
+                await authenticated_client.put(
+                    "/api/workspaces/nodes/missing-node/columns/original_col",
+                    json={"new_name": "renamed_col"},
+                )
 
-        assert response.status_code == 404
-        assert "not found" in response.json()["detail"].lower()
-
-    async def test_cast_node_not_found(self, authenticated_client):
-        """Test casting when node doesn't exist"""
-        from fastapi import HTTPException
-
-        class _NodesRaising404(dict):
-            def __getitem__(self, key):
-                raise HTTPException(status_code=404, detail="Node not found")
+    async def test_cast_node_not_found_propagates_keyerror(self, authenticated_client):
+        """Test casting lets missing node ids fail directly."""
 
         with patch(
             "ldaca_web_app_backend.api.workspaces.workspace_manager.get_current_workspace_id"
         ) as mock_current_entry:
             mock_workspace = Mock()
-            mock_workspace.nodes = _NodesRaising404()
+            mock_workspace.nodes = {}
             mock_current_entry.return_value = "workspace-123"
             with patch(
                 "ldaca_web_app_backend.api.workspaces.workspace_manager.get_current_workspace",
@@ -795,16 +786,14 @@ class TestWorkspaceAPI:
             ):
                 cast_data = {"column": "test_column", "target_type": "string"}
 
-                response = await authenticated_client.post(
-                    "/api/workspaces/nodes/nonexistent-node/cast",
-                    json=cast_data,
-                )
-
-                assert response.status_code == 404
-                assert "Node not found" in response.json()["detail"]
+                with pytest.raises(KeyError):
+                    await authenticated_client.post(
+                        "/api/workspaces/nodes/nonexistent-node/cast",
+                        json=cast_data,
+                    )
 
     async def test_cast_node_invalid_column(self, authenticated_client):
-        """Test casting lets missing columns fail through normal execution."""
+        """Test casting lets missing columns fail directly."""
         import polars as pl
 
         mock_node = Mock()
@@ -822,15 +811,10 @@ class TestWorkspaceAPI:
             ):
                 cast_data = {"column": "nonexistent_column", "target_type": "string"}
 
-                response = await authenticated_client.post(
-                    "/api/workspaces/nodes/test-node/cast", json=cast_data
-                )
-
-                assert response.status_code == 500
-                assert (
-                    "Unexpected error during casting operation"
-                    in response.json()["detail"]
-                )
+                with pytest.raises(KeyError):
+                    await authenticated_client.post(
+                        "/api/workspaces/nodes/test-node/cast", json=cast_data
+                    )
 
     async def test_cast_node_invalid_request_data(self, authenticated_client):
         """Test casting with invalid request data"""

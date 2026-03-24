@@ -103,19 +103,7 @@ def _export_node_artifact(
     export_dir: Path,
     fmt: str,
 ) -> tuple[str, Path]:
-    data = getattr(node, "data", None)
-    if data is None:
-        raise HTTPException(
-            status_code=400, detail=f"Node '{node_id}' has no data to export"
-        )
-    if not isinstance(data, pl.LazyFrame):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Export requires LazyFrame node data for node '{node_id}', "
-                f"got {type(data).__name__}"
-            ),
-        )
+    data = node.data
 
     spec = EXPORT_FORMAT_SPECS[fmt]
     stem = _sanitize_export_label(getattr(node, "name", None), node_id)
@@ -165,9 +153,7 @@ async def delete_node_column(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    node = ws.nodes.get(node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node = ws.nodes[node_id]
 
     try:
         dropped_node = node.drop(column_name)
@@ -209,9 +195,7 @@ async def rename_node_column(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    node = ws.nodes.get(node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node = ws.nodes[node_id]
 
     trimmed_name = new_name.strip()
 
@@ -246,9 +230,7 @@ async def undo_node_operation(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    node = ws.nodes.get(node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node = ws.nodes[node_id]
 
     try:
         node.undo()
@@ -285,9 +267,7 @@ async def redo_node_operation(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    node = ws.nodes.get(node_id)
-    if node is None:
-        raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    node = ws.nodes[node_id]
 
     try:
         node.redo()
@@ -613,20 +593,8 @@ async def cast_node(
                 status_code=400, detail="'column' and 'target_type' must be strings"
             )
 
-        # Get node using shared helper (guarantees data presence)
         node = ws.nodes[node_id]
-        current_df = node.data
-
-        if isinstance(current_df, pl.LazyFrame):
-            lazyframe = current_df
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Node data must be lazy (LazyFrame). "
-                    "Workspaces no longer support eager node payloads."
-                ),
-            )
+        lazyframe = node.data
 
         schema = lazyframe.collect_schema()
         original_dtype = schema[column_name]
@@ -792,6 +760,8 @@ async def cast_node(
                 f"Check that the target data type is valid and the data can be converted.",
             )
 
+    except KeyError:
+        raise
     except HTTPException:
         # Re-raise HTTP exceptions (they already have proper error messages)
         raise
@@ -854,9 +824,7 @@ async def export_nodes(
         exported: list[tuple[str, Path]] = []
 
         for nid in ids:
-            node = ws.nodes.get(nid)
-            if node is None:
-                raise HTTPException(status_code=404, detail=f"Node '{nid}' not found")
+            node = ws.nodes[nid]
             exported.append(
                 _export_node_artifact(
                     node=node,

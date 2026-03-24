@@ -12,16 +12,20 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from docworkspace import Node
 
-from ....analysis.implementations.topic_modeling import \
-    TopicModelingRequest as AnalysisTopicModelingRequest
+from ....analysis.implementations.topic_modeling import (
+    TopicModelingRequest as AnalysisTopicModelingRequest,
+)
 from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
-from ....models import (TopicModelingDetachOptionsResponse,
-                        TopicModelingDetachRequest,
-                        TopicModelingDetachResponse, TopicModelingRequest,
-                        TopicModelingResponse)
+from ....models import (
+    TopicModelingDetachOptionsResponse,
+    TopicModelingDetachRequest,
+    TopicModelingDetachResponse,
+    TopicModelingRequest,
+    TopicModelingResponse,
+)
 from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN
@@ -163,12 +167,14 @@ async def run_topic_modeling(
         ]
         corpora.append(docs)
 
-        node_infos.append({
-            "node_id": node_id,
-            "node_name": getattr(node, "name", None) or node_id,
-            "text_column": column_name,
-            "original_columns": available_columns,
-        })
+        node_infos.append(
+            {
+                "node_id": node_id,
+                "node_name": getattr(node, "name", None) or node_id,
+                "text_column": column_name,
+                "original_columns": available_columns,
+            }
+        )
 
     if document_column_updated:
         update_workspace(user_id, workspace_id, best_effort=True)
@@ -404,13 +410,15 @@ async def topic_modeling_detach_options(
         topic_column_name = _resolve_topic_column_name(
             TOPIC_COLUMN, set(original_columns)
         )
-        nodes.append({
-            "node_id": source_node.id,
-            "node_name": payload.get("node_name") or node_id,
-            "text_column": payload.get("text_column"),
-            "available_columns": [topic_column_name, *original_columns],
-            "disabled_columns": [topic_column_name],
-        })
+        nodes.append(
+            {
+                "node_id": source_node.id,
+                "node_name": payload.get("node_name") or node_id,
+                "text_column": payload.get("text_column"),
+                "available_columns": [topic_column_name, *original_columns],
+                "disabled_columns": [topic_column_name],
+            }
+        )
 
     return TopicModelingDetachOptionsResponse(
         state="successful",
@@ -469,9 +477,9 @@ async def detach_topic_modeling(
             detail="Topic meanings artifact is missing",
         )
     meanings_lf = pl.scan_parquet(meanings_path)
-    selected_topic_ids = sorted({
-        int(topic_id) for topic_id in (request.topic_ids or [])
-    })
+    selected_topic_ids = sorted(
+        {int(topic_id) for topic_id in (request.topic_ids or [])}
+    )
     filtered_meanings_lf = (
         meanings_lf.filter(pl.col(TOPIC_COLUMN).is_in(selected_topic_ids))
         if selected_topic_ids
@@ -531,8 +539,7 @@ async def detach_topic_modeling(
         )
 
         output_lf = (
-            source_data
-            .with_row_index("__row_nr__")
+            source_data.with_row_index("__row_nr__")
             .join(assignments_lf, on="__row_nr__", how=join_how)
             .select(
                 [pl.col(col) for col in selected_columns]
@@ -578,11 +585,13 @@ async def detach_topic_modeling(
         )
         ws.add_node(meanings_node)
 
-        detached_nodes.append({
-            "source_node_id": node_id,
-            "new_node_id": new_node.id,
-            "topic_meanings_node_id": meanings_node.id,
-        })
+        detached_nodes.append(
+            {
+                "source_node_id": node_id,
+                "new_node_id": new_node.id,
+                "topic_meanings_node_id": meanings_node.id,
+            }
+        )
 
     update_workspace(user_id, workspace_id, ws)
 
@@ -591,5 +600,4 @@ async def detach_topic_modeling(
         message="Topic detach completed",
         data={"detached_nodes": detached_nodes},
         metadata={"task_id": task_id},
-    )
     )

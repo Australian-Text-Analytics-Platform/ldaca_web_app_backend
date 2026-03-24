@@ -1,0 +1,2678 @@
+error[invalid-argument-type]: Argument is incorrect
+  --> src/ldaca_web_app_backend/analysis/manager.py:95:13
+   |
+93 |             user_id=self.user_id,
+94 |             workspace_id=workspace_id,
+95 |             request=normalized_request,
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^ Argument type `BaseModel` does not satisfy upper bound `BaseAnalysisRequest` of type variable `TRequest`
+96 |             status=AnalysisStatus.PENDING,
+97 |         )
+   |
+info: Type variable defined here
+  --> src/ldaca_web_app_backend/analysis/models.py:39:1
+   |
+39 | TRequest = TypeVar("TRequest", bound=BaseAnalysisRequest)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | TResult = TypeVar("TResult", bound=BaseAnalysisResult)
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-assignment]: Invalid subscript assignment with key of type `Literal["data_folder"]` and value of type `str` on object of type `dict[str, bool | dict[str, Unknown]]`
+   --> src/ldaca_web_app_backend/api/auth.py:254:9
+    |
+252 |     # Add data folder path in single-user mode only
+253 |     if not settings.multi_user:
+254 |         response["data_folder"] = str(settings.get_data_root())
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^-----------------------------
+    |                                   |
+    |                                   Expected value of type `bool | dict[str, Unknown]`, got `str`
+255 |
+256 |     return response
+    |
+info: rule `invalid-assignment` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/api/feedback.py:25:15
+   |
+23 | except Exception:  # pragma: no cover
+24 |     _HAS_PYAIRTABLE = False
+25 | Table = None  # type: ignore
+   |               ^^^^^^^^^^^^^^
+26 |
+27 | router = APIRouter(prefix="/feedback", tags=["feedback"])
+   |
+help: Remove the unused suppression comment
+22 |     _HAS_PYAIRTABLE = _il_util.find_spec("pyairtable") is not None
+23 | except Exception:  # pragma: no cover
+24 |     _HAS_PYAIRTABLE = False
+   - Table = None  # type: ignore
+25 + Table = None
+26 | 
+27 | router = APIRouter(prefix="/feedback", tags=["feedback"])
+28 | 
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/api/feedback.py:88:26
+   |
+87 |         # pyairtable.Table signature: Table(api_key, base_id, table_name)
+88 |         table = _Table(  # type: ignore[call-arg]
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+   |
+help: Remove the unused suppression comment
+85 |         from pyairtable import Table as _Table  # type: ignore
+86 | 
+87 |         # pyairtable.Table signature: Table(api_key, base_id, table_name)
+   -         table = _Table(  # type: ignore[call-arg]
+88 +         table = _Table(
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/api/feedback.py:89:41
+   |
+87 |         # pyairtable.Table signature: Table(api_key, base_id, table_name)
+88 |         table = _Table(  # type: ignore[call-arg]
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+   |
+help: Remove the unused suppression comment
+86 | 
+87 |         # pyairtable.Table signature: Table(api_key, base_id, table_name)
+88 |         table = _Table(  # type: ignore[call-arg]
+   -             settings.airtable_api_key,  # type: ignore[arg-type]
+89 +             settings.airtable_api_key,
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+92 |         )
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/api/feedback.py:90:41
+   |
+88 |         table = _Table(  # type: ignore[call-arg]
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+92 |         )
+   |
+help: Remove the unused suppression comment
+87 |         # pyairtable.Table signature: Table(api_key, base_id, table_name)
+88 |         table = _Table(  # type: ignore[call-arg]
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+   -             settings.airtable_base_id,  # type: ignore[arg-type]
+90 +             settings.airtable_base_id,
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+92 |         )
+93 |         # Build Airtable fields using configured field IDs if present; fallback to field names.
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/api/feedback.py:91:42
+   |
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+91 |             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+   |                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+92 |         )
+93 |         # Build Airtable fields using configured field IDs if present; fallback to field names.
+   |
+help: Remove the unused suppression comment
+88 |         table = _Table(  # type: ignore[call-arg]
+89 |             settings.airtable_api_key,  # type: ignore[arg-type]
+90 |             settings.airtable_base_id,  # type: ignore[arg-type]
+   -             settings.airtable_table_id,  # type: ignore[arg-type] (we pass the table ID which is accepted as name)
+91 +             settings.airtable_table_id,
+92 |         )
+93 |         # Build Airtable fields using configured field IDs if present; fallback to field names.
+94 |         # (pyairtable docs use field NAMES. Field IDs also work; we support both.)
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+   --> src/ldaca_web_app_backend/api/feedback.py:108:40
+    |
+107 |         # Minimal create (avoid adding unspecified columns to prevent UNKNOWN_FIELD_NAME)
+108 |         record = table.create(fields)  # type: ignore[operator]
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^
+109 |         record_id = record.get("id") if isinstance(record, dict) else None
+    |
+help: Remove the unused suppression comment
+105 |             fields[reply_key] = email_value
+106 | 
+107 |         # Minimal create (avoid adding unspecified columns to prevent UNKNOWN_FIELD_NAME)
+    -         record = table.create(fields)  # type: ignore[operator]
+108 +         record = table.create(fields)
+109 |         record_id = record.get("id") if isinstance(record, dict) else None
+110 | 
+111 |         return FeedbackResponse(
+
+error[invalid-assignment]: Object of type `None` is not assignable to `<module 'fastexcel'>`
+  --> src/ldaca_web_app_backend/api/files.py:16:5
+   |
+14 |     import fastexcel
+15 | except Exception:  # pragma: no cover - optional import hardening
+16 |     fastexcel = None
+   |     ---------   ^^^^ Incompatible value of type `None`
+   |     |
+   |     Declared type `<module 'fastexcel'>`
+17 |
+18 | from ..core.auth import get_current_user
+   |
+info: rule `invalid-assignment` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/files.py:619:28
+    |
+617 |             lf = _lazy_scan(file_path, file_type).slice(offset, page_size)
+618 |             df = lf.collect()
+619 |             columns = list(df.columns)
+    |                            ^^^^^^^^^^
+620 |             preview = df.fill_null("None").to_dicts()
+621 |             total_rows = 0  # unknown unless we count eagerly
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `fill_null` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/files.py:620:23
+    |
+618 |             df = lf.collect()
+619 |             columns = list(df.columns)
+620 |             preview = df.fill_null("None").to_dicts()
+    |                       ^^^^^^^^^^^^
+621 |             total_rows = 0  # unknown unless we count eagerly
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `item` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/concordance_core.py:211:25
+    |
+209 |       result views.
+210 |     """
+211 |     total_source_rows = base_lf.select(pl.len()).collect().item()
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+212 |
+213 |     effective_sort_by: Optional[str] = None
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/concordance_core.py:237:15
+    |
+235 |     result_df = concordance_lf.collect()
+236 |
+237 |     columns = result_df.columns if result_df.height > 0 else []
+    |               ^^^^^^^^^^^^^^^^^
+238 |     page_rows = result_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `height` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/concordance_core.py:237:36
+    |
+235 |     result_df = concordance_lf.collect()
+236 |
+237 |     columns = result_df.columns if result_df.height > 0 else []
+    |                                    ^^^^^^^^^^^^^^^^
+238 |     page_rows = result_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/concordance_core.py:238:17
+    |
+237 |     columns = result_df.columns if result_df.height > 0 else []
+238 |     page_rows = result_df.to_dicts()
+    |                 ^^^^^^^^^^^^^^^^^^
+239 |
+240 |     total_source_pages = max(1, math.ceil(total_source_rows / page_size))
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation.py:331:16
+    |
+330 |     try:
+331 |         node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+332 |         try:
+333 |             node.document = request.column
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-assignment]: Object of type `QuotationRequest` is not assignable to attribute `request` on type `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation.py:402:13
+    |
+400 |             task_id = task_manager.create_task(analysis_request)
+401 |             task = task_manager.get_task(task_id)
+402 |             task.request = analysis_request
+    |             ^^^^^^^^^^^^
+403 |             task.complete(GenericAnalysisResult(result_payload))
+404 |             task_manager.save_task(task)
+    |
+info: rule `invalid-assignment` is enabled by default
+
+error[unresolved-attribute]: Attribute `complete` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation.py:403:13
+    |
+401 |             task = task_manager.get_task(task_id)
+402 |             task.request = analysis_request
+403 |             task.complete(GenericAnalysisResult(result_payload))
+    |             ^^^^^^^^^^^^^
+404 |             task_manager.save_task(task)
+405 |             task_manager.set_current_task("quotation", task_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `save_task` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation.py:404:36
+    |
+402 |             task.request = analysis_request
+403 |             task.complete(GenericAnalysisResult(result_payload))
+404 |             task_manager.save_task(task)
+    |                                    ^^^^ Expected `AnalysisTask[Unknown, Unknown]`, found `AnalysisTask[Unknown, Unknown] | None`
+405 |             task_manager.set_current_task("quotation", task_id)
+    |
+info: Element `None` of this union is not assignable to `AnalysisTask[Unknown, Unknown]`
+info: Method defined here
+   --> src/ldaca_web_app_backend/analysis/manager.py:104:9
+    |
+102 |         return self.store.get_task(task_id)
+103 |
+104 |     def save_task(self, task: AnalysisTask) -> None:
+    |         ^^^^^^^^^       ------------------ Parameter declared here
+105 |         self.store.save_task(task)
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `task_id` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation.py:407:50
+    |
+405 |             task_manager.set_current_task("quotation", task_id)
+406 |
+407 |         result_payload["metadata"] = {"task_id": task.task_id}
+    |                                                  ^^^^^^^^^^^^
+408 |         return result_payload
+409 |     except HTTPException:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Module `polars` has no member `ColumnNotFoundError`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation_core.py:222:12
+    |
+220 |     try:
+221 |         series = base_df.get_column(column)
+222 |     except pl.ColumnNotFoundError as exc:  # pragma: no cover
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+223 |         raise ValueError(str(exc)) from exc
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Object of type `Expr` has no attribute `text`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/quotation_core.py:389:27
+    |
+387 |     - Provides the in-process quotation path when remote engine is not selected.
+388 |     """
+389 |     tmp = df.with_columns(pl.col(column).text.quotation().alias("__quotation__"))
+    |                           ^^^^^^^^^^^^^^^^^^^
+390 |     exploded = tmp.explode("__quotation__")
+391 |     quote_dtype = exploded.schema.get("__quotation__")
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `with_columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:111:14
+    |
+109 |             time_format = "%Y-%m-%d"
+110 |
+111 |         df = df.with_columns(time_expr)
+    |              ^^^^^^^^^^^^^^^
+112 |     else:
+113 |         # Numeric binning
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `select` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:122:29
+    |
+120 |             numeric_origin_value = float(numeric_origin)
+121 |         else:
+122 |             origin_series = df.select(
+    |                             ^^^^^^^^^
+123 |                 pl.col(time_column).cast(pl.Float64()).min()
+124 |             ).to_series()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `with_columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:131:14
+    |
+129 |             )
+130 |
+131 |         df = df.with_columns(
+    |              ^^^^^^^^^^^^^^^
+132 |             pl.col(time_column).cast(pl.Float64()).alias("__numeric_value__"),
+133 |         )
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-assignment]: Object of type `SequentialAnalysisRequest` is not assignable to attribute `request` on type `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:419:13
+    |
+417 |             task_id = task_manager.create_task(req_model)
+418 |             task = task_manager.get_task(task_id)
+419 |             task.request = req_model
+    |             ^^^^^^^^^^^^
+420 |             task.complete(GenericAnalysisResult(result_payload))
+421 |             task_manager.save_task(task)
+    |
+info: rule `invalid-assignment` is enabled by default
+
+error[unresolved-attribute]: Attribute `complete` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:420:13
+    |
+418 |             task = task_manager.get_task(task_id)
+419 |             task.request = req_model
+420 |             task.complete(GenericAnalysisResult(result_payload))
+    |             ^^^^^^^^^^^^^
+421 |             task_manager.save_task(task)
+422 |             task_manager.set_current_task("sequential_analysis", task_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `save_task` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:421:36
+    |
+419 |             task.request = req_model
+420 |             task.complete(GenericAnalysisResult(result_payload))
+421 |             task_manager.save_task(task)
+    |                                    ^^^^ Expected `AnalysisTask[Unknown, Unknown]`, found `AnalysisTask[Unknown, Unknown] | None`
+422 |             task_manager.set_current_task("sequential_analysis", task_id)
+    |
+info: Element `None` of this union is not assignable to `AnalysisTask[Unknown, Unknown]`
+info: Method defined here
+   --> src/ldaca_web_app_backend/analysis/manager.py:104:9
+    |
+102 |         return self.store.get_task(task_id)
+103 |
+104 |     def save_task(self, task: AnalysisTask) -> None:
+    |         ^^^^^^^^^       ------------------ Parameter declared here
+105 |         self.store.save_task(task)
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-assignment]: Invalid subscript assignment with key of type `Literal["metadata"]` and value of type `dict[str, str]` on object of type `dict[str, str | list[dict[str, Any]] | list[str] | int]`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:424:9
+    |
+422 |             task_manager.set_current_task("sequential_analysis", task_id)
+423 |
+424 |         result_payload["metadata"] = {"task_id": task.task_id}
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------
+    |                                      |
+    |                                      Expected value of type `str | list[dict[str, Any]] | list[str] | int`, got `dict[str, str]`
+425 |         return result_payload
+    |
+info: rule `invalid-assignment` is enabled by default
+
+error[unresolved-attribute]: Attribute `task_id` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/sequential_analysis.py:424:50
+    |
+422 |             task_manager.set_current_task("sequential_analysis", task_id)
+423 |
+424 |         result_payload["metadata"] = {"task_id": task.task_id}
+    |                                                  ^^^^^^^^^^^^
+425 |         return result_payload
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/token_frequencies.py:98:33
+    |
+ 96 |     """Coerce token-limit input to a safe positive integer."""
+ 97 |     try:
+ 98 |         candidate = int(value)  # type: ignore[arg-type]
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^
+ 99 |     except TypeError, ValueError:
+100 |         return DEFAULT_TOKEN_LIMIT
+    |
+help: Remove the unused suppression comment
+95  | def _coerce_limit_value(value) -> int:
+96  |     """Coerce token-limit input to a safe positive integer."""
+97  |     try:
+    -         candidate = int(value)  # type: ignore[arg-type]
+98  +         candidate = int(value)
+99  |     except TypeError, ValueError:
+100 |         return DEFAULT_TOKEN_LIMIT
+101 |     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/token_frequencies.py:191:16
+    |
+190 |         token_df = token_lf.collect()
+191 |         rows = token_df.to_dicts()
+    |                ^^^^^^^^^^^^^^^^^
+192 |         total_tokens = len(rows)
+193 |         display_name = str(node_entry.get("node_name") or node_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/token_frequencies.py:244:24
+    |
+242 |                 "significance": str(row.get("significance") or ""),
+243 |             }
+244 |             for row in stats_df.to_dicts()
+    |                        ^^^^^^^^^^^^^^^^^
+245 |         ]
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/topic_modeling.py:228:9
+    |
+226 |         node_ids=request.node_ids,
+227 |         node_columns=request.node_columns,
+228 |         min_topic_size=request.min_topic_size,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `int`, found `int | None`
+229 |         random_seed=request.random_seed,
+230 |         representative_words_count=request.representative_words_count,
+    |
+info: Element `None` of this union is not assignable to `int`
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/topic_modeling.py:229:9
+    |
+227 |         node_columns=request.node_columns,
+228 |         min_topic_size=request.min_topic_size,
+229 |         random_seed=request.random_seed,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `int`, found `int | None`
+230 |         representative_words_count=request.representative_words_count,
+231 |     )
+    |
+info: Element `None` of this union is not assignable to `int`
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/topic_modeling.py:230:9
+    |
+228 |         min_topic_size=request.min_topic_size,
+229 |         random_seed=request.random_seed,
+230 |         representative_words_count=request.representative_words_count,
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `int`, found `int | None`
+231 |     )
+232 |     analysis_tm.save_task(
+    |
+info: Element `None` of this union is not assignable to `int`
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/analyses/topic_modeling.py:334:13
+    |
+332 |             state="successful",
+333 |             message="Topic Modeling analysis complete",
+334 |             data=payload,
+    |             ^^^^^^^^^^^^ Expected `TopicModelingData | None`, found `(Unknown & Top[dict[Unknown, Unknown]]) | dict[Unknown, Unknown]`
+335 |             metadata={"task_id": task_id},
+336 |         )
+    |
+info: Element `dict[Unknown, Unknown]` of this union is not assignable to `TopicModelingData | None`
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `write_json` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/base.py:130:13
+    |
+128 |             # Polars does not currently expose LazyFrame.sink_json, so JSON
+129 |             # remains the single explicit eager export path.
+130 |             export_data.collect().write_json(output_path)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+131 |     except HTTPException:
+132 |         raise
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+warning[possibly-missing-submodule]: Submodule `util` might not have been imported
+   --> src/ldaca_web_app_backend/api/workspaces/base.py:315:32
+    |
+313 |         # Presence in THREADING_LAYER_PRIORITY is only a preference list, not
+314 |         # evidence that the TBB runtime is installed/usable.
+315 |         numba_available = bool(importlib.util.find_spec("numba"))
+    |                                ^^^^^^^^^^^^^^
+316 |         tbb_available = False
+317 |         tbb_import_error: Exception | None = None
+    |
+help: Consider explicitly importing `importlib.util`
+info: rule `possibly-missing-submodule` is enabled by default
+
+warning[possibly-missing-submodule]: Submodule `util` might not have been imported
+   --> src/ldaca_web_app_backend/api/workspaces/base.py:321:20
+    |
+319 |         if numba_available:
+320 |             try:
+321 |                 if importlib.util.find_spec("tbb"):
+    |                    ^^^^^^^^^^^^^^
+322 |                     importlib.import_module("tbb")
+323 |                     tbb_available = True
+    |
+help: Consider explicitly importing `importlib.util`
+info: rule `possibly-missing-submodule` is enabled by default
+
+warning[possibly-missing-submodule]: Submodule `util` might not have been imported
+   --> src/ldaca_web_app_backend/api/workspaces/base.py:324:22
+    |
+322 |                     importlib.import_module("tbb")
+323 |                     tbb_available = True
+324 |                 elif importlib.util.find_spec("tbb4py"):
+    |                      ^^^^^^^^^^^^^^
+325 |                     importlib.import_module("tbb4py")
+326 |                     tbb_available = True
+    |
+help: Consider explicitly importing `importlib.util`
+info: rule `possibly-missing-submodule` is enabled by default
+
+error[invalid-argument-type]: Argument to function `stage_dataframe_as_lazy` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/base.py:475:13
+    |
+474 |         lazy_data = stage_dataframe_as_lazy(
+475 |             data,
+    |             ^^^^ Expected `DataFrame`, found `DataFrame | InProcessQuery`
+476 |             workspace_dir,
+477 |             node_name=node_name,
+    |
+info: Element `InProcessQuery` of this union is not assignable to `DataFrame`
+info: Function defined here
+   --> src/ldaca_web_app_backend/api/workspaces/utils.py:199:5
+    |
+199 | def stage_dataframe_as_lazy(
+    |     ^^^^^^^^^^^^^^^^^^^^^^^
+200 |     data: pl.DataFrame,
+    |     ------------------ Parameter declared here
+201 |     workspace_dir: Path,
+202 |     node_name: str,
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-assignment]: Object of type `str` is not assignable to attribute `name` on type `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:170:9
+    |
+168 |                 status_code=400, detail=f"Invalid workspace name: {reason}"
+169 |             )
+170 |         workspace.name = new_name
+    |         ^^^^^^^^^^^^^^
+171 |         update_workspace(user_id, workspace_id, workspace)
+172 |         return workspace.info_json()
+    |
+info: rule `invalid-assignment` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:171:35
+    |
+169 |             )
+170 |         workspace.name = new_name
+171 |         update_workspace(user_id, workspace_id, workspace)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+172 |         return workspace.info_json()
+173 |     except HTTPException:
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `info_json` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:172:16
+    |
+170 |         workspace.name = new_name
+171 |         update_workspace(user_id, workspace_id, workspace)
+172 |         return workspace.info_json()
+    |                ^^^^^^^^^^^^^^^^^^^
+173 |     except HTTPException:
+174 |         raise
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-assignment]: Object of type `str` is not assignable to attribute `description` on type `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:188:9
+    |
+186 |     workspace = workspace_manager.get_current_workspace(user_id)
+187 |     try:
+188 |         workspace.description = description.strip()
+    |         ^^^^^^^^^^^^^^^^^^^^^
+189 |         update_workspace(user_id, workspace_id, workspace)
+190 |         return workspace.info_json()
+    |
+info: rule `invalid-assignment` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:189:35
+    |
+187 |     try:
+188 |         workspace.description = description.strip()
+189 |         update_workspace(user_id, workspace_id, workspace)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+190 |         return workspace.info_json()
+191 |     except Exception as e:
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `info_json` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:190:16
+    |
+188 |         workspace.description = description.strip()
+189 |         update_workspace(user_id, workspace_id, workspace)
+190 |         return workspace.info_json()
+    |                ^^^^^^^^^^^^^^^^^^^
+191 |     except Exception as e:
+192 |         raise HTTPException(
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:205:35
+    |
+203 |     ws = workspace_manager.get_current_workspace(user_id)
+204 |     try:
+205 |         update_workspace(user_id, workspace_id, ws)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+206 |         return {"state": "successful", "message": "Workspace saved"}
+207 |     except Exception as e:
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:230:35
+    |
+228 |     # Persist latest state if this is the current in-memory workspace
+229 |     if workspace_manager.get_current_workspace_id(user_id) == workspace_id:
+230 |         update_workspace(user_id, workspace_id, ws)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+231 |
+232 |     # Verify workspace directory exists before submitting
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `get_workspace_dir` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:233:66
+    |
+232 |     # Verify workspace directory exists before submitting
+233 |     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    |                                                                  ^^^^^^^^^^^^ Expected `str`, found `str | None`
+234 |     if workspace_dir is None or not workspace_dir.exists():
+235 |         raise HTTPException(status_code=404, detail="Workspace not found")
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Method defined here
+   --> src/ldaca_web_app_backend/core/workspace.py:290:9
+    |
+288 |         return tm
+289 |
+290 |     def get_workspace_dir(self, user_id: str, workspace_id: str) -> Optional[Path]:
+    |         ^^^^^^^^^^^^^^^^^                     ----------------- Parameter declared here
+291 |         cached = self._get_indexed_path(user_id, workspace_id)
+292 |         if cached is None:
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `info_json` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:484:12
+    |
+482 |     user_id = current_user["id"]
+483 |     workspace = workspace_manager.get_current_workspace(user_id)
+484 |     return workspace.info_json()
+    |            ^^^^^^^^^^^^^^^^^^^
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `graph_json` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:502:12
+    |
+500 |     user_id = current_user["id"]
+501 |     workspace = workspace_manager.get_current_workspace(user_id)
+502 |     return workspace.graph_json()
+    |            ^^^^^^^^^^^^^^^^^^^^
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `graph_json` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/lifecycle.py:511:18
+    |
+509 |     user_id = current_user["id"]
+510 |     workspace = workspace_manager.get_current_workspace(user_id)
+511 |     graph_data = workspace.graph_json()
+    |                  ^^^^^^^^^^^^^^^^^^^^
+512 |     return {"nodes": graph_data.get("nodes", [])}
+513 |     return {"nodes": graph_data.get("nodes", [])}
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:282:16
+    |
+280 |                 detail=f"Duplicate node id '{node_id}' provided",
+281 |             )
+282 |         node = ws.nodes[node_id]
+    |                ^^^^^^^^
+283 |         nodes.append(node)
+284 |         seen.add(node_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_series` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:361:26
+    |
+359 |         try:
+360 |             count_df = lazy_frame.select(pl.len().alias("_len")).collect()
+361 |             total += int(count_df.to_series(0).item())
+    |                          ^^^^^^^^^^^^^^^^^^
+362 |         except Exception:
+363 |             return None
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:390:16
+    |
+388 | ):
+389 |     user_id = current_user["id"]
+390 |     data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+391 |
+392 |     try:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:422:24
+    |
+420 |         ) from exc
+421 |
+422 |     columns_out = list(preview_df.columns)
+    |                        ^^^^^^^^^^^^^^^^^^
+423 |     dtypes_out = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+424 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:423:53
+    |
+422 |     columns_out = list(preview_df.columns)
+423 |     dtypes_out = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+    |                                                     ^^^^^^^^^^^^^^^^^
+424 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:424:17
+    |
+422 |     columns_out = list(preview_df.columns)
+423 |     dtypes_out = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+424 |     data_rows = preview_df.to_dicts()
+    |                 ^^^^^^^^^^^^^^^^^^^
+425 |
+426 |     return ExpressionPreviewResponse(
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:443:12
+    |
+441 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+442 |     ws = workspace_manager.get_current_workspace(user_id)
+443 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+444 |     data_obj = node.data
+445 |     try:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:486:35
+    |
+484 |     try:
+485 |         node.data = updated_data
+486 |         update_workspace(user_id, workspace_id)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+487 |     except Exception as exc:
+488 |         raise HTTPException(
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:510:12
+    |
+508 |     user_id = current_user["id"]
+509 |     ws = workspace_manager.get_current_workspace(user_id)
+510 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+511 |     try:
+512 |         return node.info()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:526:12
+    |
+524 |     user_id = current_user["id"]
+525 |     ws = workspace_manager.get_current_workspace(user_id)
+526 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+527 |     data_obj = node.data
+528 |     try:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `len` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:531:26
+    |
+529 |         lazyframe = _unwrap_lazyframe(data_obj, purpose="Get node data")
+530 |         df = lazyframe.collect()
+531 |         total_rows = len(df)
+    |                          ^^ Expected `Sized`, found `InProcessQuery | DataFrame`
+532 |         start_idx = (page - 1) * page_size
+533 |         paginated_df = df.slice(start_idx, page_size)
+    |
+info: Element `InProcessQuery` of this union is not assignable to `Sized`
+info: Function defined here
+    --> stdlib/builtins.pyi:3777:5
+     |
+3775 |     """
+3776 |
+3777 | def len(obj: Sized, /) -> int:
+     |     ^^^ ---------- Parameter declared here
+3778 |     """Return the number of items in a container."""
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `slice` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:533:24
+    |
+531 |         total_rows = len(df)
+532 |         start_idx = (page - 1) * page_size
+533 |         paginated_df = df.slice(start_idx, page_size)
+    |                        ^^^^^^^^
+534 |         return {
+535 |             "data": paginated_df.to_dicts(),
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:544:29
+    |
+542 |                 "has_prev": page > 1,
+543 |             },
+544 |             "columns": list(df.columns),
+    |                             ^^^^^^^^^^
+545 |             "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
+546 |         }
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:545:58
+    |
+543 |             },
+544 |             "columns": list(df.columns),
+545 |             "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
+    |                                                          ^^^^^^^^^
+546 |         }
+547 |     except Exception as e:  # pragma: no cover
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:558:12
+    |
+556 |     user_id = current_user["id"]
+557 |     ws = workspace_manager.get_current_workspace(user_id)
+558 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+559 |     try:
+560 |         return {"shape": node.shape}
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:576:12
+    |
+574 |     user_id = current_user["id"]
+575 |     ws = workspace_manager.get_current_workspace(user_id)
+576 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+577 |     data_obj = node.data
+578 |     try:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `get_column` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:589:30
+    |
+587 |                     .collect()
+588 |                 )
+589 |                 raw_values = unique_df.get_column(column_name).to_list()
+    |                              ^^^^^^^^^^^^^^^^^^^^
+590 |                 has_null = any(value is None for value in raw_values)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `get_column` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:609:26
+    |
+607 |                 .collect()
+608 |             )
+609 |             raw_values = unique_df.get_column(column_name).to_list()
+    |                          ^^^^^^^^^^^^^^^^^^^^
+610 |             has_null = any(value is None for value in raw_values)
+611 |             non_null_values = [value for value in raw_values if value is not None]
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:642:12
+    |
+640 |     user_id = current_user["id"]
+641 |     ws = workspace_manager.get_current_workspace(user_id)
+642 |     node = ws.nodes[node_id]
+    |            ^^^^^^^^
+643 |     data_obj = node.data
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:652:24
+    |
+650 |         import polars as pl
+651 |
+652 |         column_dtype = df.schema[column_name]
+    |                        ^^^^^^^^^
+653 |         is_datetime_column = column_dtype in (
+654 |             pl.Datetime,
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `select` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:663:23
+    |
+661 |         # This works for both numeric and datetime columns
+662 |         try:
+663 |             desc_df = df.select(column_name).describe(interpolation="nearest")
+    |                       ^^^^^^^^^
+664 |
+665 |             # Convert to dict for easier access
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:739:35
+    |
+737 |     success = workspace.remove_node(node_id)
+738 |     if success:
+739 |         update_workspace(user_id, workspace_id)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+740 |     if not success:
+741 |         raise HTTPException(status_code=404, detail="Node not found")
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:753:12
+    |
+751 |     user_id = current_user["id"]
+752 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+753 |     node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+754 |     try:
+755 |         node.name = new_name
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:756:35
+    |
+754 |     try:
+755 |         node.name = new_name
+756 |         update_workspace(user_id, workspace_id, best_effort=True)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+757 |         try:
+758 |             return node.info()
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:774:12
+    |
+772 |     user_id = current_user["id"]
+773 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+774 |     node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+775 |     workspace = workspace_manager.get_current_workspace(user_id)
+776 |     if workspace is None:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:802:35
+    |
+800 |         )
+801 |         workspace.add_node(new_node)
+802 |         update_workspace(user_id, workspace_id)
+    |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+803 |         try:
+804 |             return new_node.info()
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:821:12
+    |
+819 |     user_id = current_user["id"]
+820 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+821 |     node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+822 |     data_obj = node.data
+823 |     lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter node")
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:839:31
+    |
+837 |     )
+838 |     workspace.add_node(new_node)
+839 |     update_workspace(user_id, workspace_id)
+    |                               ^^^^^^^^^^^^ Expected `str`, found `str | None`
+840 |     return {
+841 |         "node_name": new_node.name,
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:855:16
+    |
+853 | ) -> FilterPreviewResponse:
+854 |     user_id = current_user["id"]
+855 |     data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+856 |     lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter preview")
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_series` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:868:13
+    |
+867 |         total_rows_series = (
+868 |             filtered_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+869 |         )
+870 |         total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:890:20
+    |
+888 |         ) from exc
+889 |
+890 |     columns = list(preview_df.columns)
+    |                    ^^^^^^^^^^^^^^^^^^
+891 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+892 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:891:49
+    |
+890 |     columns = list(preview_df.columns)
+891 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+    |                                                 ^^^^^^^^^^^^^^^^^
+892 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:892:17
+    |
+890 |     columns = list(preview_df.columns)
+891 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+892 |     data_rows = preview_df.to_dicts()
+    |                 ^^^^^^^^^^^^^^^^^^^
+893 |
+894 |     return {
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-return-type]: Return type does not match returned value
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:894:12
+    |
+892 |       data_rows = preview_df.to_dicts()
+893 |
+894 |       return {
+    |  ____________^
+895 | |         "data": data_rows,
+896 | |         "columns": columns,
+897 | |         "dtypes": dtypes,
+898 | |         "pagination": {
+899 | |             "page": normalized_page,
+900 | |             "page_size": normalized_page_size,
+901 | |             "total_rows": total_rows,
+902 | |             "total_pages": total_pages,
+903 | |             "has_next": normalized_page < total_pages,
+904 | |             "has_prev": normalized_page > 1 and total_rows > 0,
+905 | |         },
+906 | |     }
+    | |_____^ expected `FilterPreviewResponse`, found `dict[str, list[dict[str, Any]] | list[str] | dict[str, str] | dict[str, int | Unknown]]`
+    |
+   ::: src/ldaca_web_app_backend/api/workspaces/nodes.py:853:6
+    |
+851 |       page_size: int = Query(10, ge=1, le=500),
+852 |       current_user: dict = Depends(get_current_user),
+853 |   ) -> FilterPreviewResponse:
+    |        --------------------- Expected `FilterPreviewResponse` because of return type
+854 |       user_id = current_user["id"]
+855 |       data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    |
+info: rule `invalid-return-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:917:12
+    |
+915 |     user_id = current_user["id"]
+916 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+917 |     node = workspace_manager.get_current_workspace(user_id).nodes[node_id]
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+918 |     data_obj = node.data
+919 |     lazy_data = _unwrap_lazyframe(data_obj, purpose="Slice node")
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:938:31
+    |
+936 |     )
+937 |     workspace.add_node(new_node)
+938 |     update_workspace(user_id, workspace_id)
+    |                               ^^^^^^^^^^^^ Expected `str`, found `str | None`
+939 |     return {
+940 |         "node_name": new_node.name,
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:954:16
+    |
+952 | ) -> FilterPreviewResponse:
+953 |     user_id = current_user["id"]
+954 |     data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+955 |
+956 |     offset = int(request.offset or 0)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_series` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:964:13
+    |
+963 |         total_rows_series = (
+964 |             sliced_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+965 |         )
+966 |         total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:984:20
+    |
+982 |         ) from exc
+983 |
+984 |     columns = list(preview_df.columns)
+    |                    ^^^^^^^^^^^^^^^^^^
+985 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+986 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:985:49
+    |
+984 |     columns = list(preview_df.columns)
+985 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+    |                                                 ^^^^^^^^^^^^^^^^^
+986 |     data_rows = preview_df.to_dicts()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> src/ldaca_web_app_backend/api/workspaces/nodes.py:986:17
+    |
+984 |     columns = list(preview_df.columns)
+985 |     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+986 |     data_rows = preview_df.to_dicts()
+    |                 ^^^^^^^^^^^^^^^^^^^
+987 |
+988 |     return {
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-return-type]: Return type does not match returned value
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:988:12
+     |
+ 986 |       data_rows = preview_df.to_dicts()
+ 987 |
+ 988 |       return {
+     |  ____________^
+ 989 | |         "data": data_rows,
+ 990 | |         "columns": columns,
+ 991 | |         "dtypes": dtypes,
+ 992 | |         "pagination": {
+ 993 | |             "page": normalized_page,
+ 994 | |             "page_size": normalized_page_size,
+ 995 | |             "total_rows": total_rows,
+ 996 | |             "total_pages": total_pages,
+ 997 | |             "has_next": preview_offset + normalized_page_size < total_rows,
+ 998 | |             "has_prev": normalized_page > 1 and total_rows > 0,
+ 999 | |         },
+1000 | |     }
+     | |_____^ expected `FilterPreviewResponse`, found `dict[str, list[dict[str, Any]] | list[str] | dict[str, str] | dict[str, int | Unknown]]`
+     |
+    ::: src/ldaca_web_app_backend/api/workspaces/nodes.py:952:6
+     |
+ 950 |       page_size: int = Query(10, ge=1, le=500),
+ 951 |       current_user: dict = Depends(get_current_user),
+ 952 |   ) -> FilterPreviewResponse:
+     |        --------------------- Expected `FilterPreviewResponse` because of return type
+ 953 |       user_id = current_user["id"]
+ 954 |       data_obj = workspace_manager.get_current_workspace(user_id).nodes[node_id].data
+     |
+info: rule `invalid-return-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1030:21
+     |
+1029 |         preview_df = concat_lazy.slice(offset, normalized_page_size).collect()
+1030 |         data_rows = preview_df.to_dicts()
+     |                     ^^^^^^^^^^^^^^^^^^^
+1031 |
+1032 |         if total_rows is None:
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1096:35
+     |
+1094 |         )
+1095 |         workspace.add_node(new_node)
+1096 |         update_workspace(user_id, workspace_id)
+     |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+1097 |         return new_node.info()
+1098 |     except HTTPException:
+     |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1117:17
+     |
+1115 |     user_id = current_user["id"]
+1116 |     workspace = workspace_manager.get_current_workspace(user_id)
+1117 |     left_node = workspace.nodes[left_node_id]
+     |                 ^^^^^^^^^^^^^^^
+1118 |     right_node = workspace.nodes[right_node_id]
+1119 |     try:
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1118:18
+     |
+1116 |     workspace = workspace_manager.get_current_workspace(user_id)
+1117 |     left_node = workspace.nodes[left_node_id]
+1118 |     right_node = workspace.nodes[right_node_id]
+     |                  ^^^^^^^^^^^^^^^
+1119 |     try:
+1120 |         allowed_hows = {"inner", "left", "right", "full", "semi", "anti", "cross"}
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1144:65
+     |
+1142 |                 )
+1143 |             joined_lazy = left_lazy.join(
+1144 |                 right_lazy, left_on=left_on, right_on=right_on, how=how_val
+     |                                                                 ^^^^^^^^^^^ Expected `Literal["inner", "left", "right", "full", "semi", ... omitted 3 literals]`, found `str & ~Literal["cross"]`
+1145 |             )
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_series` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1149:17
+     |
+1147 |         try:
+1148 |             total_rows_series = (
+1149 |                 joined_lazy.select(pl.len().alias("_len")).collect().to_series(0)
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+1150 |             )
+1151 |             total_rows = int(total_rows_series.item())
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `to_dicts` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1161:24
+     |
+1159 |             raise HTTPException(status_code=500, detail=f"Join preview failed: {exc}")
+1160 |
+1161 |         preview_rows = preview_df.to_dicts()
+     |                        ^^^^^^^^^^^^^^^^^^^
+1162 |         preview_columns = list(preview_df.columns)
+1163 |         dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1162:32
+     |
+1161 |         preview_rows = preview_df.to_dicts()
+1162 |         preview_columns = list(preview_df.columns)
+     |                                ^^^^^^^^^^^^^^^^^^
+1163 |         dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `schema` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1163:53
+     |
+1161 |         preview_rows = preview_df.to_dicts()
+1162 |         preview_columns = list(preview_df.columns)
+1163 |         dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+     |                                                     ^^^^^^^^^^^^^^^^^
+1164 |
+1165 |         if total_rows is None:
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1209:17
+     |
+1207 |     workspace_id = workspace_manager.get_current_workspace_id(user_id)
+1208 |     workspace = workspace_manager.get_current_workspace(user_id)
+1209 |     left_node = workspace.nodes[left_node_id]
+     |                 ^^^^^^^^^^^^^^^
+1210 |     right_node = workspace.nodes[right_node_id]
+1211 |     try:
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1210:18
+     |
+1208 |     workspace = workspace_manager.get_current_workspace(user_id)
+1209 |     left_node = workspace.nodes[left_node_id]
+1210 |     right_node = workspace.nodes[right_node_id]
+     |                  ^^^^^^^^^^^^^^^
+1211 |     try:
+1212 |         left_data = _unwrap_lazyframe(
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1229:65
+     |
+1227 |         else:
+1228 |             joined_data = left_data.join(
+1229 |                 right_data, left_on=left_on, right_on=right_on, how=how_val
+     |                                                                 ^^^^^^^^^^^ Expected `Literal["inner", "left", "right", "full", "semi", ... omitted 3 literals]`, found `str & ~Literal["cross"]`
+1230 |             )
+1231 |         node_name = new_node_name or f"{left_node.name}_join_{right_node.name}"
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `add_node` is not defined on `None` in union `Any | None`
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1240:9
+     |
+1238 |             parents=[left_node, right_node],
+1239 |         )
+1240 |         workspace.add_node(new_node)
+     |         ^^^^^^^^^^^^^^^^^^
+1241 |         update_workspace(user_id, workspace_id)
+1242 |         return new_node.info()
+     |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to function `update_workspace` is incorrect
+    --> src/ldaca_web_app_backend/api/workspaces/nodes.py:1241:35
+     |
+1239 |         )
+1240 |         workspace.add_node(new_node)
+1241 |         update_workspace(user_id, workspace_id)
+     |                                   ^^^^^^^^^^^^ Expected `str`, found `str | None`
+1242 |         return new_node.info()
+1243 |     except KeyError:
+     |
+info: Element `None` of this union is not assignable to `str`
+info: Function defined here
+  --> src/ldaca_web_app_backend/api/workspaces/utils.py:58:5
+   |
+58 | def update_workspace(
+   |     ^^^^^^^^^^^^^^^^
+59 |     user_id: str,
+60 |     workspace_id: str,
+   |     ----------------- Parameter declared here
+61 |     workspace: Any | None = None,
+62 |     *,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+   --> src/ldaca_web_app_backend/core/expression_parser.py:140:40
+    |
+138 |         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+139 |             values: List[Any] = []
+140 |             for element in node.elts:  # type: ignore[attr-defined]
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+141 |                 wrapped = self.visit(element)
+142 |                 values.append(self._ensure_literal(wrapped, context=context))
+    |
+help: Remove the unused suppression comment
+137 |     def _literal_sequence(self, node: ast.AST, *, context: str) -> Sequence[Any]:
+138 |         if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+139 |             values: List[Any] = []
+    -             for element in node.elts:  # type: ignore[attr-defined]
+140 +             for element in node.elts:
+141 |                 wrapped = self.visit(element)
+142 |                 values.append(self._ensure_literal(wrapped, context=context))
+143 |             return values
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+   --> src/ldaca_web_app_backend/core/expression_parser.py:330:68
+    |
+328 |         return self._wrap(pl.col(node.id))
+329 |
+330 |     def visit_Constant(self, node: ast.Constant) -> _ExprWrapper:  # type: ignore[override]
+    |                                                                    ^^^^^^^^^^^^^^^^^^^^^^^^
+331 |         value = node.value
+332 |         if isinstance(value, (int, float, bool)) or value is None:
+    |
+help: Remove the unused suppression comment
+327 |         self._ensure_column_exists(node.id)
+328 |         return self._wrap(pl.col(node.id))
+329 | 
+    -     def visit_Constant(self, node: ast.Constant) -> _ExprWrapper:  # type: ignore[override]
+330 +     def visit_Constant(self, node: ast.Constant) -> _ExprWrapper:
+331 |         value = node.value
+332 |         if isinstance(value, (int, float, bool)) or value is None:
+333 |             return self._literal_from_constant(value)
+
+warning[possibly-missing-submodule]: Submodule `util` might not have been imported
+  --> src/ldaca_web_app_backend/core/worker.py:68:16
+   |
+66 |         tbb_available = False
+67 |         try:
+68 |             if importlib.util.find_spec("tbb"):
+   |                ^^^^^^^^^^^^^^
+69 |                 importlib.import_module("tbb")
+70 |                 tbb_available = True
+   |
+help: Consider explicitly importing `importlib.util`
+info: rule `possibly-missing-submodule` is enabled by default
+
+warning[possibly-missing-submodule]: Submodule `util` might not have been imported
+  --> src/ldaca_web_app_backend/core/worker.py:71:18
+   |
+69 |                 importlib.import_module("tbb")
+70 |                 tbb_available = True
+71 |             elif importlib.util.find_spec("tbb4py"):
+   |                  ^^^^^^^^^^^^^^
+72 |                 importlib.import_module("tbb4py")
+73 |                 tbb_available = True
+   |
+help: Consider explicitly importing `importlib.util`
+info: rule `possibly-missing-submodule` is enabled by default
+
+error[invalid-argument-type]: Argument to function `run_topic_modeling_task` is incorrect
+   --> src/ldaca_web_app_backend/core/worker.py:211:9
+    |
+209 |         user_id=user_id,
+210 |         workspace_id=workspace_id,
+211 |         corpora=corpora,
+    |         ^^^^^^^^^^^^^^^ Expected `list[list[str]]`, found `dict[str, list[str]]`
+212 |         node_infos=node_infos,
+213 |         artifact_dir=artifact_dir,
+    |
+info: Function defined here
+  --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:30:5
+   |
+30 | def run_topic_modeling_task(
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+31 |     configure_worker_environment,
+32 |     user_id: str,
+33 |     workspace_id: str,
+34 |     corpora: list[list[str]],
+   |     ------------------------ Parameter declared here
+35 |     node_infos: list[Dict[str, Any]],
+36 |     artifact_dir: str,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to function `run_topic_modeling_task` is incorrect
+   --> src/ldaca_web_app_backend/core/worker.py:212:9
+    |
+210 |         workspace_id=workspace_id,
+211 |         corpora=corpora,
+212 |         node_infos=node_infos,
+    |         ^^^^^^^^^^^^^^^^^^^^^ Expected `list[dict[str, Any]]`, found `dict[str, dict[str, str]]`
+213 |         artifact_dir=artifact_dir,
+214 |         artifact_prefix=artifact_prefix,
+    |
+info: Function defined here
+  --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:30:5
+   |
+30 | def run_topic_modeling_task(
+   |     ^^^^^^^^^^^^^^^^^^^^^^^
+31 |     configure_worker_environment,
+32 |     user_id: str,
+33 |     workspace_id: str,
+34 |     corpora: list[list[str]],
+35 |     node_infos: list[Dict[str, Any]],
+   |     -------------------------------- Parameter declared here
+36 |     artifact_dir: str,
+37 |     artifact_prefix: str,
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Object of type `Series` has no attribute `columns`
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:241:27
+    |
+240 |             topic_ids: list[int] = []
+241 |             if "Topic" in topic_freq.columns and not topic_freq.is_empty():
+    |                           ^^^^^^^^^^^^^^^^^^
+242 |                 topic_ids = [
+243 |                     int(topic_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Object of type `Series` has no attribute `get_column`
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:244:37
+    |
+242 |                   topic_ids = [
+243 |                       int(topic_id)
+244 |                       for topic_id in topic_freq
+    |  _____________________________________^
+245 | |                     .filter(pl.col("Topic") != -1)
+246 | |                     .get_column("Topic")
+    | |_______________________________^
+247 |                       .to_list()
+248 |                       if isinstance(topic_id, (int, np.integer))
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `filter` is incorrect
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:245:29
+    |
+243 |                     int(topic_id)
+244 |                     for topic_id in topic_freq
+245 |                     .filter(pl.col("Topic") != -1)
+    |                             ^^^^^^^^^^^^^^^^^^^^^ Expected `Series | Iterable[bool]`, found `Expr`
+246 |                     .get_column("Topic")
+247 |                     .to_list()
+    |
+info: Method defined here
+    --> .venv/lib/python3.14/site-packages/polars/series/series.py:3345:9
+     |
+3343 |         return self
+3344 |
+3345 |     def filter(self, predicate: Series | Iterable[bool]) -> Self:
+     |         ^^^^^^       ---------------------------------- Parameter declared here
+3346 |         """
+3347 |         Filter elements by a boolean mask.
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Method `__getitem__` of type `bound method Mapping[str, tuple[str, int | float]].__getitem__(key: str, /) -> tuple[str, int | float]` cannot be called with key of type `slice[Any, Any, Any]` on object of type `Mapping[str, tuple[str, int | float]]`
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:257:41
+    |
+255 |                 top_words = [
+256 |                     word
+257 |                     for word, _score in words[:max_representative_words]
+    |                                         ^^^^^
+258 |                     if isinstance(word, str) and word
+259 |                 ]
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[not-iterable]: Object of type `int` is not iterable
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:257:41
+    |
+255 |                 top_words = [
+256 |                     word
+257 |                     for word, _score in words[:max_representative_words]
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+258 |                     if isinstance(word, str) and word
+259 |                 ]
+    |
+info: It doesn't have an `__iter__` method or a `__getitem__` method
+info: rule `not-iterable` is enabled by default
+
+error[not-iterable]: Object of type `float` is not iterable
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:257:41
+    |
+255 |                 top_words = [
+256 |                     word
+257 |                     for word, _score in words[:max_representative_words]
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+258 |                     if isinstance(word, str) and word
+259 |                 ]
+    |
+info: It doesn't have an `__iter__` method or a `__getitem__` method
+info: rule `not-iterable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `Literal[True]` with no `__getitem__` method
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:257:41
+    |
+255 |                 top_words = [
+256 |                     word
+257 |                     for word, _score in words[:max_representative_words]
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+258 |                     if isinstance(word, str) and word
+259 |                 ]
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `index` is incorrect
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:267:51
+    |
+265 |             all_topics_sorted = sorted(list(topic_model.get_topics().keys()))
+266 |             indices = (
+267 |                 np.array([all_topics_sorted.index(topic_id) for topic_id in topic_ids])
+    |                                                   ^^^^^^^^ Expected `str`, found `int`
+268 |                 if topic_ids
+269 |                 else np.array([])
+    |
+info: Method defined here
+    --> stdlib/builtins.pyi:2856:9
+     |
+2854 |     # Signature of `list.index` should be kept in line with `collections.UserList.index()`
+2855 |     # and multiprocessing.managers.ListProxy.index()
+2856 |     def index(self, value: _T, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /) -> int:
+     |         ^^^^^       --------- Parameter declared here
+2857 |         """Return first index of value.
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Object of type `Series` has no attribute `height`
+   --> src/ldaca_web_app_backend/core/worker_tasks_topic.py:395:54
+    |
+393 |                     "min_topic_size": int(min_topic_size),
+394 |                     "representative_words_count": max_representative_words,
+395 |                     "total_topics_incl_outlier": int(topic_freq.height),
+    |                                                      ^^^^^^^^^^^^^^^^^
+396 |                     "random_state": random_state,
+397 |                 },
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> src/ldaca_web_app_backend/core/workspace.py:19:37
+   |
+17 | from typing import Any, Dict, Optional
+18 |
+19 | from docworkspace import Workspace  # type: ignore
+   |                                     ^^^^^^^^^^^^^^
+20 | from docworkspace.workspace.io import read_workspace_metadata
+   |
+help: Remove the unused suppression comment
+16 | from pathlib import Path
+17 | from typing import Any, Dict, Optional
+18 | 
+   - from docworkspace import Workspace  # type: ignore
+19 + from docworkspace import Workspace
+20 | from docworkspace.workspace.io import read_workspace_metadata
+21 | 
+22 | from ldaca_web_app_backend.models import WorkspaceSummary
+
+error[invalid-argument-type]: Argument to bound method `_resolve_workspace_dir` is incorrect
+   --> src/ldaca_web_app_backend/core/workspace.py:248:21
+    |
+246 |                 target_dir = self._resolve_workspace_dir(
+247 |                     user_id=user_id,
+248 |                     workspace_id=cid,
+    |                     ^^^^^^^^^^^^^^^^ Expected `str`, found `str | None`
+249 |                     workspace_name=cws.name,
+250 |                 )
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Method defined here
+   --> src/ldaca_web_app_backend/core/workspace.py:114:9
+    |
+112 |         return workspace_dir / "data" / "artifacts"
+113 |
+114 |     def _resolve_workspace_dir(
+    |         ^^^^^^^^^^^^^^^^^^^^^^
+115 |         self, user_id: str, workspace_id: str, workspace_name: str
+    |                             ----------------- Parameter declared here
+116 |     ) -> Path:
+117 |         """Resolve or allocate on-disk folder for a workspace id/name.
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `_set_cached_path` is incorrect
+   --> src/ldaca_web_app_backend/core/workspace.py:253:48
+    |
+251 |                 self._attach_workspace_dir(cws, target_dir)
+252 |                 cws.save(target_dir)
+253 |                 self._set_cached_path(user_id, cid, target_dir)
+    |                                                ^^^ Expected `str`, found `str | None`
+254 |             except Exception as exc:
+255 |                 logger.debug(
+    |
+info: Element `None` of this union is not assignable to `str`
+info: Method defined here
+  --> src/ldaca_web_app_backend/core/workspace.py:50:9
+   |
+48 |         return self._paths.get(self._path_key(user_id, workspace_id))
+49 |
+50 |     def _set_cached_path(self, user_id: str, workspace_id: str, path: Path) -> None:
+   |         ^^^^^^^^^^^^^^^^                     ----------------- Parameter declared here
+51 |         self._paths[self._path_key(user_id, workspace_id)] = path
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `where` is incorrect
+   --> src/ldaca_web_app_backend/db.py:122:59
+    |
+120 |     async with async_session_maker() as session:
+121 |         # Try to get existing user by email
+122 |         result = await session.execute(select(User).where(User.email == email))
+    |                                                           ^^^^^^^^^^^^^^^^^^^ Expected `SQLCoreOperations[bool] | _HasClauseElement[bool] | TypedColumnsClauseRole[bool] | (() -> ColumnElement[bool]) | LambdaElement`, found `bool`
+123 |         user = result.scalar_one_or_none()
+    |
+info: Method defined here
+    --> .venv/lib/python3.14/site-packages/sqlalchemy/sql/selectable.py:6242:9
+     |
+6241 |     @_generative
+6242 |     def where(self, *whereclause: _ColumnExpressionArgument[bool]) -> Self:
+     |         ^^^^^       --------------------------------------------- Parameter declared here
+6243 |         """Return a new :func:`_expression.select` construct with
+6244 |         the given expression added to
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `join` is incorrect
+   --> src/ldaca_web_app_backend/db.py:227:32
+    |
+225 |         result = await session.execute(
+226 |             select(User, UserSession)
+227 |             .join(UserSession, User.id == UserSession.user_id)
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `SQLCoreOperations[Any] | _HasClauseElement[Any] | TypedColumnsClauseRole[Any] | ... omitted 4 union elements`, found `bool`
+228 |             .where(UserSession.access_token == access_token)
+229 |             .where(UserSession.expires_at > datetime.now(UTC).replace(tzinfo=None))
+    |
+info: Method defined here
+    --> .venv/lib/python3.14/site-packages/sqlalchemy/sql/selectable.py:5541:9
+     |
+5540 |     @_generative
+5541 |     def join(
+     |         ^^^^
+5542 |         self,
+5543 |         target: _JoinTargetArgument,
+5544 |         onclause: Optional[_OnClauseArgument] = None,
+     |         -------------------------------------------- Parameter declared here
+5545 |         *,
+5546 |         isouter: bool = False,
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `where` is incorrect
+   --> src/ldaca_web_app_backend/db.py:263:59
+    |
+261 |     """
+262 |     async with async_session_maker() as session:
+263 |         result = await session.execute(select(User).where(User.email == email))
+    |                                                           ^^^^^^^^^^^^^^^^^^^ Expected `SQLCoreOperations[bool] | _HasClauseElement[bool] | TypedColumnsClauseRole[bool] | (() -> ColumnElement[bool]) | LambdaElement`, found `bool`
+264 |         user = result.scalar_one_or_none()
+    |
+info: Method defined here
+    --> .venv/lib/python3.14/site-packages/sqlalchemy/sql/selectable.py:6242:9
+     |
+6241 |     @_generative
+6242 |     def where(self, *whereclause: _ColumnExpressionArgument[bool]) -> Self:
+     |         ^^^^^       --------------------------------------------- Parameter declared here
+6243 |         """Return a new :func:`_expression.select` construct with
+6244 |         the given expression added to
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `where` is incorrect
+   --> src/ldaca_web_app_backend/db.py:315:32
+    |
+313 |     async with async_session_maker() as session:
+314 |         result = await session.execute(
+315 |             select(User).where(User.id == uuid.UUID(user_id))
+    |                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `SQLCoreOperations[bool] | _HasClauseElement[bool] | TypedColumnsClauseRole[bool] | (() -> ColumnElement[bool]) | LambdaElement`, found `bool`
+316 |         )
+317 |         user = result.scalar_one_or_none()
+    |
+info: Method defined here
+    --> .venv/lib/python3.14/site-packages/sqlalchemy/sql/selectable.py:6242:9
+     |
+6241 |     @_generative
+6242 |     def where(self, *whereclause: _ColumnExpressionArgument[bool]) -> Self:
+     |         ^^^^^       --------------------------------------------- Parameter declared here
+6243 |         """Return a new :func:`_expression.select` construct with
+6244 |         the given expression added to
+     |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-import]: Cannot resolve imported module `IPython.display`
+  --> src/ldaca_web_app_backend/deploy.py:27:10
+   |
+25 | # Optional IPython dependencies for Jupyter/Colab deployment
+26 | try:
+27 |     from IPython.display import Javascript, Markdown, display
+   |          ^^^^^^^^^^^^^^^
+28 |
+29 |     IPYTHON_AVAILABLE = True
+   |
+info: Searched in the following paths during module resolution:
+info:   1. /Users/sguo/Sources/ldaca_web_app/ldaca_web_app_backend/src (first-party code)
+info:   2. /Users/sguo/Sources/ldaca_web_app/ldaca_web_app_backend (first-party code)
+info:   3. vendored://stdlib (stdlib typeshed stubs vendored by ty)
+info:   4. /Users/sguo/.cache/uv/archive-v0/pqF7_pjFXHLzdGHI7wjc6/lib/python3.14/site-packages (site-packages)
+info:   5. /Users/sguo/Sources/ldaca_web_app/ldaca_web_app_backend/.venv/lib/python3.14/site-packages (site-packages)
+info: make sure your Python environment is properly configured: https://docs.astral.sh/ty/modules/#python-environment
+info: rule `unresolved-import` is enabled by default
+
+error[unresolved-attribute]: Object of type `WorkerTaskManager` has no attribute `active_task_count`
+   --> src/ldaca_web_app_backend/main.py:156:47
+    |
+154 |         if worker_pool.is_running:
+155 |             print(
+156 |                 f"Shutting down worker pool ({worker_pool.active_task_count} active tasks)..."
+    |                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+157 |             )
+158 |             worker_pool.shutdown(wait=True, timeout=5.0)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `add_middleware` is incorrect
+   --> src/ldaca_web_app_backend/main.py:183:5
+    |
+181 | # - Allow all origins via regex to ensure no blocking on desktop
+182 | app.add_middleware(
+183 |     CORSMiddleware,
+    |     ^^^^^^^^^^^^^^ Expected `_MiddlewareFactory[(...)]`, found `<class 'CORSMiddleware'>`
+184 |     allow_origin_regex=r".*",
+185 |     allow_credentials=True,
+    |
+info: Method defined here
+   --> .venv/lib/python3.14/site-packages/starlette/applications.py:118:9
+    |
+116 |         self.router.host(host, app=app, name=name)  # pragma: no cover
+117 |
+118 |     def add_middleware(
+    |         ^^^^^^^^^^^^^^
+119 |         self,
+120 |         middleware_class: _MiddlewareFactory[P],
+    |         --------------------------------------- Parameter declared here
+121 |         *args: P.args,
+122 |         **kwargs: P.kwargs,
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+   --> src/ldaca_web_app_backend/settings.py:207:24
+    |
+206 | # Global settings instance
+207 | settings = Settings()  # type: ignore[arg-type]
+    |                        ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: Remove the unused suppression comment
+204 | 
+205 | 
+206 | # Global settings instance
+    - settings = Settings()  # type: ignore[arg-type]
+207 + settings = Settings()
+
+error[unresolved-attribute]: Attribute `nodes` is not defined on `None` in union `Any | None`
+   --> tests/integration/test_api_workspaces.py:498:16
+    |
+497 |         workspace = workspace_manager.get_current_workspace("test")
+498 |         node = workspace.nodes[tiny_node_id]
+    |                ^^^^^^^^^^^^^^^
+499 |         node.data = pl.DataFrame(
+500 |             {
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `columns` is not defined on `InProcessQuery` in union `Unknown | InProcessQuery | DataFrame`
+   --> tests/integration/test_compute_column_expression.py:120:26
+    |
+118 |     assert payload["state"] == "successful"
+119 |     collected = node.data.collect()
+120 |     assert "A_plus_B" in collected.columns
+    |                          ^^^^^^^^^^^^^^^^^
+121 |     assert collected["A_plus_B"].to_list() == ["4", "6"]
+122 |     assert persist_calls["count"] == 1
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `InProcessQuery` with no `__getitem__` method
+   --> tests/integration/test_compute_column_expression.py:121:12
+    |
+119 |     collected = node.data.collect()
+120 |     assert "A_plus_B" in collected.columns
+121 |     assert collected["A_plus_B"].to_list() == ["4", "6"]
+    |            ^^^^^^^^^^^^^^^^^^^^^
+122 |     assert persist_calls["count"] == 1
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[invalid-assignment]: Object of type `AsyncMock` is not assignable to attribute `emit` of type `def emit(self, user_id: str, workspace_id: str, event: dict[str, Any]) -> CoroutineType[Any, Any, Unknown]`
+  --> tests/integration/test_detach_artifact_handoff.py:67:5
+   |
+66 |     manager = WorkerTaskManager()
+67 |     manager.emit = AsyncMock()
+   |     ^^^^^^^^^^^^
+68 |
+69 |     await manager._monitor_task_completion(task_info, user_id, workspace_id)
+   |
+info: Implicit shadowing of function `emit`, add an annotation to make it explicit if this is intentional
+info: rule `invalid-assignment` is enabled by default
+
+error[unresolved-attribute]: Attribute `equals` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+  --> tests/integration/test_detach_artifact_handoff.py:91:12
+   |
+89 |     assert persisted_file.exists()
+90 |     restored = pl.LazyFrame.deserialize(persisted_file.open("rb"), format="binary")
+91 |     assert restored.collect().equals(expected_df)
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+92 |
+93 |     assert workspace_manager.unload_workspace(user_id, workspace_id, save=True) is True
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `lazy` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+   --> tests/integration/test_lazy_flow.py:107:31
+    |
+106 |         # Create new node with collected data
+107 |         collected_node = Node(collected_data.lazy(), name="collected")
+    |                               ^^^^^^^^^^^^^^^^^^^
+108 |         collected_info = collected_node.info()
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Object of type `object` has no attribute `pattern`
+   --> tests/integration/test_main.py:176:17
+    |
+174 |             # Check that routers are included by looking at the app's routes
+175 |             route_prefixes = {
+176 |                 route.path_regex.pattern
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^
+177 |                 for route in app.routes
+178 |                 if hasattr(route, "path_regex")
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+   --> tests/integration/test_topic_modeling_parameters.py:156:13
+    |
+154 |             user_id=user_id,
+155 |             workspace_id=workspace_id,
+156 |             request={"analysis_type": "topic_modeling"},
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Argument type `dict[str, str]` does not satisfy upper bound `BaseAnalysisRequest` of type variable `TRequest`
+157 |             status=AnalysisStatus.COMPLETED,
+158 |             result=GenericAnalysisResult(payload),
+    |
+info: Type variable defined here
+  --> src/ldaca_web_app_backend/analysis/models.py:39:1
+   |
+39 | TRequest = TypeVar("TRequest", bound=BaseAnalysisRequest)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | TResult = TypeVar("TResult", bound=BaseAnalysisResult)
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> tests/test_quotation_preferences.py:40:46
+   |
+39 |     dummy_ws = DummyWorkspace(base_df)
+40 |     workspace_manager._current[USER_ID] = {  # type: ignore[attr-defined]
+   |                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |         "wid": WORKSPACE_ID,
+42 |         "workspace": dummy_ws,
+   |
+help: Remove the unused suppression comment
+37 |             self.metadata[key] = value
+38 | 
+39 |     dummy_ws = DummyWorkspace(base_df)
+   -     workspace_manager._current[USER_ID] = {  # type: ignore[attr-defined]
+40 +     workspace_manager._current[USER_ID] = {
+41 |         "wid": WORKSPACE_ID,
+42 |         "workspace": dummy_ws,
+43 |         "path": None,
+
+warning[unused-type-ignore-comment]: Unused blanket `type: ignore` directive
+  --> tests/test_quotation_preferences.py:48:52
+   |
+47 | def _cleanup_workspace_state():
+48 |     workspace_manager._current.pop(USER_ID, None)  # type: ignore[attr-defined]
+   |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 |     task_manager = get_task_manager(USER_ID)
+50 |     task_manager.clear_all()
+   |
+help: Remove the unused suppression comment
+45 | 
+46 | 
+47 | def _cleanup_workspace_state():
+   -     workspace_manager._current.pop(USER_ID, None)  # type: ignore[attr-defined]
+48 +     workspace_manager._current.pop(USER_ID, None)
+49 |     task_manager = get_task_manager(USER_ID)
+50 |     task_manager.clear_all()
+51 | 
+
+error[unresolved-attribute]: Attribute `complete` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+  --> tests/test_quotation_preferences.py:76:5
+   |
+75 |     result = GenericAnalysisResult(result_dict)
+76 |     task.complete(result)
+   |     ^^^^^^^^^^^^^
+77 |     task_manager.save_task(task)
+78 |     task_manager.set_current_task("quotation", task_id)
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `save_task` is incorrect
+  --> tests/test_quotation_preferences.py:77:28
+   |
+75 |     result = GenericAnalysisResult(result_dict)
+76 |     task.complete(result)
+77 |     task_manager.save_task(task)
+   |                            ^^^^ Expected `AnalysisTask[Unknown, Unknown]`, found `AnalysisTask[Unknown, Unknown] | None`
+78 |     task_manager.set_current_task("quotation", task_id)
+79 |     return task_id
+   |
+info: Element `None` of this union is not assignable to `AnalysisTask[Unknown, Unknown]`
+info: Method defined here
+   --> src/ldaca_web_app_backend/analysis/manager.py:104:9
+    |
+102 |         return self.store.get_task(task_id)
+103 |
+104 |     def save_task(self, task: AnalysisTask) -> None:
+    |         ^^^^^^^^^       ------------------ Parameter declared here
+105 |         self.store.save_task(task)
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `complete` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> tests/test_quotation_preferences.py:106:5
+    |
+104 |         "preferences": {"context_length": 15},
+105 |     })
+106 |     task.complete(result)
+    |     ^^^^^^^^^^^^^
+107 |     task_manager.save_task(task)
+108 |     task_manager.set_current_task("quotation", task_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `save_task` is incorrect
+   --> tests/test_quotation_preferences.py:107:28
+    |
+105 |     })
+106 |     task.complete(result)
+107 |     task_manager.save_task(task)
+    |                            ^^^^ Expected `AnalysisTask[Unknown, Unknown]`, found `AnalysisTask[Unknown, Unknown] | None`
+108 |     task_manager.set_current_task("quotation", task_id)
+    |
+info: Element `None` of this union is not assignable to `AnalysisTask[Unknown, Unknown]`
+info: Method defined here
+   --> src/ldaca_web_app_backend/analysis/manager.py:104:9
+    |
+102 |         return self.store.get_task(task_id)
+103 |
+104 |     def save_task(self, task: AnalysisTask) -> None:
+    |         ^^^^^^^^^       ------------------ Parameter declared here
+105 |         self.store.save_task(task)
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `data` is not defined on `None` in union `Unknown | None`
+   --> tests/test_quotation_preferences.py:130:12
+    |
+128 |     task = task_manager.get_task(task_id)
+129 |     assert task is not None
+130 |     assert task.result.data["preferences"]["context_length"] == 42
+    |            ^^^^^^^^^^^^^^^^
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `complete` is not defined on `None` in union `AnalysisTask[Unknown, Unknown] | None`
+   --> tests/test_quotation_preferences.py:143:5
+    |
+142 |     result = GenericAnalysisResult({"data": [], "columns": []})
+143 |     task.complete(result)
+    |     ^^^^^^^^^^^^^
+144 |     task_manager.save_task(task)
+145 |     task_manager.set_current_task("quotation", task_id)
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[invalid-argument-type]: Argument to bound method `save_task` is incorrect
+   --> tests/test_quotation_preferences.py:144:28
+    |
+142 |     result = GenericAnalysisResult({"data": [], "columns": []})
+143 |     task.complete(result)
+144 |     task_manager.save_task(task)
+    |                            ^^^^ Expected `AnalysisTask[Unknown, Unknown]`, found `AnalysisTask[Unknown, Unknown] | None`
+145 |     task_manager.set_current_task("quotation", task_id)
+    |
+info: Element `None` of this union is not assignable to `AnalysisTask[Unknown, Unknown]`
+info: Method defined here
+   --> src/ldaca_web_app_backend/analysis/manager.py:104:9
+    |
+102 |         return self.store.get_task(task_id)
+103 |
+104 |     def save_task(self, task: AnalysisTask) -> None:
+    |         ^^^^^^^^^       ------------------ Parameter declared here
+105 |         self.store.save_task(task)
+    |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+  --> tests/test_topic_modeling_clear_endpoint.py:46:13
+   |
+44 |             user_id=user_id,
+45 |             workspace_id=workspace_id,
+46 |             request={"analysis_type": "topic_modeling"},
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Argument type `dict[str, str]` does not satisfy upper bound `BaseAnalysisRequest` of type variable `TRequest`
+47 |             status=AnalysisStatus.COMPLETED,
+48 |             result=GenericAnalysisResult(payload),
+   |
+info: Type variable defined here
+  --> src/ldaca_web_app_backend/analysis/models.py:39:1
+   |
+39 | TRequest = TypeVar("TRequest", bound=BaseAnalysisRequest)
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+40 | TResult = TypeVar("TResult", bound=BaseAnalysisResult)
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[unresolved-attribute]: Attribute `height` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame`
+  --> tests/unit/test_concordance_detach_worker.py:90:12
+   |
+89 |     restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
+90 |     assert restored.collect().height >= 1
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^
+91 |     assert progress_updates[0][1].startswith("Loading concordance")
+92 |     assert any(
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `collect` is not defined on `DataFrame` in union `DataFrame | LazyFrame | Any`
+   --> tests/unit/test_core_utils.py:120:25
+    |
+118 |         try:
+119 |             # Try LazyFrame collect method
+120 |             actual_df = df.collect()
+    |                         ^^^^^^^^^^
+121 |             assert actual_df.shape[0] == 3  # 3 rows
+122 |             assert actual_df.shape[1] == 3  # 3 columns
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `shape` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame | Any`
+   --> tests/unit/test_core_utils.py:121:20
+    |
+119 |             # Try LazyFrame collect method
+120 |             actual_df = df.collect()
+121 |             assert actual_df.shape[0] == 3  # 3 rows
+    |                    ^^^^^^^^^^^^^^^
+122 |             assert actual_df.shape[1] == 3  # 3 columns
+123 |         except AttributeError:
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Attribute `shape` is not defined on `InProcessQuery` in union `InProcessQuery | DataFrame | Any`
+   --> tests/unit/test_core_utils.py:122:20
+    |
+120 |             actual_df = df.collect()
+121 |             assert actual_df.shape[0] == 3  # 3 rows
+122 |             assert actual_df.shape[1] == 3  # 3 columns
+    |                    ^^^^^^^^^^^^^^^
+123 |         except AttributeError:
+124 |             # Not a LazyFrame, should be a DataFrame with shape
+    |
+info: rule `unresolved-attribute` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `object` with no `__getitem__` method
+   --> tests/unit/test_core_utils.py:126:20
+    |
+124 |             # Not a LazyFrame, should be a DataFrame with shape
+125 |             assert hasattr(df, "shape")
+126 |             assert df.shape[0] == 3  # 3 rows
+    |                    ^^^^^^^^^^^
+127 |             assert df.shape[1] == 3  # 3 columns
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `object` with no `__getitem__` method
+   --> tests/unit/test_core_utils.py:127:20
+    |
+125 |             assert hasattr(df, "shape")
+126 |             assert df.shape[0] == 3  # 3 rows
+127 |             assert df.shape[1] == 3  # 3 columns
+    |                    ^^^^^^^^^^^
+128 |
+129 |         # Check column names (handle LazyFrame vs DataFrame)
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[call-non-callable]: Object of type `object` is not callable
+   --> tests/unit/test_core_utils.py:190:25
+    |
+188 |         if hasattr(df, "collect"):
+189 |             # It's a LazyFrame
+190 |             actual_df = df.collect()
+    |                         ^^^^^^^^^^^^
+191 |             assert actual_df.shape[0] == 3  # 3 rows
+192 |             assert actual_df.shape[1] == 3  # 3 columns
+    |
+info: rule `call-non-callable` is enabled by default
+
+error[call-non-callable]: Object of type `object` is not callable
+   --> tests/unit/test_core_utils.py:220:25
+    |
+218 |         if hasattr(df, "collect"):
+219 |             # It's a LazyFrame
+220 |             actual_df = df.collect()
+    |                         ^^^^^^^^^^^^
+221 |             assert actual_df.shape[0] == 3  # 3 rows
+222 |         else:
+    |
+info: rule `call-non-callable` is enabled by default
+
+error[call-non-callable]: Object of type `object` is not callable
+   --> tests/unit/test_core_utils.py:248:25
+    |
+246 |         if hasattr(result, "collect"):
+247 |             # It's a LazyFrame
+248 |             actual_df = result.collect()
+    |                         ^^^^^^^^^^^^^^^^
+249 |             assert actual_df.shape[0] == 3
+250 |         else:
+    |
+info: rule `call-non-callable` is enabled by default
+
+error[call-non-callable]: Object of type `object` is not callable
+   --> tests/unit/test_core_utils.py:261:25
+    |
+259 |         if hasattr(df, "collect"):
+260 |             # It's a LazyFrame
+261 |             actual_df = df.collect()
+    |                         ^^^^^^^^^^^^
+262 |             assert actual_df.shape[0] == 3
+263 |         else:
+    |
+info: rule `call-non-callable` is enabled by default
+
+error[invalid-argument-type]: Argument to function `polars_dtype_to_ldaca_dtype` is incorrect
+  --> tests/unit/test_datatype_detection.py:17:67
+   |
+15 |         # Test with Polars type object
+16 |         assert (
+17 |             DocWorkspaceDataTypeUtils.polars_dtype_to_ldaca_dtype(pl.Categorical)
+   |                                                                   ^^^^^^^^^^^^^^ Expected `DataType`, found `<class 'Categorical'>`
+18 |             == "categorical"
+19 |         )
+   |
+info: Function defined here
+  --> src/ldaca_web_app_backend/core/docworkspace_data_types.py:32:9
+   |
+31 |     @staticmethod
+32 |     def polars_dtype_to_ldaca_dtype(polars_dtype: pl.DataType) -> str:
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^ ------------------------- Parameter declared here
+33 |         """Convert Polars dtype into LDaCA-controlled dtype categories."""
+34 |         if polars_dtype == ANNOTATION_POLARS_DTYPE:
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+  --> tests/unit/test_quotation_engine.py:20:41
+   |
+18 | def test_engine_config_local_clears_url():
+19 |     cfg = QuotationEngineConfig(
+20 |         type=QuotationEngineType.LOCAL, url="http://example.com"
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^ Expected `AnyHttpUrl | None`, found `Literal["http://example.com"]`
+21 |     )
+22 |     assert cfg.type is QuotationEngineType.LOCAL
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[invalid-argument-type]: Argument is incorrect
+  --> tests/unit/test_quotation_engine.py:62:69
+   |
+60 | @pytest.mark.asyncio
+61 | async def test_remote_compute_chunks_based_on_settings(monkeypatch):
+62 |     engine = QuotationEngineConfig(type=QuotationEngineType.REMOTE, url="http://engine")
+   |                                                                     ^^^^^^^^^^^^^^^^^^^ Expected `AnyHttpUrl | None`, found `Literal["http://engine"]`
+63 |     df = pl.DataFrame({"body": [f"doc-{i}" for i in range(5)]})
+64 |     node = SimpleNamespace(data=df)
+   |
+info: rule `invalid-argument-type` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:155:12
+    |
+153 |     )
+154 |
+155 |     assert preview["columns"] == ["value", "label"]
+    |            ^^^^^^^^^^^^^^^^^^
+156 |     assert preview["pagination"]["total_rows"] == 3
+157 |     assert preview["pagination"]["page"] == 1
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:156:12
+    |
+155 |     assert preview["columns"] == ["value", "label"]
+156 |     assert preview["pagination"]["total_rows"] == 3
+    |            ^^^^^^^^^^^^^^^^^^^^^
+157 |     assert preview["pagination"]["page"] == 1
+158 |     assert len(preview["data"]) == 2
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:157:12
+    |
+155 |     assert preview["columns"] == ["value", "label"]
+156 |     assert preview["pagination"]["total_rows"] == 3
+157 |     assert preview["pagination"]["page"] == 1
+    |            ^^^^^^^^^^^^^^^^^^^^^
+158 |     assert len(preview["data"]) == 2
+159 |     assert [row["value"] for row in preview["data"]] == [2, 3]
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:158:16
+    |
+156 |     assert preview["pagination"]["total_rows"] == 3
+157 |     assert preview["pagination"]["page"] == 1
+158 |     assert len(preview["data"]) == 2
+    |                ^^^^^^^^^^^^^^^
+159 |     assert [row["value"] for row in preview["data"]] == [2, 3]
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:159:37
+    |
+157 |     assert preview["pagination"]["page"] == 1
+158 |     assert len(preview["data"]) == 2
+159 |     assert [row["value"] for row in preview["data"]] == [2, 3]
+    |                                     ^^^^^^^^^^^^^^^
+160 |
+161 |     preview_page_two = await nodes_api.slice_preview(
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:169:12
+    |
+167 |     )
+168 |
+169 |     assert preview_page_two["pagination"]["page"] == 2
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+170 |     assert len(preview_page_two["data"]) == 1
+171 |     assert preview_page_two["data"][0]["value"] == 4
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:170:16
+    |
+169 |     assert preview_page_two["pagination"]["page"] == 2
+170 |     assert len(preview_page_two["data"]) == 1
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+171 |     assert preview_page_two["data"][0]["value"] == 4
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[not-subscriptable]: Cannot subscript object of type `FilterPreviewResponse` with no `__getitem__` method
+   --> tests/unit/test_slice_endpoint.py:171:12
+    |
+169 |     assert preview_page_two["pagination"]["page"] == 2
+170 |     assert len(preview_page_two["data"]) == 1
+171 |     assert preview_page_two["data"][0]["value"] == 4
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+info: rule `not-subscriptable` is enabled by default
+
+error[invalid-type-arguments]: Type `object` is not assignable to upper bound `BaseAnalysisResult` of type variable `TResult@AnalysisTask`
+  --> tests/unit/test_task_sync_utils.py:36:9
+   |
+34 |     task = AnalysisTask[
+35 |         _DummyRequest,
+36 |         object,
+   |         ^^^^^^
+37 |     ](
+38 |         task_id="task-123",
+   |
+  ::: src/ldaca_web_app_backend/analysis/models.py:40:1
+   |
+39 | TRequest = TypeVar("TRequest", bound=BaseAnalysisRequest)
+40 | TResult = TypeVar("TResult", bound=BaseAnalysisResult)
+   | ------- Type variable defined here
+   |
+info: rule `invalid-type-arguments` is enabled by default
+
+error[invalid-type-arguments]: Type `object` is not assignable to upper bound `BaseAnalysisResult` of type variable `TResult@AnalysisTask`
+  --> tests/unit/test_task_sync_utils.py:75:9
+   |
+73 |     task = AnalysisTask[
+74 |         _DummyRequest,
+75 |         object,
+   |         ^^^^^^
+76 |     ](
+77 |         task_id="task-456",
+   |
+  ::: src/ldaca_web_app_backend/analysis/models.py:40:1
+   |
+39 | TRequest = TypeVar("TRequest", bound=BaseAnalysisRequest)
+40 | TResult = TypeVar("TResult", bound=BaseAnalysisResult)
+   | ------- Type variable defined here
+   |
+info: rule `invalid-type-arguments` is enabled by default
+
+error[unresolved-attribute]: Unresolved attribute `token_frequencies` on type `ModuleType`
+  --> tests/unit/test_token_frequency_worker.py:13:5
+   |
+12 |     fake_polars_text = ModuleType("polars_text")
+13 |     fake_polars_text.token_frequencies = lambda series: {"alpha": 3, "beta": 1}
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     fake_polars_text.token_frequency_stats = lambda left, right: pl.DataFrame({
+15 |         "token": ["alpha"],
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Unresolved attribute `token_frequency_stats` on type `ModuleType`
+  --> tests/unit/test_token_frequency_worker.py:14:5
+   |
+12 |     fake_polars_text = ModuleType("polars_text")
+13 |     fake_polars_text.token_frequencies = lambda series: {"alpha": 3, "beta": 1}
+14 |     fake_polars_text.token_frequency_stats = lambda left, right: pl.DataFrame({
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 |         "token": ["alpha"],
+16 |         "freq_corpus_0": [3],
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Unresolved attribute `BERTopic` on type `ModuleType`
+  --> tests/unit/test_topic_modeling_worker.py:51:5
+   |
+50 |     bertopic_module = ModuleType("bertopic")
+51 |     bertopic_module.BERTopic = FakeBERTopic
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+52 |     bertopic_utils_module = ModuleType("bertopic._utils")
+53 |     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Unresolved attribute `select_topic_representation` on type `ModuleType`
+  --> tests/unit/test_topic_modeling_worker.py:53:5
+   |
+51 |     bertopic_module.BERTopic = FakeBERTopic
+52 |     bertopic_utils_module = ModuleType("bertopic._utils")
+53 |     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+54 |
+55 |     monkeypatch.setattr(
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+error[unresolved-attribute]: Unresolved attribute `LDaCATabulator` on type `ModuleType`
+  --> tests/unit/test_worker_tasks_import.py:40:5
+   |
+38 |     fake_package = ModuleType("ldacatabulator")
+39 |     fake_tabulator_module = ModuleType("ldacatabulator.tabulator")
+40 |     fake_tabulator_module.LDaCATabulator = FakeTabulator
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |
+42 |     monkeypatch.setitem(sys.modules, "ldacatabulator", fake_package)
+   |
+info: rule `unresolved-attribute` is enabled by default
+
+Found 182 diagnostics
