@@ -286,6 +286,10 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
         func_name = getattr(node.func, "id", None)
         if not isinstance(func_name, str):
             raise ExpressionParseError("Unsupported callable in expression")
+
+        if func_name == "col":
+            return self._handle_col_call(node)
+
         arg_wrappers = [self.visit(arg) for arg in node.args]
 
         handlers: dict[str, Callable[[list[_ExprWrapper]], _ExprWrapper]] = {
@@ -313,7 +317,6 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
             "fill_null": self._handle_fill_null,
             "when": self._handle_when,
             "lit": self._handle_lit,
-            "col": self._handle_col,
         }
 
         handler = handlers.get(func_name)
@@ -404,14 +407,14 @@ class _PolarsExpressionBuilder(ast.NodeVisitor):
         literal = self._ensure_literal(args[0], context="literal value")
         return self._wrap(pl.lit(literal), literal)
 
-    def _handle_col(self, args: list[_ExprWrapper]) -> _ExprWrapper:
-        if len(args) != 1:
+    def _handle_col_call(self, node: ast.Call) -> _ExprWrapper:
+        if len(node.args) != 1:
             raise ExpressionParseError("col() expects a single argument")
-        literal = self._ensure_literal(args[0], context="column name")
-        if not isinstance(literal, str):
+        arg = node.args[0]
+        if not isinstance(arg, ast.Constant) or not isinstance(arg.value, str):
             raise ExpressionParseError("Column name must be a string")
-        self._ensure_column_exists(literal)
-        return self._wrap(pl.col(literal))
+        self._ensure_column_exists(arg.value)
+        return self._wrap(pl.col(arg.value))
 
 
 # The visitor inherits NodeVisitor, so pylint/flake8 will warn about missing return

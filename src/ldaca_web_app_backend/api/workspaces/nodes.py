@@ -28,6 +28,9 @@ from ...models import (
     FilterPreviewResponse,
     FilterRequest,
     PaginationInfo,
+    ReplaceApplyResponse,
+    ReplacePreviewResponse,
+    ReplaceRequest,
     SliceRequest,
 )
 from .utils import update_workspace
@@ -102,6 +105,20 @@ def _resolve_expression_column_name(request: ExpressionTransformRequest) -> str:
     - Keeps naming rules consistent between preview and apply endpoints.
     """
     candidate = (request.new_column_name or request.expression or "").strip()
+    return _sanitize_column_alias(candidate)
+
+
+def _resolve_replace_column_name(request: ReplaceRequest) -> str:
+    """Resolve final output column name for replace operations.
+
+    Used by:
+    - `replace_preview`
+    - `replace_apply`
+
+    Why:
+    - Keeps overwrite-vs-new-column behavior consistent across both routes.
+    """
+    candidate = (request.output_column_name or request.source_column or "").strip()
     return _sanitize_column_alias(candidate)
 
 
@@ -315,6 +332,36 @@ def _extract_lazy_schema(
     return columns, dtypes
 
 
+def _build_replace_expression(
+    request: ReplaceRequest,
+    dtypes: dict[str, str],
+) -> tuple[str, pl.Expr]:
+    source_column = request.source_column.strip()
+    if not source_column:
+        raise HTTPException(status_code=400, detail="Source column is required")
+    if source_column not in dtypes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown column '{source_column}'",
+        )
+
+    source_dtype = dtypes.get(source_column)
+    if source_dtype not in {"Utf8", "String"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Column '{source_column}' must be a string column for regex replace"
+            ),
+        )
+
+    column_name = _resolve_replace_column_name(request)
+    replace_expr = pl.col(source_column).str.replace(
+        request.pattern,
+        request.replacement,
+    )
+    return column_name, replace_expr.alias(column_name)
+
+
 def _validate_and_align_concat_nodes(
     nodes: List[Any],
 ) -> tuple[List[pl.LazyFrame], List[str], dict[str, str]]:
@@ -519,6 +566,107 @@ async def compute_column_apply(
         expression=request.expression.strip(),
         dtype=dtype_str,
         message=f"Added column '{column_name}' to node",
+    )
+
+
+@router.post(
+    "/nodes/{node_id}/replace/preview",
+    response_model=ReplacePreviewResponse,
+)
+async def replace_preview(
+    node_id: str,
+    request: ReplaceRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    workspace = _require_current_workspace(user_id)
+    data_obj = workspace.nodes[node_id].data
+
+    try:
+        lazy_data = _unwrap_lazyframe(data_obj, purpose="Replace preview")
+        _, dtypes = _extract_lazy_schema(lazy_data)
+        _, replace_expr = _build_replace_expression(request, dtypes)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to prepare replace preview: {exc}",
+        ) from exc
+
+    preview_limit = request.preview_limit or 50
+    preview_limit = max(1, min(preview_limit, 500))
+
+    try:
+        preview_df = cast(
+            pl.DataFrame,
+            lazy_data.with_columns(replace_expr).limit(preview_limit).collect(),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to evaluate replace preview: {exc}",
+        ) from exc
+
+    return ReplacePreviewResponse(
+        columns=list(preview_df.columns),
+        dtypes={col: str(dtype) for col, dtype in preview_df.schema.items()},
+        data=preview_df.to_dicts(),
+    )
+
+
+@router.post(
+    "/nodes/{node_id}/replace",
+    response_model=ReplaceApplyResponse,
+)
+async def replace_apply(
+    node_id: str,
+    request: ReplaceRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    workspace_id = _require_current_workspace_id(user_id)
+    workspace = _require_current_workspace(user_id)
+    node = workspace.nodes[node_id]
+    data_obj = node.data
+
+    try:
+        lazy_data = _unwrap_lazyframe(data_obj, purpose="Replace apply")
+        _, dtypes = _extract_lazy_schema(lazy_data)
+        column_name, replace_expr = _build_replace_expression(request, dtypes)
+        updated_data = lazy_data.with_columns(replace_expr)
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=400,
+            detail=f"Failed to evaluate replace operation: {exc}",
+        ) from exc
+
+    dtype_str: Optional[str] = None
+    try:
+        updated_schema = dict(updated_data.collect_schema().items())
+        dtype = updated_schema.get(column_name)
+        if dtype is not None:
+            dtype_str = str(dtype)
+    except Exception:  # pragma: no cover - best effort only
+        dtype_str = None
+
+    try:
+        node.data = updated_data
+        update_workspace(user_id, workspace_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to persist replace operation: {exc}",
+        ) from exc
+
+    return ReplaceApplyResponse(
+        state="successful",
+        node_id=node_id,
+        column_name=column_name,
+        dtype=dtype_str,
+        message=f"Updated column '{column_name}' with regex replacement",
     )
 
 

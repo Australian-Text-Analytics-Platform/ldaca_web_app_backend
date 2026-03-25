@@ -314,6 +314,28 @@ class ExpressionApplyResponse(BaseModel):
     message: str
 
 
+class ReplaceRequest(BaseModel):
+    source_column: str = Field(..., min_length=1, max_length=200)
+    pattern: str = Field(..., min_length=1)
+    replacement: str = Field(default="")
+    output_column_name: Optional[str] = Field(default=None, max_length=200)
+    preview_limit: Optional[int] = Field(default=50, ge=1, le=500)
+
+
+class ReplacePreviewResponse(BaseModel):
+    columns: List[str]
+    dtypes: Dict[str, str]
+    data: List[Dict[str, Any]]
+
+
+class ReplaceApplyResponse(BaseModel):
+    state: Literal["successful"]
+    node_id: str
+    column_name: str
+    dtype: Optional[str] = None
+    message: str
+
+
 class JoinRequest(BaseModel):
     right_node_id: str
     join_type: str  # 'inner', 'left', 'right', 'outer'

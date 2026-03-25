@@ -25,16 +25,8 @@ class _DummyWorkspace:
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_compute_column_preview_adds_new_column(
-    authenticated_client, monkeypatch
-):
-    frame = pl.DataFrame(
-        {
-            "A": [1, 2, 3],
-            "B": [10, 20, 30],
-            "Total Count": [5, 6, 7],
-        }
-    )
+async def test_replace_preview_returns_masked_values(authenticated_client, monkeypatch):
+    frame = pl.DataFrame({"Body": ["Invoice 123", "Order 987"]})
     node = _DummyNode(frame)
     workspace_id = "ws-alpha"
     dummy_ws = _DummyWorkspace({"count": 0}, nodes={"node-123": node})
@@ -51,34 +43,26 @@ async def test_compute_column_preview_adds_new_column(
     )
 
     response = await authenticated_client.post(
-        "/api/workspaces/nodes/node-123/compute-column/preview",
+        "/api/workspaces/nodes/node-123/replace/preview",
         json={
-            "expression": 'A + "Total Count"',
+            "source_column": "Body",
+            "pattern": r"\d+",
+            "replacement": "#",
+            "output_column_name": "Body_masked",
             "preview_limit": 2,
         },
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["data"]) == 2
-    column_set = set(payload["columns"])
-    assert {"A", "B", "Total Count"}.issubset(column_set)
-    new_columns = column_set - {"A", "B", "Total Count"}
-    assert len(new_columns) == 1
-    new_column_name = next(iter(new_columns))
-    first_row = payload["data"][0]
-    assert first_row[new_column_name] == "6"
+    assert payload["data"][0]["Body_masked"] == "Invoice #"
+    assert payload["data"][1]["Body_masked"] == "Order #"
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_compute_column_apply_mutates_node(authenticated_client, monkeypatch):
-    frame = pl.DataFrame(
-        {
-            "A": [1, 2],
-            "B": [3, 4],
-        }
-    )
+async def test_replace_apply_mutates_node_data(authenticated_client, monkeypatch):
+    frame = pl.DataFrame({"Body": ["Invoice 123", "Order 987"]})
     node = _DummyNode(frame)
     workspace_id = "ws-alpha"
     persist_calls = {"count": 0}
@@ -109,58 +93,23 @@ async def test_compute_column_apply_mutates_node(authenticated_client, monkeypat
         "_set_cached_path",
         lambda user_id, workspace_id, path: None,
     )
+
     response = await authenticated_client.post(
-        "/api/workspaces/nodes/node-123/compute-column",
+        "/api/workspaces/nodes/node-123/replace",
         json={
-            "expression": "A + B",
-            "new_column_name": "A_plus_B",
+            "source_column": "Body",
+            "pattern": r"\d+",
+            "replacement": "#",
+            "output_column_name": "Body_masked",
         },
     )
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["column_name"] == "A_plus_B"
+    assert payload["column_name"] == "Body_masked"
     assert payload["state"] == "successful"
     collected = node.data.collect()
     assert isinstance(collected, pl.DataFrame)
-    assert "A_plus_B" in collected.columns
-    assert collected["A_plus_B"].to_list() == ["4", "6"]
+    masked_values = collected.get_column("Body_masked").to_list()
+    assert masked_values == ["Invoice #", "Order #"]
     assert persist_calls["count"] == 1
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_compute_column_preview_rejects_string_regex_replace_helper(
-    authenticated_client, monkeypatch
-):
-    frame = pl.DataFrame(
-        {
-            "Body": ["Invoice 123", "Order 987"],
-        }
-    )
-    node = _DummyNode(frame)
-    workspace_id = "ws-alpha"
-    dummy_ws = _DummyWorkspace({"count": 0}, nodes={"node-123": node})
-
-    monkeypatch.setattr(
-        nodes_api.workspace_manager,
-        "get_current_workspace_id",
-        lambda user_id: workspace_id,
-    )
-    monkeypatch.setattr(
-        nodes_api.workspace_manager,
-        "get_current_workspace",
-        lambda _user_id: dummy_ws,
-    )
-
-    response = await authenticated_client.post(
-        "/api/workspaces/nodes/node-123/compute-column/preview",
-        json={
-            "expression": r'str_replace(col("Body"), "\\d+", "#")',
-            "new_column_name": "Body_masked",
-            "preview_limit": 2,
-        },
-    )
-
-    assert response.status_code == 400
-    assert "Unsupported function 'str_replace'" in response.json()["detail"]
