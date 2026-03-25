@@ -12,6 +12,11 @@ import pytest
 from ldaca_web_app_backend import db
 
 
+@pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def init_test_db():
     """Initialize test database with tables for all tests"""
