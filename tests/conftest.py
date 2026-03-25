@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from ldaca_web_app_backend import db
 
 
@@ -494,6 +495,9 @@ async def timeline_node_id(authenticated_client, workspace_id, timeline_csv_file
         "/api/workspaces/nodes",
         params={"filename": timeline_csv_file.name},
     )
+    assert response.status_code == 200
+    result = response.json()
+    return result["id"]
     assert response.status_code == 200
     result = response.json()
     return result["id"]
