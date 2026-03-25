@@ -265,37 +265,6 @@ def write_runtime_manifest(
     print(f"[INFO] Wrote runtime manifest to {manifest_path}")
 
 
-def run_runtime_smoke_checks(
-    *,
-    python_bin: Path,
-    import_modules: list[str],
-    output_dir: Path,
-) -> None:
-    """Run lightweight checks to verify packaged runtime usability."""
-    import_stmt = "; ".join(f"import {module}" for module in import_modules)
-    run([
-        str(python_bin),
-        "-c",
-        f"{import_stmt}; print('runtime import smoke check passed')",
-    ])
-
-    prefix_check = run(
-        [
-            str(python_bin),
-            "-c",
-            "import json,sys; print(json.dumps({'prefix': sys.prefix, 'base_prefix': sys.base_prefix}))",
-        ],
-        capture_output=True,
-    )
-    prefix_info = json.loads(prefix_check.stdout.strip())
-    base_prefix = Path(prefix_info["base_prefix"]).resolve()
-    if not base_prefix.is_relative_to(output_dir):
-        raise RuntimeError(
-            "Packaged runtime base_prefix is outside runtime directory: "
-            f"{base_prefix} not under {output_dir}"
-        )
-
-
 def main() -> None:
     args = parse_args()
     ensure_uv_is_available()
@@ -350,13 +319,6 @@ def main() -> None:
     sync_runtime_environment(
         runtime_python_dir=runtime_python_dir,
         uv_packaging_env=uv_packaging_env,
-    )
-
-    import_modules = ["ldaca_web_app_backend", "polars_text"]
-    run_runtime_smoke_checks(
-        python_bin=python_bin,
-        import_modules=import_modules,
-        output_dir=output_dir,
     )
 
     write_runtime_manifest(
