@@ -1,6 +1,5 @@
 import polars as pl
 import pytest
-
 from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
 
 
@@ -108,8 +107,84 @@ async def test_replace_apply_mutates_node_data(authenticated_client, monkeypatch
     payload = response.json()
     assert payload["column_name"] == "Body_masked"
     assert payload["state"] == "successful"
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_replace_preview_returns_raw_polars_error_for_missing_source_column(
+    authenticated_client, monkeypatch
+):
+    frame = pl.DataFrame({"Body": ["Invoice 123", "Order 987"]})
+    node = _DummyNode(frame)
+    workspace_id = "ws-alpha"
+    dummy_ws = _DummyWorkspace({"count": 0}, nodes={"node-123": node})
+
+    monkeypatch.setattr(
+        nodes_api.workspace_manager,
+        "get_current_workspace_id",
+        lambda user_id: workspace_id,
+    )
+    monkeypatch.setattr(
+        nodes_api.workspace_manager,
+        "get_current_workspace",
+        lambda _user_id: dummy_ws,
+    )
+
+    response = await authenticated_client.post(
+        "/api/workspaces/nodes/node-123/replace/preview",
+        json={
+            "source_column": "Missing",
+            "pattern": r"\d+",
+            "replacement": "#",
+            "output_column_name": "Body_masked",
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert 'unable to find column "Missing"' in detail
+    assert "Unknown column" not in detail
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_replace_apply_returns_raw_polars_error_for_non_string_column(
+    authenticated_client, monkeypatch
+):
+    frame = pl.DataFrame({"num": [1, 2]})
+    node = _DummyNode(frame)
+    workspace_id = "ws-alpha"
+    persist_calls = {"count": 0}
+    dummy_ws = _DummyWorkspace(persist_calls, nodes={"node-123": node})
+
+    monkeypatch.setattr(
+        nodes_api.workspace_manager,
+        "get_current_workspace_id",
+        lambda user_id: workspace_id,
+    )
+    monkeypatch.setattr(
+        nodes_api.workspace_manager,
+        "get_current_workspace",
+        lambda _user_id: dummy_ws,
+    )
+
+    response = await authenticated_client.post(
+        "/api/workspaces/nodes/node-123/replace",
+        json={
+            "source_column": "num",
+            "pattern": "1",
+            "replacement": "2",
+            "output_column_name": "num_masked",
+        },
+    )
+
+    assert response.status_code == 400
+    detail = response.json()["detail"]
+    assert "expected String type, got: i64" in detail
+    assert "must be a string column" not in detail
     collected = node.data.collect()
     assert isinstance(collected, pl.DataFrame)
-    masked_values = collected.get_column("Body_masked").to_list()
-    assert masked_values == ["Invoice #", "Order #"]
-    assert persist_calls["count"] == 1
+    assert collected.columns == ["num"]
+    assert collected.get_column("num").to_list() == [1, 2]
+    assert "num_masked" not in collected.columns
+    assert persist_calls["count"] == 0

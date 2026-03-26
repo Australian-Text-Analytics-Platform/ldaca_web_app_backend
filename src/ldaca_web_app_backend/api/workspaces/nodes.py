@@ -11,10 +11,10 @@ from datetime import datetime
 from typing import Any, List, Literal, Optional, cast
 
 import polars as pl
+from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from docworkspace import Node
-from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
@@ -332,28 +332,8 @@ def _extract_lazy_schema(
     return columns, dtypes
 
 
-def _build_replace_expression(
-    request: ReplaceRequest,
-    dtypes: dict[str, str],
-) -> tuple[str, pl.Expr]:
+def _build_replace_expression(request: ReplaceRequest) -> tuple[str, pl.Expr]:
     source_column = request.source_column.strip()
-    if not source_column:
-        raise HTTPException(status_code=400, detail="Source column is required")
-    if source_column not in dtypes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown column '{source_column}'",
-        )
-
-    source_dtype = dtypes.get(source_column)
-    if source_dtype not in {"Utf8", "String"}:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Column '{source_column}' must be a string column for regex replace"
-            ),
-        )
-
     column_name = _resolve_replace_column_name(request)
     replace_expr = pl.col(source_column).str.replace(
         request.pattern,
@@ -453,40 +433,24 @@ async def compute_column_preview(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    data_obj = workspace.nodes[node_id].data
+    lazy_data = _unwrap_lazyframe(
+        workspace.nodes[node_id].data, purpose="Compute column preview"
+    )
 
     try:
-        lazy_data = _unwrap_lazyframe(data_obj, purpose="Compute column preview")
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=500, detail=f"Failed to inspect node data: {exc}"
-        ) from exc
-
-    columns, _ = _extract_lazy_schema(lazy_data)
-
-    try:
+        columns, _ = _extract_lazy_schema(lazy_data)
         expr = build_polars_expression(request.expression, columns=columns)
-    except ExpressionParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    column_name = _resolve_expression_column_name(request)
-    expr = expr.cast(pl.Utf8, strict=False).alias(column_name)
-
-    preview_limit = request.preview_limit or 50
-    preview_limit = max(1, min(preview_limit, 500))
-
-    try:
+        column_name = _resolve_expression_column_name(request)
         preview_df = cast(
             pl.DataFrame,
-            lazy_data.with_columns(expr).limit(preview_limit).collect(),
+            lazy_data.with_columns(expr.cast(pl.Utf8, strict=False).alias(column_name))
+            .limit(max(1, min(request.preview_limit or 50, 500)))
+            .collect(),
         )
+    except ExpressionParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to evaluate expression: {exc}",
-        ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     columns_out = list(preview_df.columns)
     dtypes_out = {col: str(dtype) for col, dtype in preview_df.schema.items()}
@@ -510,36 +474,21 @@ async def compute_column_apply(
     workspace_id = _require_current_workspace_id(user_id)
     ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
-    data_obj = node.data
     try:
-        lazy_data = _unwrap_lazyframe(data_obj, purpose="Compute column apply")
+        lazy_data = _unwrap_lazyframe(node.data, purpose="Compute column apply")
         columns, _ = _extract_lazy_schema(lazy_data)
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to inspect node schema: {exc}",
-        ) from exc
-
-    column_name = _resolve_expression_column_name(request)
-
-    try:
-        expr = (
+        column_name = _resolve_expression_column_name(request)
+        updated_data = lazy_data.with_columns(
             build_polars_expression(request.expression, columns=columns)
             .cast(pl.Utf8, strict=False)
             .alias(column_name)
         )
+    except HTTPException:
+        raise
     except ExpressionParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    try:
-        updated_data = lazy_data.with_columns(expr)
     except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to evaluate expression: {exc}",
-        ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     dtype_str: Optional[str] = None
     try:
@@ -554,10 +503,7 @@ async def compute_column_apply(
         node.data = updated_data
         update_workspace(user_id, workspace_id)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to persist computed column: {exc}",
-        ) from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return ExpressionApplyResponse(
         state="successful",
@@ -580,33 +526,20 @@ async def replace_preview(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    data_obj = workspace.nodes[node_id].data
+    lazy_data = _unwrap_lazyframe(
+        workspace.nodes[node_id].data, purpose="Replace preview"
+    )
 
     try:
-        lazy_data = _unwrap_lazyframe(data_obj, purpose="Replace preview")
-        _, dtypes = _extract_lazy_schema(lazy_data)
-        _, replace_expr = _build_replace_expression(request, dtypes)
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to prepare replace preview: {exc}",
-        ) from exc
-
-    preview_limit = request.preview_limit or 50
-    preview_limit = max(1, min(preview_limit, 500))
-
-    try:
+        _, replace_expr = _build_replace_expression(request)
         preview_df = cast(
             pl.DataFrame,
-            lazy_data.with_columns(replace_expr).limit(preview_limit).collect(),
+            lazy_data.with_columns(replace_expr)
+            .limit(max(1, min(request.preview_limit or 50, 500)))
+            .collect(),
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to evaluate replace preview: {exc}",
-        ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return ReplacePreviewResponse(
         columns=list(preview_df.columns),
@@ -628,38 +561,26 @@ async def replace_apply(
     workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
     node = workspace.nodes[node_id]
-    data_obj = node.data
-
-    try:
-        lazy_data = _unwrap_lazyframe(data_obj, purpose="Replace apply")
-        _, dtypes = _extract_lazy_schema(lazy_data)
-        column_name, replace_expr = _build_replace_expression(request, dtypes)
-        updated_data = lazy_data.with_columns(replace_expr)
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=400,
-            detail=f"Failed to evaluate replace operation: {exc}",
-        ) from exc
-
     dtype_str: Optional[str] = None
+
     try:
+        lazy_data = _unwrap_lazyframe(node.data, purpose="Replace apply")
+        column_name, replace_expr = _build_replace_expression(request)
+        updated_data = lazy_data.with_columns(replace_expr)
         updated_schema = dict(updated_data.collect_schema().items())
         dtype = updated_schema.get(column_name)
         if dtype is not None:
             dtype_str = str(dtype)
-    except Exception:  # pragma: no cover - best effort only
-        dtype_str = None
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     try:
         node.data = updated_data
         update_workspace(user_id, workspace_id)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to persist replace operation: {exc}",
-        ) from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return ReplaceApplyResponse(
         state="successful",
@@ -677,11 +598,12 @@ async def get_node_info(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    node = ws.nodes[node_id]
     try:
-        return node.info()
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"Failed to get node info: {e}")
+        return ws.nodes[node_id].info()
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/nodes/{node_id}/data")
@@ -692,11 +614,11 @@ async def get_node_data(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    node = ws.nodes[node_id]
-    data_obj = node.data
     try:
-        lazyframe = _unwrap_lazyframe(data_obj, purpose="Get node data")
+        lazyframe = _unwrap_lazyframe(
+            _require_current_workspace(user_id).nodes[node_id].data,
+            purpose="Get node data",
+        )
         df = cast(pl.DataFrame, lazyframe.collect())
         total_rows = len(df)
         start_idx = (page - 1) * page_size
@@ -714,8 +636,10 @@ async def get_node_data(
             "columns": list(df.columns),
             "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
         }
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"Failed to get node data: {e}")
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/nodes/{node_id}/shape")
@@ -724,15 +648,12 @@ async def get_node_shape(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    node = ws.nodes[node_id]
     try:
-        return {"shape": node.shape}
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to calculate node shape: {type(e).__name__}: {e}",
-        )
+        return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/nodes/{node_id}/columns/{column_name}/unique")
@@ -742,62 +663,50 @@ async def get_column_unique_values(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    node = ws.nodes[node_id]
-    data_obj = node.data
     try:
-        lazyframe = _unwrap_lazyframe(data_obj, purpose="Get unique column values")
+        lazyframe = _unwrap_lazyframe(
+            _require_current_workspace(user_id).nodes[node_id].data,
+            purpose="Get unique column values",
+        )
         schema = lazyframe.collect_schema()
         schema_map: dict[str, Any] = dict(schema.items())
-        try:
-            if _is_string_list_dtype(schema_map.get(column_name)):
-                unique_df = cast(
-                    pl.DataFrame,
-                    lazyframe.select(pl.col(column_name).explode().alias(column_name))
-                    .unique(maintain_order=True)
-                    .collect(),
-                )
-                raw_values = unique_df.get_column(column_name).to_list()
-                has_null = any(value is None for value in raw_values)
-
-                deduped_values = [
-                    str(value) for value in raw_values if value is not None
-                ]
-
-                unique_count = len(deduped_values) + (1 if has_null else 0)
-                return {
-                    "column_name": column_name,
-                    "unique_count": unique_count,
-                    "unique_values": deduped_values,
-                    "has_null": has_null,
-                }
-
+        if _is_string_list_dtype(schema_map.get(column_name)):
             unique_df = cast(
                 pl.DataFrame,
-                lazyframe.select(pl.col(column_name).alias(column_name))
+                lazyframe.select(pl.col(column_name).explode().alias(column_name))
                 .unique(maintain_order=True)
                 .collect(),
             )
             raw_values = unique_df.get_column(column_name).to_list()
             has_null = any(value is None for value in raw_values)
-            non_null_values = [value for value in raw_values if value is not None]
+            deduped_values = [str(value) for value in raw_values if value is not None]
+
             return {
                 "column_name": column_name,
-                "unique_count": len(raw_values),
-                "unique_values": non_null_values,
+                "unique_count": len(deduped_values) + (1 if has_null else 0),
+                "unique_values": deduped_values,
                 "has_null": has_null,
             }
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to get unique values for column '{column_name}': {e}",
-            )
+
+        unique_df = cast(
+            pl.DataFrame,
+            lazyframe.select(pl.col(column_name).alias(column_name))
+            .unique(maintain_order=True)
+            .collect(),
+        )
+        raw_values = unique_df.get_column(column_name).to_list()
+        has_null = any(value is None for value in raw_values)
+        non_null_values = [value for value in raw_values if value is not None]
+        return {
+            "column_name": column_name,
+            "unique_count": len(raw_values),
+            "unique_values": non_null_values,
+            "has_null": has_null,
+        }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process column unique values: {e}"
-        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/nodes/{node_id}/columns/{column_name}/describe")
@@ -810,12 +719,12 @@ async def describe_column(
     from ...models import ColumnDescribeResponse
 
     user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    node = ws.nodes[node_id]
-    data_obj = node.data
 
     try:
-        lazyframe = _unwrap_lazyframe(data_obj, purpose="Describe column")
+        lazyframe = _unwrap_lazyframe(
+            _require_current_workspace(user_id).nodes[node_id].data,
+            purpose="Describe column",
+        )
         df = cast(pl.DataFrame, lazyframe.collect())
 
         column_dtype = df.schema[column_name]
@@ -826,74 +735,54 @@ async def describe_column(
             pl.Datetime("ns"),
         )
 
-        # Run describe with 'nearest' interpolation for percentiles
-        # This works for both numeric and datetime columns
-        try:
-            desc_df = df.select(column_name).describe(interpolation="nearest")
+        desc_df = df.select(column_name).describe(interpolation="nearest")
 
-            # Convert to dict for easier access
-            desc_dict = {}
-            for row in desc_df.iter_rows(named=True):
-                stat_name = row.get("statistic") or row.get("describe")
-                if stat_name:
-                    desc_dict[stat_name] = row[column_name]
+        desc_dict = {}
+        for row in desc_df.iter_rows(named=True):
+            stat_name = row.get("statistic") or row.get("describe")
+            if stat_name:
+                desc_dict[stat_name] = row[column_name]
 
-            # Helper function to serialize values
-            def serialize_value(val):
-                if val is None:
-                    return None
-                if isinstance(val, datetime):
-                    return val.isoformat()
-                # For datetime columns, convert string output from describe() to datetime
-                if is_datetime_column and isinstance(val, str) and val != "null":
-                    try:
-                        # Parse datetime string from Polars describe output
-                        # Format: "2023-01-01 10:00:00" or "2023-01-01 10:00:00+00:00"
-                        dt = datetime.fromisoformat(val.replace(" ", "T"))
-                        # Add UTC timezone if not present (Polars datetimes are typically UTC)
-                        if dt.tzinfo is None:
-                            from datetime import timezone
-
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        return dt.isoformat()
-                    except ValueError, AttributeError:
-                        return val
-                # For numeric columns, convert to float
+        def serialize_value(val):
+            if val is None:
+                return None
+            if isinstance(val, datetime):
+                return val.isoformat()
+            if is_datetime_column and isinstance(val, str) and val != "null":
                 try:
-                    return float(val)
-                except TypeError, ValueError:
+                    dt = datetime.fromisoformat(val.replace(" ", "T"))
+                    if dt.tzinfo is None:
+                        from datetime import timezone
+
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.isoformat()
+                except ValueError, AttributeError:
                     return val
+            try:
+                return float(val)
+            except TypeError, ValueError:
+                return val
 
-            response = ColumnDescribeResponse(
-                column_name=column_name,
-                count=int(desc_dict.get("count", 0))
-                if desc_dict.get("count") is not None
-                else None,
-                null_count=int(desc_dict.get("null_count", 0))
-                if desc_dict.get("null_count") is not None
-                else None,
-                mean=serialize_value(desc_dict.get("mean")),
-                std=serialize_value(desc_dict.get("std")),
-                min=serialize_value(desc_dict.get("min")),
-                percentile_25=serialize_value(desc_dict.get("25%")),
-                median=serialize_value(desc_dict.get("50%")),
-                percentile_75=serialize_value(desc_dict.get("75%")),
-                max=serialize_value(desc_dict.get("max")),
-            )
-
-            return response
-
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to describe column '{column_name}': {e}",
-            )
+        return ColumnDescribeResponse(
+            column_name=column_name,
+            count=int(desc_dict.get("count", 0))
+            if desc_dict.get("count") is not None
+            else None,
+            null_count=int(desc_dict.get("null_count", 0))
+            if desc_dict.get("null_count") is not None
+            else None,
+            mean=serialize_value(desc_dict.get("mean")),
+            std=serialize_value(desc_dict.get("std")),
+            min=serialize_value(desc_dict.get("min")),
+            percentile_25=serialize_value(desc_dict.get("25%")),
+            median=serialize_value(desc_dict.get("50%")),
+            percentile_75=serialize_value(desc_dict.get("75%")),
+            max=serialize_value(desc_dict.get("max")),
+        )
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to process column describe: {e}"
-        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.delete("/nodes/{node_id}")
@@ -919,17 +808,12 @@ async def update_node_name(
     workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
     node = workspace.nodes[node_id]
+    node.name = new_name
+    update_workspace(user_id, workspace_id, best_effort=True)
     try:
-        node.name = new_name
-        update_workspace(user_id, workspace_id, best_effort=True)
-        try:
-            return node.info()
-        except Exception:
-            return {"id": getattr(node, "id", node_id), "name": new_name}
-    except HTTPException:
-        raise
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"Failed to rename node: {e}")
+        return node.info()
+    except Exception:
+        return {"id": getattr(node, "id", node_id), "name": new_name}
 
 
 @router.post("/nodes/{node_id}/clone")
@@ -972,8 +856,8 @@ async def clone_node(
             return {"id": getattr(new_node, "id", None), "name": new_name}
     except HTTPException:
         raise
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"Failed to clone node: {e}")
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/nodes/{node_id}/filter")
@@ -1052,13 +936,8 @@ async def filter_preview(
                 filtered_lazy.slice(0, normalized_page_size).collect(),
             )
         )
-    except HTTPException:
-        raise
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate filter preview: {exc}",
-        ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     columns = list(preview_df.columns)
     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
@@ -1150,13 +1029,8 @@ async def slice_preview(
             pl.DataFrame,
             sliced_lazy.slice(preview_offset, normalized_page_size).collect(),
         )
-    except HTTPException:
-        raise
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate slice preview: {exc}",
-        ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     columns = list(preview_df.columns)
     dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
@@ -1239,9 +1113,7 @@ async def concat_nodes_preview(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Concat preview failed: {exc}"
-        ) from exc
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/nodes/concat")
@@ -1276,7 +1148,7 @@ async def concat_nodes(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Concat failed: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/nodes/join/preview")
@@ -1342,7 +1214,7 @@ async def join_nodes_preview(
                 pl.DataFrame, joined_lazy.slice(offset, page_size).collect()
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Join preview failed: {exc}")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
         preview_rows = preview_df.to_dicts()
         preview_columns = list(preview_df.columns)
@@ -1375,8 +1247,8 @@ async def join_nodes_preview(
         raise
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Join preview failed: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/nodes/join")
@@ -1433,5 +1305,5 @@ async def join_nodes(
         raise
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Join failed: {e}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
