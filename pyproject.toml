@@ -39,35 +39,13 @@ deploy = ["jupyter-server-proxy>=4.4.0", "ipython>=9.5.0"]
 ldaca_web_app_backend = "ldaca_web_app_backend.cli:main"
 
 [tool.pytest.ini_options]
-minversion = "7.0"
-addopts = [
-    "-ra",
-    "--strict-markers",
-    "--strict-config",
-    "--ignore=../polars-text",
-    "--ignore=../ldaca-tabulator",
-]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
 pythonpath = ["src"]
 testpaths = ["tests"]
-norecursedirs = [
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    "node_modules",
-    "build",
-    "dist",
-    "src-tauri",
-    "src-tauri/target",
-    "*site-packages",
-]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
 asyncio_mode = "auto"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
     "workspace: marks tests related to workspace functionality",
 ]
 
