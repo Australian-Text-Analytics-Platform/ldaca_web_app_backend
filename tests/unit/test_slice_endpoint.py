@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-
 from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
 from ldaca_web_app_backend.api.workspaces import utils as workspace_utils
 from ldaca_web_app_backend.models import SliceRequest
@@ -38,6 +37,7 @@ class DummyWorkspace:
     def __init__(self, nodes: dict[str, DummyNode], manager: "FakeWorkspaceManager"):
         self.nodes = nodes
         self._manager = manager
+        self.id = manager.workspace_id
         self.name = "dummy"
 
     def add_node(self, node: DummyNode):

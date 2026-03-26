@@ -1,6 +1,5 @@
 import polars as pl
 import pytest
-
 from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
 
 
@@ -12,6 +11,7 @@ class _DummyNode:
 
 class _DummyWorkspace:
     def __init__(self, persist_calls: dict[str, int], nodes=None):
+        self.id = "ws-alpha"
         self.name = "ws"
         self._persist_calls = persist_calls
         self.nodes = nodes or {}
