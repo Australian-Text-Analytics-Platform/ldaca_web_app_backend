@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-03-25T22:53:31.476399+00:00",
+  "python_version": "3.14",
+  "python_executable": "/Users/sguo/Sources/ldaca_web_app/ldaca_web_app_backend/dist-tauri/backend-runtime/managed-python/cpython-3.14.3-macos-aarch64-none/bin/python3",
+  "git_sha": "94b1b975fadad7279f5ef2c68b1cf76cb7559e20",
+  "install_method": "uv-sync"
+}

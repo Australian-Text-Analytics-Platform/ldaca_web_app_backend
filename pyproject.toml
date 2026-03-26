@@ -56,7 +56,6 @@ norecursedirs = [
     "node_modules",
     "build",
     "dist",
-    "dist-tauri",
     "src-tauri",
     "src-tauri/target",
     "*site-packages",
