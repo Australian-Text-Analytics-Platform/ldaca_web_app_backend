@@ -27,6 +27,25 @@ Table = None
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
 
+def _require_airtable_config() -> tuple[str, str, str]:
+    """Return Airtable credentials as definite strings.
+
+    Used by:
+    - `_airtable_available`
+    - `submit_feedback`
+
+    Why:
+    - Centralizes runtime validation and gives static type checkers non-optional
+      values for the pyairtable constructor.
+    """
+    api_key = settings.airtable_api_key
+    base_id = settings.airtable_base_id
+    table_id = settings.airtable_table_id
+    if not api_key or not base_id or not table_id:
+        raise RuntimeError("Airtable is not fully configured")
+    return api_key, base_id, table_id
+
+
 def _airtable_available() -> bool:
     """Return whether Airtable submission should be attempted.
 
@@ -39,12 +58,11 @@ def _airtable_available() -> bool:
     # Disable network side-effects during test runs
     if os.getenv("PYTEST_CURRENT_TEST"):
         return False
-    return bool(
-        settings.airtable_api_key
-        and settings.airtable_base_id
-        and settings.airtable_table_id
-        and _HAS_PYAIRTABLE
-    )
+    try:
+        _require_airtable_config()
+    except RuntimeError:
+        return False
+    return _HAS_PYAIRTABLE
 
 
 @router.post("/submit", response_model=FeedbackResponse)
@@ -82,14 +100,11 @@ async def submit_feedback(
 
     try:
         # Import only when needed
-        from pyairtable import Table as _Table  # type: ignore[unresolved-import]
+        from pyairtable import Table as _Table
 
+        api_key, base_id, table_id = _require_airtable_config()
         # pyairtable.Table signature: Table(api_key, base_id, table_name)
-        table = _Table(
-            settings.airtable_api_key,
-            settings.airtable_base_id,
-            settings.airtable_table_id,
-        )
+        table = _Table(api_key, base_id, table_id)
         # Build Airtable fields using configured field IDs if present; fallback to field names.
         # (pyairtable docs use field NAMES. Field IDs also work; we support both.)
         fields: Dict[str, Any] = {}

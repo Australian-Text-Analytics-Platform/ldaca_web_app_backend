@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import datetime
-from typing import Any, List, Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 import polars as pl
 from docworkspace.workspace.core import Workspace
@@ -265,11 +265,6 @@ def _build_filter_expression(
     return filter_expr
 
 
-def _unwrap_lazyframe(data: Any, *, purpose: str) -> pl.LazyFrame:
-    _ = purpose
-    return cast(pl.LazyFrame, data)
-
-
 def _require_current_workspace(user_id: str) -> Workspace:
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is None:
@@ -277,31 +272,13 @@ def _require_current_workspace(user_id: str) -> Workspace:
     return workspace
 
 
-def _require_current_workspace_id(user_id: str) -> str:
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    if workspace_id is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return workspace_id
-
-
-def _get_node_display_name(node: Any) -> str:
-    name = getattr(node, "name", None)
-    if name:
-        return str(name)
-    for attr in ("node_id", "id", "pk", "uuid"):
-        value = getattr(node, attr, None)
-        if value is not None:
-            return str(value)
-    return "node"
-
-
-def _get_concat_nodes(user_id: str, node_ids: List[str]) -> List[Any]:
+def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
     if not node_ids:
         raise HTTPException(
             status_code=400, detail="At least two node IDs are required"
         )
     ws = _require_current_workspace(user_id)
-    nodes: List[Any] = []
+    nodes: list[Node] = []
     seen: set[str] = set()
     for raw_node_id in node_ids:
         node_id = raw_node_id.strip()
@@ -325,7 +302,7 @@ def _get_concat_nodes(user_id: str, node_ids: List[str]) -> List[Any]:
 
 def _extract_lazy_schema(
     lazy_frame: pl.LazyFrame,
-) -> tuple[List[str], dict[str, str]]:
+) -> tuple[list[str], dict[str, str]]:
     schema_dict = dict(lazy_frame.collect_schema().items())
     columns = list(schema_dict.keys())
     dtypes = {col: str(dtype) for col, dtype in schema_dict.items()}
@@ -343,12 +320,9 @@ def _build_replace_expression(request: ReplaceRequest) -> tuple[str, pl.Expr]:
 
 
 def _validate_and_align_concat_nodes(
-    nodes: List[Any],
-) -> tuple[List[pl.LazyFrame], List[str], dict[str, str]]:
-    lazy_frames: List[pl.LazyFrame] = [
-        _unwrap_lazyframe(node.data, purpose="Concat requires lazy nodes")
-        for node in nodes
-    ]
+    nodes: list[Node],
+) -> tuple[list[pl.LazyFrame], list[str], dict[str, str]]:
+    lazy_frames: list[pl.LazyFrame] = [node.data for node in nodes]
     base_columns, base_dtypes = _extract_lazy_schema(lazy_frames[0])
     if not base_columns:
         raise HTTPException(
@@ -357,7 +331,7 @@ def _validate_and_align_concat_nodes(
         )
 
     select_expr = [pl.col(column) for column in base_columns]
-    aligned_frames: List[pl.LazyFrame] = [lazy_frames[0].select(select_expr)]
+    aligned_frames: list[pl.LazyFrame] = [lazy_frames[0].select(select_expr)]
 
     for node, lazy_frame in zip(nodes[1:], lazy_frames[1:]):
         columns, dtypes = _extract_lazy_schema(lazy_frame)
@@ -370,7 +344,7 @@ def _validate_and_align_concat_nodes(
         ]
 
         if missing or extra or mismatched:
-            detail_parts: List[str] = []
+            detail_parts: list[str] = []
             if missing:
                 detail_parts.append("missing columns: " + ", ".join(sorted(missing)))
             if extra:
@@ -383,7 +357,7 @@ def _validate_and_align_concat_nodes(
                 detail_parts.append(f"type mismatches: {mismatch_details}")
             detail = (
                 "Schema mismatch for node '"
-                + _get_node_display_name(node)
+                + node.name
                 + "': "
                 + "; ".join(detail_parts)
             )
@@ -395,7 +369,7 @@ def _validate_and_align_concat_nodes(
 
 
 def _calculate_concat_row_count(
-    aligned_frames: List[pl.LazyFrame],
+    aligned_frames: list[pl.LazyFrame],
 ) -> Optional[int]:
     total = 0
     for lazy_frame in aligned_frames:
@@ -409,10 +383,10 @@ def _calculate_concat_row_count(
     return total
 
 
-def _derive_concat_node_name(nodes: List[Any], desired_name: Optional[str]) -> str:
+def _derive_concat_node_name(nodes: list[Node], desired_name: Optional[str]) -> str:
     if desired_name:
         return desired_name
-    labels = [_get_node_display_name(node) for node in nodes]
+    labels = [node.name for node in nodes]
     if not labels:
         return "Stack Result"
     if len(labels) <= 3:
@@ -433,9 +407,7 @@ async def compute_column_preview(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    lazy_data = _unwrap_lazyframe(
-        workspace.nodes[node_id].data, purpose="Compute column preview"
-    )
+    lazy_data = workspace.nodes[node_id].data
 
     try:
         columns, _ = _extract_lazy_schema(lazy_data)
@@ -471,11 +443,11 @@ async def compute_column_apply(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     ws = _require_current_workspace(user_id)
+    workspace_id = ws.id
     node = ws.nodes[node_id]
     try:
-        lazy_data = _unwrap_lazyframe(node.data, purpose="Compute column apply")
+        lazy_data = node.data
         columns, _ = _extract_lazy_schema(lazy_data)
         column_name = _resolve_expression_column_name(request)
         updated_data = lazy_data.with_columns(
@@ -526,9 +498,7 @@ async def replace_preview(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    lazy_data = _unwrap_lazyframe(
-        workspace.nodes[node_id].data, purpose="Replace preview"
-    )
+    lazy_data = workspace.nodes[node_id].data
 
     try:
         _, replace_expr = _build_replace_expression(request)
@@ -558,13 +528,13 @@ async def replace_apply(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     node = workspace.nodes[node_id]
     dtype_str: Optional[str] = None
 
     try:
-        lazy_data = _unwrap_lazyframe(node.data, purpose="Replace apply")
+        lazy_data = node.data
         column_name, replace_expr = _build_replace_expression(request)
         updated_data = lazy_data.with_columns(replace_expr)
         updated_schema = dict(updated_data.collect_schema().items())
@@ -615,10 +585,7 @@ async def get_node_data(
 ):
     user_id = current_user["id"]
     try:
-        lazyframe = _unwrap_lazyframe(
-            _require_current_workspace(user_id).nodes[node_id].data,
-            purpose="Get node data",
-        )
+        lazyframe = _require_current_workspace(user_id).nodes[node_id].data
         df = cast(pl.DataFrame, lazyframe.collect())
         total_rows = len(df)
         start_idx = (page - 1) * page_size
@@ -664,10 +631,7 @@ async def get_column_unique_values(
 ):
     user_id = current_user["id"]
     try:
-        lazyframe = _unwrap_lazyframe(
-            _require_current_workspace(user_id).nodes[node_id].data,
-            purpose="Get unique column values",
-        )
+        lazyframe = _require_current_workspace(user_id).nodes[node_id].data
         schema = lazyframe.collect_schema()
         schema_map: dict[str, Any] = dict(schema.items())
         if _is_string_list_dtype(schema_map.get(column_name)):
@@ -721,10 +685,7 @@ async def describe_column(
     user_id = current_user["id"]
 
     try:
-        lazyframe = _unwrap_lazyframe(
-            _require_current_workspace(user_id).nodes[node_id].data,
-            purpose="Describe column",
-        )
+        lazyframe = _require_current_workspace(user_id).nodes[node_id].data
         df = cast(pl.DataFrame, lazyframe.collect())
 
         column_dtype = df.schema[column_name]
@@ -788,8 +749,8 @@ async def describe_column(
 @router.delete("/nodes/{node_id}")
 async def delete_node(node_id: str, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     success = workspace.remove_node(node_id)
     if success:
         update_workspace(user_id, workspace_id)
@@ -805,8 +766,8 @@ async def update_node_name(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     node = workspace.nodes[node_id]
     node.name = new_name
     update_workspace(user_id, workspace_id, best_effort=True)
@@ -822,8 +783,8 @@ async def clone_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     node = workspace.nodes[node_id]
 
     def _unique_clone_name(original: str) -> str:
@@ -838,7 +799,7 @@ async def clone_node(
         return f"{base}_clone_{suffix}"
 
     try:
-        source_lazy = _unwrap_lazyframe(node.data, purpose="Clone node")
+        source_lazy = node.data
         cloned_lazy = source_lazy.clone()
         new_name = _unique_clone_name(getattr(node, "name", node_id))
         new_node = Node(
@@ -867,11 +828,10 @@ async def filter_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     node = workspace.nodes[node_id]
-    data_obj = node.data
-    lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter node")
+    lazy_data = node.data
     schema_map: dict[str, Any] = dict(lazy_data.collect_schema().items())
     filter_expr = _build_filter_expression(request, column_dtypes=schema_map)
     filtered_data = lazy_data.filter(filter_expr)
@@ -901,8 +861,7 @@ async def filter_preview(
 ) -> FilterPreviewResponse:
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    data_obj = workspace.nodes[node_id].data
-    lazy_data = _unwrap_lazyframe(data_obj, purpose="Filter preview")
+    lazy_data = workspace.nodes[node_id].data
 
     try:
         schema_map: dict[str, Any] = dict(lazy_data.collect_schema().items())
@@ -965,11 +924,10 @@ async def slice_node(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     node = workspace.nodes[node_id]
-    data_obj = node.data
-    lazy_data = _unwrap_lazyframe(data_obj, purpose="Slice node")
+    lazy_data = node.data
     offset = int(request.offset or 0)
     length = request.length
     sliced_data = lazy_data.slice(offset, length)
@@ -1002,13 +960,12 @@ async def slice_preview(
 ) -> FilterPreviewResponse:
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    data_obj = workspace.nodes[node_id].data
 
     offset = int(request.offset or 0)
     length = request.length if request.length is None else int(request.length)
 
     try:
-        lazy_data = _unwrap_lazyframe(data_obj, purpose="Slice preview")
+        lazy_data = workspace.nodes[node_id].data
         sliced_lazy = lazy_data.slice(offset, length)
 
         total_rows_df = cast(
@@ -1122,25 +1079,26 @@ async def concat_nodes(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     try:
         nodes = _get_concat_nodes(user_id, request.node_ids)
         aligned_frames, _, _ = _validate_and_align_concat_nodes(nodes)
         concat_lazy = pl.concat(aligned_frames, how="vertical")
         node_name = _derive_concat_node_name(nodes, request.new_node_name)
-        labels = [_get_node_display_name(node) for node in nodes]
+        labels = [node.name for node in nodes]
+        parent_nodes: list[Node | str] = list(nodes)
         if len(labels) > 3:
             operation_args = ", ".join(labels[:3]) + ", ..."
         else:
             operation_args = ", ".join(labels)
         operation_label = f"concat({operation_args})"
         workspace = _require_current_workspace(user_id)
+        workspace_id = workspace.id
         new_node = Node(
             data=concat_lazy,
             name=node_name,
             workspace=workspace,
             operation=operation_label,
-            parents=nodes,
+            parents=parent_nodes,
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
@@ -1179,12 +1137,8 @@ async def join_nodes_preview(
             how_val,
         )
 
-        left_lazy = _unwrap_lazyframe(
-            left_node.data, purpose="Join preview requires lazy left node"
-        )
-        right_lazy = _unwrap_lazyframe(
-            right_node.data, purpose="Join preview requires lazy right node"
-        )
+        left_lazy = left_node.data
+        right_lazy = right_node.data
 
         if join_how == "cross":
             joined_lazy = left_lazy.join(right_lazy, how="cross")
@@ -1262,17 +1216,13 @@ async def join_nodes(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
     left_node = workspace.nodes[left_node_id]
     right_node = workspace.nodes[right_node_id]
     try:
-        left_data = _unwrap_lazyframe(
-            left_node.data, purpose="Join requires lazy left node"
-        )
-        right_data = _unwrap_lazyframe(
-            right_node.data, purpose="Join requires lazy right node"
-        )
+        left_data = left_node.data
+        right_data = right_node.data
         allowed_hows = {"inner", "left", "right", "full", "semi", "anti", "cross"}
         how_val = (how or "inner").lower()
         if how_val not in allowed_hows:

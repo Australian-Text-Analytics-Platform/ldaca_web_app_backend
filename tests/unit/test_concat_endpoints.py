@@ -81,6 +81,7 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch, sample_nodes):
         ) -> None:
             self.nodes = nodes
             self._manager = manager
+            self.id = manager.workspace_id
             self.name = "dummy"
 
         def add_node(self, node: DummyNode):
