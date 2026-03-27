@@ -130,17 +130,80 @@ def build_concordance_lazyframe(
         regex=request["regex"],
         case_sensitive=request["case_sensitive"],
     )
-    return (
-        node_data.select([pl.all(), expr.alias("concordance")])
-        .explode("concordance")
-        .select(
-            [
-                pl.exclude("concordance"),
-                *concordance_struct_projection("concordance"),
-            ]
-        )
-        .filter(concordance_non_empty_expr())
-    )
+    return node_data.select([pl.all(), expr.alias("concordance")])
+
+
+def _project_concordance_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:
+    """Project one raw concordance struct into canonical response columns."""
+    return {
+        CONC_LEFT_CONTEXT_COLUMN: raw_hit.get("left_context"),
+        CONC_MATCHED_TEXT_COLUMN: raw_hit.get("matched_text"),
+        CONC_RIGHT_CONTEXT_COLUMN: raw_hit.get("right_context"),
+        "CONC_start_idx": raw_hit.get("start_idx"),
+        "CONC_end_idx": raw_hit.get("end_idx"),
+        "CONC_l1": raw_hit.get("l1"),
+        "CONC_r1": raw_hit.get("r1"),
+    }
+
+
+def _concordance_hit_has_content(hit: dict[str, Any]) -> bool:
+    """Return whether a projected concordance hit contains meaningful text."""
+    for key in (
+        CONC_MATCHED_TEXT_COLUMN,
+        CONC_LEFT_CONTEXT_COLUMN,
+        CONC_RIGHT_CONTEXT_COLUMN,
+    ):
+        value = hit.get(key)
+        if value is None:
+            continue
+        if str(value).strip():
+            return True
+    return False
+
+
+def _serialize_grouped_concordance_rows(
+    result_df: pl.DataFrame,
+    *,
+    node_label: Optional[str] = None,
+) -> tuple[list[list[dict[str, Any]]], list[str]]:
+    """Serialize collected concordance rows into grouped per-document hit lists."""
+    if result_df.height == 0:
+        return [], []
+
+    metadata_columns = [
+        column for column in result_df.columns if column != "concordance"
+    ]
+    columns = [
+        *metadata_columns,
+        *CORE_CONCORDANCE_COLUMNS,
+    ]
+    if node_label:
+        columns.append("__source_node")
+
+    grouped_rows: list[list[dict[str, Any]]] = []
+    for row in result_df.to_dicts():
+        raw_hits = row.get("concordance") or []
+        if not isinstance(raw_hits, list):
+            continue
+
+        base_row = {key: value for key, value in row.items() if key != "concordance"}
+        grouped_hits: list[dict[str, Any]] = []
+        for raw_hit in raw_hits:
+            if not isinstance(raw_hit, dict):
+                continue
+            projected_hit = {
+                **base_row,
+                **_project_concordance_hit(raw_hit),
+            }
+            if node_label:
+                projected_hit["__source_node"] = node_label
+            if _concordance_hit_has_content(projected_hit):
+                grouped_hits.append(projected_hit)
+
+        if grouped_hits:
+            grouped_rows.append(grouped_hits)
+
+    return grouped_rows, columns
 
 
 def resolve_node_sources(
@@ -229,14 +292,11 @@ def compute_concordance_page(
     page_lf = base_lf.slice(start, page_size)
 
     concordance_lf = build_concordance_lazyframe(page_lf, column, request)
-    if node_label:
-        concordance_lf = concordance_lf.with_columns(
-            pl.lit(node_label).alias("__source_node")
-        )
     result_df = cast(pl.DataFrame, concordance_lf.collect())
-
-    columns = result_df.columns if result_df.height > 0 else []
-    page_rows = result_df.to_dicts()
+    page_rows, columns = _serialize_grouped_concordance_rows(
+        result_df,
+        node_label=node_label,
+    )
 
     total_source_pages = max(1, math.ceil(total_source_rows / page_size))
 
