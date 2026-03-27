@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import polars as pl
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi.responses import Response, StreamingResponse
 
 try:
     import fastexcel
@@ -23,27 +23,30 @@ from ..core.utils import (
     read_text_file,
     read_zip_file,
     validate_file_path,
+    validate_workspace_name,
 )
 from ..core.workspace import workspace_manager
 from ..models import (
+    CreateFolderRequest,
+    CreateFolderResponse,
     FileInfoResponse,
     FilePreviewRequest,
     FilePreviewResponse,
     FilesImportTaskStartResponse,
     FilesTaskActionResponse,
     FilesTasksListResponse,
+    FileTreeNodeResponse,
     FileUploadResponse,
     ImportSampleDataResponse,
     LDaCAImportRequest,
     MessageResponse,
-    UserFilesResponse,
+    MoveFileRequest,
 )
 
 router = APIRouter(prefix="/files", tags=["file_management"])
 logger = logging.getLogger(__name__)
 
 README_FILENAME = "README.md"
-README_MAX_BYTES = 200_000
 
 
 def _delete_parent_folder_if_redundant(file_path: Path, data_folder: Path) -> None:
@@ -81,44 +84,68 @@ def _delete_parent_folder_if_redundant(file_path: Path, data_folder: Path) -> No
         parent.rmdir()
 
 
-def _read_sample_folder_readme(readme_path: Path) -> Optional[str]:
-    """Read a sample-folder README safely for citation display.
-
-    Returns markdown text or None when no readable README exists.
-    Applies a hard size cap to keep /files payload bounded.
-
-    Used by:
-    - `get_user_files`
-
-    Why:
-    - Attaches dataset-level README context without unbounded payload growth.
-    """
-    if not readme_path.exists() or not readme_path.is_file():
-        return None
-
-    try:
-        with open(readme_path, "rb") as readme_file:
-            content = readme_file.read(README_MAX_BYTES + 1)
-    except OSError:
-        return None
-
-    if not content:
-        return None
-
-    truncated = len(content) > README_MAX_BYTES
-    if truncated:
-        content = content[:README_MAX_BYTES]
-
-    decoded = content.decode("utf-8", errors="replace")
-    if truncated:
-        decoded = f"{decoded}\n\n… (README truncated for display)"
-
-    return decoded
-
-
 def _relative_path_for_api(path: Path) -> str:
     """Normalize relative paths for API responses using forward slashes."""
     return path.as_posix()
+
+
+def _visible_entry_names(names: list[str]) -> list[str]:
+    """Return sorted non-hidden directory entries."""
+    return sorted(name for name in names if not name.startswith("."))
+
+
+def _build_file_tree(data_folder: Path) -> list[dict[str, Any]]:
+    """Build a nested file tree rooted at the user's data directory."""
+    root_children: list[dict[str, Any]] = []
+    directory_nodes: dict[str, dict[str, Any]] = {"": {"children": root_children}}
+
+    for current_dir, dirnames, filenames in data_folder.walk(top_down=True):
+        dirnames[:] = _visible_entry_names(dirnames)
+        visible_filenames = _visible_entry_names(filenames)
+
+        relative_dir = current_dir.relative_to(data_folder)
+        relative_dir_str = (
+            "" if relative_dir == Path(".") else _relative_path_for_api(relative_dir)
+        )
+        current_children = directory_nodes[relative_dir_str]["children"]
+
+        for dirname in dirnames:
+            directory_path = (
+                Path(relative_dir_str, dirname) if relative_dir_str else Path(dirname)
+            )
+            directory_rel = _relative_path_for_api(directory_path)
+            directory_node = {
+                "name": dirname,
+                "path": directory_rel,
+                "type": "directory",
+                "children": [],
+            }
+            current_children.append(directory_node)
+            directory_nodes[directory_rel] = directory_node
+
+        for filename in visible_filenames:
+            file_rel_path = (
+                Path(relative_dir_str, filename) if relative_dir_str else Path(filename)
+            )
+            absolute_file_path = current_dir / filename
+            current_children.append(
+                {
+                    "name": filename,
+                    "path": _relative_path_for_api(file_rel_path),
+                    "type": "file",
+                    "size": absolute_file_path.stat().st_size,
+                }
+            )
+
+    return root_children
+
+
+def _resolve_user_file_path(relative_path: str, data_folder: Path) -> Path:
+    """Resolve and validate an API-supplied path inside the user's data folder."""
+    file_path = data_folder / relative_path
+    if not validate_file_path(file_path, data_folder):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    return file_path
 
 
 def _lazy_scan(file_path, file_type: str) -> pl.LazyFrame:
@@ -292,67 +319,118 @@ def _list_excel_sheet_names(file_path: Path) -> List[str]:
     return []
 
 
-@router.get("/", response_model=UserFilesResponse)
+@router.get(
+    "/", response_model=list[FileTreeNodeResponse], response_model_exclude_none=True
+)
 async def get_user_files(current_user: dict = Depends(get_current_user)):
-    """List user-visible files with metadata and sample README context.
+    """List user-visible files as a nested tree.
 
     Used by:
     - frontend file browser panel
 
     Why:
-    - Provides one aggregate listing endpoint for user + sample content trees.
+    - The frontend consumes the directory structure directly instead of
+      reconstructing it from a flat file listing.
     """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
+    return _build_file_tree(data_folder)
 
-    files = []
-    folder_readme_cache: Dict[str, Optional[str]] = {}
 
-    # Recursively find all files in the user's data folder
-    for file_path in data_folder.rglob("*"):
-        if file_path.is_file() and not file_path.name.startswith("."):
-            # Get relative path from the data folder
-            relative_path = file_path.relative_to(data_folder)
-            rel_str = _relative_path_for_api(relative_path)
-            is_sample = rel_str.startswith("sample_data/")
-            is_ldaca = rel_str.startswith("LDaCA/")
-            folder_rel = (
-                _relative_path_for_api(relative_path.parent)
-                if _relative_path_for_api(relative_path.parent) != "."
-                else ""
-            )
+@router.post("/folders", response_model=CreateFolderResponse)
+async def create_folder(
+    request: CreateFolderRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create a folder inside the user's data directory."""
+    user_id = current_user["id"]
+    data_folder = get_user_data_folder(user_id)
 
-            readme_content: Optional[str] = None
-            is_readme_row = file_path.name.lower() == README_FILENAME.lower()
-            if is_readme_row:
-                continue
+    is_valid, reason = validate_workspace_name(request.name)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=f"Invalid folder name: {reason}")
 
-            if (is_sample or is_ldaca) and not is_readme_row:
-                if folder_rel not in folder_readme_cache:
-                    folder_readme_cache[folder_rel] = _read_sample_folder_readme(
-                        data_folder / relative_path.parent / README_FILENAME
-                    )
-                readme_content = folder_readme_cache[folder_rel]
+    parent_path = request.parent_path.strip()
+    parent_folder = (
+        data_folder
+        if not parent_path
+        else _resolve_user_file_path(parent_path, data_folder)
+    )
 
-            files.append(
-                {
-                    "filename": rel_str,  # full path relative to user data root
-                    "full_path": rel_str,
-                    "display_name": file_path.name,
-                    "size": file_path.stat().st_size,
-                    "created_at": file_path.stat().st_ctime,
-                    "file_type": detect_file_type(file_path.name),
-                    "folder": folder_rel,
-                    "is_sample": is_sample,
-                    "path_type": "sample" if is_sample else "user",
-                    "readme": readme_content,
-                }
-            )
+    if not parent_folder.exists() or not parent_folder.is_dir():
+        raise HTTPException(
+            status_code=404, detail=f"Folder {parent_path or '.'} not found"
+        )
+
+    folder_path = parent_folder / request.name.strip()
+    if not validate_file_path(folder_path, data_folder):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if folder_path.exists():
+        raise HTTPException(
+            status_code=400, detail=f"Folder {request.name.strip()} already exists"
+        )
+
+    try:
+        folder_path.mkdir(parents=False, exist_ok=False)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create folder: {str(exc)}"
+        ) from exc
+
+    relative_path = folder_path.relative_to(data_folder)
+    return {
+        "message": "Folder created",
+        "path": _relative_path_for_api(relative_path),
+    }
+
+
+@router.post("/move", response_model=CreateFolderResponse)
+async def move_file(
+    request: MoveFileRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Move a file into another directory inside the user's data folder."""
+    user_id = current_user["id"]
+    data_folder = get_user_data_folder(user_id)
+
+    source_path = _resolve_user_file_path(request.source_path, data_folder)
+    target_directory = (
+        data_folder
+        if not request.target_directory_path.strip()
+        else _resolve_user_file_path(request.target_directory_path, data_folder)
+    )
+
+    if not source_path.exists() or not source_path.is_file():
+        raise HTTPException(
+            status_code=404, detail=f"File {request.source_path} not found"
+        )
+    if not target_directory.exists() or not target_directory.is_dir():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Folder {request.target_directory_path} not found",
+        )
+
+    destination_path = target_directory / source_path.name
+    if not validate_file_path(destination_path, data_folder):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if destination_path.exists():
+        raise HTTPException(
+            status_code=400,
+            detail=f"File {destination_path.name} already exists in destination",
+        )
+
+    original_source_path = source_path
+    try:
+        source_path.rename(destination_path)
+        _delete_parent_folder_if_redundant(original_source_path, data_folder)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to move file: {str(exc)}"
+        ) from exc
 
     return {
-        "files": files,
-        "total": len(files),
-        "user_folder": str(data_folder),
+        "message": "File moved",
+        "path": _relative_path_for_api(destination_path.relative_to(data_folder)),
     }
 
 
@@ -678,6 +756,34 @@ async def get_file_info(filename: str, current_user: dict = Depends(get_current_
         raise HTTPException(
             status_code=500, detail=f"Error getting file info: {str(e)}"
         )
+
+
+@router.get("/raw")
+async def get_raw_file(
+    path: str = Query(..., description="Path relative to the user's data directory"),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return raw UTF-8 text content for a file inside the user's data folder."""
+    user_id = current_user["id"]
+    data_folder = get_user_data_folder(user_id)
+    file_path = _resolve_user_file_path(path, data_folder)
+
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"File {path} not found")
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail="File is not valid UTF-8 text"
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Error reading file: {str(exc)}"
+        ) from exc
+
+    media_type = "text/markdown" if file_path.suffix.lower() == ".md" else "text/plain"
+    return Response(content=content, media_type=media_type)
 
 
 # Keep the catch-all download route LAST so that more specific routes like

@@ -113,23 +113,30 @@ class LDaCAImportRequest(BaseModel):
     filename: Optional[str] = None
 
 
-class FileListItemResponse(BaseModel):
-    filename: str
-    full_path: str
-    display_name: str
-    size: int
-    created_at: float
-    file_type: str
-    folder: str
-    is_sample: bool
-    path_type: str
-    readme: Optional[str] = None
+class FileTreeNodeResponse(BaseModel):
+    name: str
+    path: str
+    type: Literal["file", "directory"]
+    size: Optional[int] = None
+    children: Optional[List["FileTreeNodeResponse"]] = None
 
 
-class UserFilesResponse(BaseModel):
-    files: List[FileListItemResponse]
-    total: int
-    user_folder: str
+FileTreeNodeResponse.model_rebuild()
+
+
+class CreateFolderRequest(BaseModel):
+    name: str
+    parent_path: str = ""
+
+
+class CreateFolderResponse(BaseModel):
+    message: str
+    path: str
+
+
+class MoveFileRequest(BaseModel):
+    source_path: str
+    target_directory_path: str
 
 
 class MessageResponse(BaseModel):
