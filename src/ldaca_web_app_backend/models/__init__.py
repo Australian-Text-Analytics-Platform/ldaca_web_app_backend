@@ -120,6 +120,12 @@ class FileTreeNodeResponse(BaseModel):
     size: Optional[int] = None
     children: Optional[List["FileTreeNodeResponse"]] = None
 
+    @model_validator(mode="after")
+    def normalize_directory_children(self) -> "FileTreeNodeResponse":
+        if self.type == "directory" and self.children is None:
+            self.children = []
+        return self
+
 
 FileTreeNodeResponse.model_rebuild()
 
