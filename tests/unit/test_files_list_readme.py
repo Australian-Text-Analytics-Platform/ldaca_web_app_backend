@@ -134,6 +134,32 @@ def test_list_files_returns_tree_with_readme_entries(
     }
 
 
+def test_list_files_serializes_empty_directory_children_as_empty_list(
+    client: TestClient,
+):
+    with patch(
+        "ldaca_web_app_backend.api.files._build_file_tree",
+        return_value=[
+            {
+                "name": "Empty Folder",
+                "path": "Empty Folder",
+                "type": "directory",
+            }
+        ],
+    ):
+        response = client.get("/api/files/")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "name": "Empty Folder",
+            "path": "Empty Folder",
+            "type": "directory",
+            "children": [],
+        }
+    ]
+
+
 def test_raw_file_returns_markdown_content(client: TestClient, tmp_path: Path):
     user_root = tmp_path / "users" / "user_test_user" / "user_data"
     readme_path = user_root / "sample_data" / "ADO" / "README.md"
