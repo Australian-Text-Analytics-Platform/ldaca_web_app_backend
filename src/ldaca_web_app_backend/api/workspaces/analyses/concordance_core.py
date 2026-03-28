@@ -10,6 +10,7 @@ from typing import Any, Optional, cast
 import polars as pl
 from fastapi import HTTPException
 
+from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
 from .generated_columns import (
     CONC_LEFT_CONTEXT_COLUMN,
@@ -328,7 +329,7 @@ def compute_concordance_page(
     }
 
     return {
-        "data": page_rows,
+        "data": stringify_unsafe_integers(page_rows),
         "columns": columns,
         "metadata": metadata,
         "pagination": {
@@ -586,7 +587,7 @@ def build_concordance_response(
                 "all_columns": columns,
             }
             data["__COMBINED__"] = {
-                "data": all_rows,
+                "data": stringify_unsafe_integers(all_rows),
                 "columns": columns,
                 "metadata": metadata,
                 "pagination": {

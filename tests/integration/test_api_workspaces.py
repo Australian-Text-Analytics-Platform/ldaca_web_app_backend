@@ -188,6 +188,60 @@ class TestWorkspaceAPI:
         assert pagination.get("page") == 1
         assert pagination.get("page_size") == 5
 
+    async def test_get_node_data_preserves_large_integer_identifiers(
+        self,
+        authenticated_client,
+        workspace_id,
+    ):
+        """Large integers exceeding JS MAX_SAFE_INTEGER are returned as strings."""
+        import csv
+
+        from ldaca_web_app_backend.core.utils import get_user_data_folder
+
+        expected_ids = [
+            1317123226535776257,
+            1317123482837086208,
+            1317123564248551425,
+        ]
+
+        user_data_dir = get_user_data_folder("test")
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        source_file = user_data_dir / "large_integer_ids.csv"
+
+        with open(source_file, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["tweet_id", "text"])
+            writer.writerow([expected_ids[0], "first"])
+            writer.writerow([expected_ids[1], "second"])
+            writer.writerow([expected_ids[2], "third"])
+
+        add_response = await authenticated_client.post(
+            "/api/workspaces/nodes",
+            params={"filename": source_file.name},
+        )
+        assert add_response.status_code == 200, add_response.text
+        node_id = add_response.json()["id"]
+
+        data_response = await authenticated_client.get(
+            f"/api/workspaces/nodes/{node_id}/data",
+            params={"page": 1, "page_size": 5},
+        )
+
+        assert data_response.status_code == 200, data_response.text
+
+        raw_body = data_response.text
+        for expected_id in expected_ids:
+            assert str(expected_id) in raw_body, (
+                f"Exact digits of {expected_id} must appear in raw response body"
+            )
+
+        payload = data_response.json()
+        assert payload["dtypes"]["tweet_id"] == "Int64"
+        returned_ids = [row["tweet_id"] for row in payload["data"]]
+        assert returned_ids == [str(eid) for eid in expected_ids], (
+            f"Large integers should be stringified; got {returned_ids}"
+        )
+
     async def test_get_workspace_not_found(self, authenticated_client):
         """Test getting non-existent workspace"""
         with (

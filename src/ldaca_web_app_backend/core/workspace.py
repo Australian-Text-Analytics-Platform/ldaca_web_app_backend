@@ -16,8 +16,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from docworkspace import Workspace
 from docworkspace.workspace.io import read_workspace_metadata
+
+from docworkspace import Workspace
 from ldaca_web_app_backend.models import WorkspaceSummary
 
 from .utils import (
@@ -144,12 +145,6 @@ class WorkspaceManager:
         if not entry:
             return None
         return entry.get("workspace")
-
-    def get_current_workspace_path(self, user_id: str) -> Optional[Path]:
-        entry = self._current.get(user_id)
-        if not entry:
-            return None
-        return entry.get("path")
 
     def set_current_workspace(self, user_id: str, workspace_id: Optional[str]) -> bool:
         if workspace_id is None:

@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 
+from ....core.utils import stringify_unsafe_integers
 from ....models import QuotationEngineConfig, QuotationEngineType
 from .generated_columns import (
     QUOTE_COLUMN_NAMES,
@@ -537,7 +538,7 @@ async def compute_on_demand_page(
     }
 
     return {
-        "data": page_rows,
+        "data": stringify_unsafe_integers(page_rows),
         "columns": columns,
         "metadata": metadata,
         "pagination": {

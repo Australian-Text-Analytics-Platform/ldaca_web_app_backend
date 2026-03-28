@@ -53,17 +53,21 @@ class DummyNode:
 
 @pytest.fixture
 def sample_nodes() -> dict[str, DummyNode]:
-    df_one = pl.DataFrame({
-        "id": [1, 2],
-        "name": ["alpha", "beta"],
-        "value": [10.0, 20.0],
-    })
+    df_one = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["alpha", "beta"],
+            "value": [10.0, 20.0],
+        }
+    )
     # Same columns, different order to verify reordering is allowed
-    df_two = pl.DataFrame({
-        "value": [30.0, 40.0],
-        "name": ["gamma", "delta"],
-        "id": [3, 4],
-    })
+    df_two = pl.DataFrame(
+        {
+            "value": [30.0, 40.0],
+            "name": ["gamma", "delta"],
+            "id": [3, 4],
+        }
+    )
     df_bad = pl.DataFrame({"id": [1, 2], "other": [100, 200]})
 
     return {
@@ -103,9 +107,6 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch, sample_nodes):
 
         def get_current_workspace_id(self, _user_id: str):
             return self.workspace_id
-
-        def get_current_workspace_path(self, _user_id: str):
-            return "workspace_path"
 
         def _resolve_workspace_dir(
             self,
@@ -179,4 +180,5 @@ async def test_concat_creation_happy_path(fake_workspace_manager, sample_nodes):
     assert new_node.parents == [sample_nodes["node_a"], sample_nodes["node_b"]]
     collected = new_node.data.collect()
     assert collected.shape == (4, 3)
+    assert collected.columns == ["id", "name", "value"]
     assert collected.columns == ["id", "name", "value"]

@@ -218,7 +218,7 @@ class WorkspaceSummary(BaseModel):
 
 class WorkspaceCreateRequest(BaseModel):
     name: str
-    description: Optional[str] = None  # initial data file support removed
+    description: Optional[str] = None
 
 
 class WorkspaceSaveRequest(BaseModel):

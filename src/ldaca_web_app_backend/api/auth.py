@@ -153,10 +153,8 @@ async def google_auth(payload: GoogleIn):
 
         await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
 
-        # Sample data is no longer auto-copied here. Users can manually import sample data via the new endpoint.
-
         # Create session token
-        session = await create_user_session(user["id"], payload.id_token)
+        session = await create_user_session(user["id"])
         logger.info(
             f"Session created for user: {user['id']}, token: {session['access_token'][:10]}..."
         )

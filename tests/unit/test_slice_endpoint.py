@@ -63,9 +63,6 @@ class FakeWorkspaceManager:
     def get_current_workspace_id(self, _user_id: str):
         return self.workspace_id
 
-    def get_current_workspace_path(self, _user_id: str):
-        return "workspace_path"
-
     def save_workspace(self, _user_id: str, _workspace_id: str) -> None:
         pass
 
@@ -171,4 +168,5 @@ async def test_slice_preview_respects_offset_and_length(fake_workspace_manager):
 
     assert preview_page_two.pagination.page == 2
     assert len(preview_page_two.data) == 1
+    assert preview_page_two.data[0]["value"] == 4
     assert preview_page_two.data[0]["value"] == 4

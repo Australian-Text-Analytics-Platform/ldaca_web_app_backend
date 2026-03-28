@@ -172,10 +172,8 @@ def start_backend(port: int = 8001):
         app,
         host="localhost",
         port=port,
-        reload=False,  # in-loop reload unsupported; use reload_app()+restart_server
+        reload=False,
         log_level="info",
-        # timeout_keep_alive=30,
-        # lifespan="on",
     )
     _server = uvicorn.Server(config)
     loop = asyncio.get_running_loop()

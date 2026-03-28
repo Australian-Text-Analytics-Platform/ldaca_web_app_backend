@@ -2,7 +2,7 @@
 Tests for database operations
 """
 
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -120,7 +120,6 @@ class TestDatabaseOperations:
         # Call function
         result = await create_user_session(
             user_id="550e8400-e29b-41d4-a716-446655440000",
-            google_token="google-token-123",
         )
 
         # Verify operations
@@ -158,7 +157,9 @@ class TestDatabaseOperations:
 
         mock_session_obj = MagicMock()
         mock_session_obj.access_token = "valid-token"
-        mock_session_obj.expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1)
+        mock_session_obj.expires_at = datetime.now(UTC).replace(
+            tzinfo=None
+        ) + timedelta(hours=1)
 
         # Mock the result row (user, session tuple)
         mock_row = (mock_user, mock_session_obj)

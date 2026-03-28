@@ -18,6 +18,7 @@ from docworkspace import Node
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
+from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
     ConcatPreviewRequest,
@@ -591,7 +592,7 @@ async def get_node_data(
         start_idx = (page - 1) * page_size
         paginated_df = df.slice(start_idx, page_size)
         return {
-            "data": paginated_df.to_dicts(),
+            "data": stringify_unsafe_integers(paginated_df.to_dicts()),
             "pagination": {
                 "page": page,
                 "page_size": page_size,

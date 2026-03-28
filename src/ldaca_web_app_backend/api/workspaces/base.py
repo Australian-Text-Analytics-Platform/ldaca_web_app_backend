@@ -26,13 +26,6 @@ from ...core.utils import get_user_data_folder, load_data_file
 from ...core.workspace import workspace_manager
 from .utils import stage_dataframe_as_lazy, update_workspace
 
-# (No direct model imports needed after modularization)
-# Removed unused concordance cache import (clearing handled in analyses module)
-
-# Removed BaseModel import (no longer used after modularization of concordance)
-
-
-# Router for workspace endpoints (was accidentally removed during edits)
 router = APIRouter(prefix="/workspaces", tags=["workspace"])
 
 logger = logging.getLogger(__name__)
@@ -373,23 +366,6 @@ def _configure_numba_threading():
 _configure_numba_threading()
 
 
-## Concordance cache helpers removed (moved to analyses.concordance)
-
-
-# ============================================================================
-# TOPIC MODELING ENDPOINT
-# ============================================================================
-
-
-## Task management endpoints moved to tasks.py
-
-
-## Topic modeling endpoints moved to analyses/topic_modeling.py
-
-
-## Lifecycle endpoints moved to lifecycle.py
-
-
 @router.post("/nodes")
 async def add_node_to_workspace(
     filename: str,
@@ -513,35 +489,6 @@ async def add_node_to_workspace(
         raise HTTPException(
             status_code=500, detail=f"Internal server error adding node: {str(e)}"
         )
-
-
-# ============================================================================
-# NODE OPERATIONS - Thin wrappers around DocWorkspace methods
-# ============================================================================
-
-
-# ============================================================================
-# FILE OPERATIONS - Upload and create nodes
-# ============================================================================
-
-
-## Upload endpoint moved to files.py
-
-
-# ============================================================================
-# DATA OPERATIONS - Using DocWorkspace safe_operation wrapper
-# ============================================================================
-
-
-# ============================================================================
-# TEXT ANALYSIS - Using polars-text integration
-# ============================================================================
-
-
-## Generic analysis clear endpoint removed (functionality moved to specific analysis endpoints and analysis_admin helpers)
-
-
-## Concordance detail endpoint moved to analyses/concordance.py
 
 
 @router.post("/nodes/{node_id}/cast")
@@ -671,27 +618,8 @@ async def cast_node(
                     cast_expr = pl.col(column_name).cast(pl.Utf8).alias(column_name)
                 # For string target we treat provided format as format_used if any
             elif target_lower == "integer":
-                # Integer casting improvements:
-                # 1. If source is float: truncate (floor) decimals deterministically.
-                # 2. If source is string: parse via float first (lenient), then truncate -> int.
-                # 3. Otherwise: direct int cast (lenient) to avoid whole-column failure.
                 col_expr = pl.col(column_name)
-                if "float" in orig_lower:
-                    # Truncate decimals by casting directly (Polars truncates toward zero)
-                    cast_expr = (
-                        col_expr.cast(pl.Float64, strict=False)
-                        .cast(pl.Int64, strict=False)
-                        .alias(column_name)
-                    )
-                elif any(tok in orig_lower for tok in ["utf8", "string", "str"]):
-                    # Attempt float parse (lenient) then truncate by casting to int
-                    cast_expr = (
-                        col_expr.cast(pl.Float64, strict=False)
-                        .cast(pl.Int64, strict=False)
-                        .alias(column_name)
-                    )
-                else:
-                    cast_expr = col_expr.cast(pl.Int64, strict=False).alias(column_name)
+                cast_expr = col_expr.cast(pl.Int64, strict=False).alias(column_name)
             elif target_lower == "float":
                 # String -> number (float) conversion
                 cast_expr = pl.col(column_name).cast(pl.Float64).alias(column_name)

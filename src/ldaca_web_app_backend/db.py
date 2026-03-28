@@ -90,7 +90,6 @@ async def get_user_db(session: AsyncSession = Depends(get_async_session)):
     yield SQLAlchemyUserDatabase(session, User)
 
 
-# Compatibility functions for existing code
 async def init_db():
     """Initialize persistent DB environment and schema.
 
@@ -166,7 +165,7 @@ async def get_or_create_user(
         }
 
 
-async def create_user_session(user_id: str, google_token: str) -> Dict[str, Any]:
+async def create_user_session(user_id: str) -> Dict[str, Any]:
     """Create/replace active session token pair for a user.
 
     Used by:
@@ -174,10 +173,6 @@ async def create_user_session(user_id: str, google_token: str) -> Dict[str, Any]
 
     Why:
     - Enforces single active session row per user in current design.
-
-    Refactor note:
-    - `google_token` argument is currently unused; remove parameter or persist
-        provenance metadata if multi-token support is planned.
     """
     async with async_session_maker() as session:
         # Generate our own access token

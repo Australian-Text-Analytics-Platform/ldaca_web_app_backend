@@ -880,3 +880,4 @@ class WorkerTaskManager:
                 self._progress_store.pop(task_id, None)
                 self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)
+                self._cleanup_progress_queue(task_id)
