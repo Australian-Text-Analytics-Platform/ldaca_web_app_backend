@@ -2,6 +2,7 @@ import polars as pl
 import pytest
 from ldaca_web_app_backend.api.workspaces.analyses.concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
+    build_concordance_search_pattern,
     collect_interleaved_combined,
     compute_concordance_page,
     concordance_non_empty_expr,
@@ -83,6 +84,17 @@ def test_core_concordance_columns_use_prefixed_names():
     )
 
 
+def test_build_concordance_search_pattern_wraps_whole_word_literals():
+    pattern, use_regex = build_concordance_search_pattern(
+        "alpha.beta",
+        regex=False,
+        whole_word=True,
+    )
+
+    assert pattern == r"\b(?:alpha\.beta)\b"
+    assert use_regex is True
+
+
 def test_compute_concordance_page_groups_matches_by_source_row():
     request = {
         "search_word": "alpha",
@@ -118,6 +130,38 @@ def test_compute_concordance_page_groups_matches_by_source_row():
     assert all(hit["speaker"] == "A" for hit in grouped_row)
     assert all(hit["__source_node"] == "node-a" for hit in grouped_row)
     assert [hit["CONC_matched_text"] for hit in grouped_row] == ["alpha", "alpha"]
+
+
+def test_compute_concordance_page_whole_word_ignores_partial_matches():
+    request = {
+        "search_word": "alpha",
+        "num_left_tokens": 2,
+        "num_right_tokens": 2,
+        "regex": False,
+        "case_sensitive": False,
+        "whole_word": True,
+    }
+    source = pl.DataFrame(
+        {
+            "text": ["alphabet soup", "alpha beta"],
+            "speaker": ["A", "B"],
+        }
+    ).lazy()
+
+    result = compute_concordance_page(
+        source,
+        "text",
+        request,
+        page=1,
+        page_size=5,
+        sort_by=None,
+        descending=False,
+        node_label="node-a",
+    )
+
+    assert len(result["data"]) == 1
+    assert result["data"][0][0]["speaker"] == "B"
+    assert result["data"][0][0]["CONC_matched_text"] == "alpha"
 
 
 def test_collect_interleaved_combined_interleaves_grouped_rows():

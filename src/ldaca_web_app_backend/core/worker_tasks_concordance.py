@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Optional
 
+from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
 from ..api.workspaces.analyses.generated_columns import (
     CONC_MATCHED_TEXT_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
@@ -21,6 +22,7 @@ def run_concordance_detach_task(
     num_left_tokens: int,
     num_right_tokens: int,
     regex: bool,
+    whole_word: bool,
     case_sensitive: bool,
     new_node_name: str,
     include_document_column: bool = False,
@@ -75,24 +77,32 @@ def run_concordance_detach_task(
                 output_columns.append(col_name)
 
         df = pl.DataFrame(data)
+        search_pattern, use_regex = build_concordance_search_pattern(
+            search_word,
+            regex=regex,
+            whole_word=whole_word,
+        )
         result = (
-            df
-            .select([
-                *base_columns,
-                pt.concordance(
-                    pl.col(source_column_name),
-                    search_word,
-                    num_left_tokens=num_left_tokens,
-                    num_right_tokens=num_right_tokens,
-                    regex=regex,
-                    case_sensitive=case_sensitive,
-                ).alias("concordance"),
-            ])
+            df.select(
+                [
+                    *base_columns,
+                    pt.concordance(
+                        pl.col(source_column_name),
+                        search_pattern,
+                        num_left_tokens=num_left_tokens,
+                        num_right_tokens=num_right_tokens,
+                        regex=use_regex,
+                        case_sensitive=case_sensitive,
+                    ).alias("concordance"),
+                ]
+            )
             .explode("concordance")
-            .select([
-                pl.exclude("concordance"),
-                *concordance_struct_projection("concordance"),
-            ])
+            .select(
+                [
+                    pl.exclude("concordance"),
+                    *concordance_struct_projection("concordance"),
+                ]
+            )
             .filter(pl.col(CONC_MATCHED_TEXT_COLUMN).is_not_null())
         )
 

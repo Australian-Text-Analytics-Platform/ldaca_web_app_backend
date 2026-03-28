@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from typing import Any, Optional, cast
 
 import polars as pl
@@ -122,15 +123,35 @@ def build_concordance_lazyframe(
     """
     import polars_text as pt
 
+    search_pattern, use_regex = build_concordance_search_pattern(
+        request["search_word"],
+        regex=bool(request["regex"]),
+        whole_word=bool(request.get("whole_word", False)),
+    )
+
     expr = pt.concordance(
         pl.col(column),
-        request["search_word"],
+        search_pattern,
         num_left_tokens=request["num_left_tokens"],
         num_right_tokens=request["num_right_tokens"],
-        regex=request["regex"],
+        regex=use_regex,
         case_sensitive=request["case_sensitive"],
     )
     return node_data.select([pl.all(), expr.alias("concordance")])
+
+
+def build_concordance_search_pattern(
+    search_word: str,
+    *,
+    regex: bool,
+    whole_word: bool,
+) -> tuple[str, bool]:
+    """Return the effective concordance pattern and whether regex mode is needed."""
+    if not whole_word:
+        return search_word, regex
+
+    base_pattern = search_word if regex else re.escape(search_word)
+    return rf"\b(?:{base_pattern})\b", True
 
 
 def _project_concordance_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:

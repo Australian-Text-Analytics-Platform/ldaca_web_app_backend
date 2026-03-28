@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
-
 from ldaca_web_app_backend.core import worker
 from ldaca_web_app_backend.core.worker_tasks_concordance import (
     run_concordance_detach_task,
@@ -22,6 +21,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         num_left_tokens,
         num_right_tokens,
         regex,
+        whole_word,
         case_sensitive,
         new_node_name,
         include_document_column=False,
@@ -30,6 +30,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
     ):
         captured["include_document_column"] = include_document_column
         captured["extra_columns_data"] = extra_columns_data
+        captured["whole_word"] = whole_word
         return {"state": "successful"}
 
     monkeypatch.setattr(
@@ -47,6 +48,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         num_left_tokens=2,
         num_right_tokens=2,
         regex=False,
+        whole_word=True,
         case_sensitive=False,
         new_node_name="node_1_conc",
         include_document_column=True,
@@ -56,6 +58,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
     assert result == {"state": "successful"}
     assert captured["include_document_column"] is True
     assert captured["extra_columns_data"] == {"source": ["a"]}
+    assert captured["whole_word"] is True
 
 
 def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_path):
@@ -71,6 +74,7 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
         num_left_tokens=1,
         num_right_tokens=1,
         regex=False,
+        whole_word=False,
         case_sensitive=False,
         new_node_name="detached_concordance",
         include_document_column=True,

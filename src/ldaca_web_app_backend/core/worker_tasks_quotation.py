@@ -35,8 +35,8 @@ def run_quotation_detach_task(
 
         from docworkspace import Node
         from ldaca_web_app_backend.api.workspaces.analyses.quotation_core import (
-            ensure_quote_dataframe,
-            quotation_via_polars_text,
+            flatten_grouped_quotation_dataframe,
+            quotation_groups_via_polars_text,
         )
 
         print(f"[Worker {os.getpid()}] Starting quotation detach task")
@@ -72,8 +72,8 @@ def run_quotation_detach_task(
         if progress_callback:
             progress_callback(0.6, "Extracting quotations...")
 
-        quote_df = quotation_via_polars_text(input_df, source_column_name)
-        quote_df = ensure_quote_dataframe(quote_df)
+        quote_df = quotation_groups_via_polars_text(input_df, source_column_name)
+        quote_df = flatten_grouped_quotation_dataframe(quote_df)
         generated_columns = [
             column_name
             for column_name in QUOTE_COLUMN_NAMES

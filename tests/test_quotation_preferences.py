@@ -4,10 +4,12 @@ from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
-
 from ldaca_web_app_backend.analysis.implementations.quotation import QuotationRequest
 from ldaca_web_app_backend.analysis.manager import get_task_manager
 from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
+from ldaca_web_app_backend.api.workspaces.analyses.generated_columns import (
+    QUOTE_COLUMN_NAMES,
+)
 from ldaca_web_app_backend.core.workspace import workspace_manager
 from ldaca_web_app_backend.models import QuotationEngineConfig
 
@@ -60,13 +62,19 @@ def _seed_paginated_analysis(rows: List[Dict[str, Any]], context_length: int = 1
     assert task is not None
 
     result_dict = {
-        "data": [rows[0]] if rows else [],
+        "data": [[rows[0]]] if rows else [],
         "columns": list(rows[0].keys()) if rows else [],
-        "total_rows": len(rows),
+        "metadata": {
+            "quotation_columns": list(rows[0].keys()) if rows else [],
+            "metadata_columns": [],
+            "all_columns": list(rows[0].keys()) if rows else [],
+        },
         "pagination": {
             "page": 1,
             "page_size": 1,
-            "total_pages": max(1, len(rows)),
+            "total_source_rows": len(rows),
+            "total_source_pages": max(1, len(rows)),
+            "result_count": 1 if rows else 0,
             "has_next": len(rows) > 1,
             "has_prev": False,
         },
@@ -105,6 +113,11 @@ def seeded_quotation_analysis():
         {
             "data": [],
             "columns": [],
+            "metadata": {
+                "quotation_columns": [],
+                "metadata_columns": [],
+                "all_columns": [],
+            },
             "preferences": {"context_length": 15},
         }
     )
@@ -146,7 +159,17 @@ async def test_update_context_length_clamps_bounds(authenticated_client):
     task = task_manager.get_task(task_id)
     assert task is not None
 
-    result = GenericAnalysisResult({"data": [], "columns": []})
+    result = GenericAnalysisResult(
+        {
+            "data": [],
+            "columns": [],
+            "metadata": {
+                "quotation_columns": [],
+                "metadata_columns": [],
+                "all_columns": [],
+            },
+        }
+    )
     task.complete(result)
     task_manager.save_task(task)
     task_manager.set_current_task("quotation", task_id)
@@ -192,13 +215,15 @@ async def test_quotation_current_result_respects_page_params(
         **_kwargs,
     ):
         doc_texts = base_df.get_column(column).to_list()
-        rows = []
+        grouped_quotes = []
         for text in doc_texts:
             if "alpha" in text:
-                rows.append({"QUOTE_quote": "alpha"})
+                grouped_quotes.append([{"quote": "alpha"}])
             elif "beta" in text:
-                rows.append({"QUOTE_quote": "beta"})
-        return pl.DataFrame(rows)
+                grouped_quotes.append([{"quote": "beta"}])
+            else:
+                grouped_quotes.append([])
+        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
         "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
@@ -211,7 +236,10 @@ async def test_quotation_current_result_respects_page_params(
     assert response.status_code == 200
     payload = response.json()
     assert payload["pagination"]["page"] == 2
-    assert payload["data"][0]["QUOTE_quote"] == "beta"
+    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
+    assert payload["metadata"]["metadata_columns"] == ["text"]
+    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
+    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
 
 
 @pytest.mark.asyncio
@@ -230,13 +258,15 @@ async def test_update_quotation_current_result_returns_page_payload(
         **_kwargs,
     ):
         doc_texts = base_df.get_column(column).to_list()
-        rows = []
+        grouped_quotes = []
         for text in doc_texts:
             if "alpha" in text:
-                rows.append({"QUOTE_quote": "alpha"})
+                grouped_quotes.append([{"quote": "alpha"}])
             elif "beta" in text:
-                rows.append({"QUOTE_quote": "beta"})
-        return pl.DataFrame(rows)
+                grouped_quotes.append([{"quote": "beta"}])
+            else:
+                grouped_quotes.append([])
+        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
         "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
@@ -249,7 +279,10 @@ async def test_update_quotation_current_result_returns_page_payload(
     assert response.status_code == 200
     payload = response.json()
     assert payload["pagination"]["page"] == 2
-    assert payload["data"][0]["QUOTE_quote"] == "beta"
+    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
+    assert payload["metadata"]["metadata_columns"] == ["text"]
+    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
+    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
 
 
 @pytest.mark.asyncio
@@ -269,14 +302,20 @@ async def test_quotation_current_result_returns_all_quotes_for_document_page(
         **_kwargs,
     ):
         doc_texts = base_df.get_column(column).to_list()
-        rows = []
+        grouped_quotes = []
         for text in doc_texts:
             if "alpha" in text:
-                rows.append({"QUOTE_quote": "alpha-1", "QUOTE_quote_row_idx": 0})
-                rows.append({"QUOTE_quote": "alpha-2", "QUOTE_quote_row_idx": 1})
+                grouped_quotes.append(
+                    [
+                        {"quote": "alpha-1", "quote_row_idx": 0},
+                        {"quote": "alpha-2", "quote_row_idx": 1},
+                    ]
+                )
             elif "beta" in text:
-                rows.append({"QUOTE_quote": "beta-1", "QUOTE_quote_row_idx": 0})
-        return pl.DataFrame(rows)
+                grouped_quotes.append([{"quote": "beta-1", "quote_row_idx": 0}])
+            else:
+                grouped_quotes.append([])
+        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
         "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
@@ -291,7 +330,10 @@ async def test_quotation_current_result_returns_all_quotes_for_document_page(
     payload = response.json()
     assert payload["pagination"]["page"] == 1
     assert payload["pagination"]["page_size"] == 1
-    assert [row["QUOTE_quote"] for row in payload["data"]] == ["alpha-1", "alpha-2"]
+    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
+    assert payload["metadata"]["metadata_columns"] == ["text"]
+    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
+    assert [row["QUOTE_quote"] for row in payload["data"][0]] == ["alpha-1", "alpha-2"]
 
 
 @pytest.mark.asyncio
@@ -333,13 +375,15 @@ async def test_quotation_endpoint_recomputes_on_demand(
         nonlocal recompute_called
         recompute_called = True
         doc_texts = base_df_slice.get_column(column).to_list()
-        rows = []
+        grouped_quotes = []
         for text in doc_texts:
             if "alpha" in text:
-                rows.append({"QUOTE_quote": "alpha"})
+                grouped_quotes.append([{"quote": "alpha"}])
             elif "beta" in text:
-                rows.append({"QUOTE_quote": "beta"})
-        return pl.DataFrame(rows)
+                grouped_quotes.append([{"quote": "beta"}])
+            else:
+                grouped_quotes.append([])
+        return base_df_slice.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
         "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
@@ -354,7 +398,10 @@ async def test_quotation_endpoint_recomputes_on_demand(
     assert response.status_code == 200
     payload = response.json()
     assert payload["pagination"]["page"] == 2
-    assert payload["data"][0]["QUOTE_quote"] == "beta"
+    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
+    assert payload["metadata"]["metadata_columns"] == ["text"]
+    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
+    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
     assert recompute_called is True
     assert recompute_called is True
     assert recompute_called is True

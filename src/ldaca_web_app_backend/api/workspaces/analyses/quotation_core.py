@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
@@ -30,6 +30,8 @@ DEFAULT_CONTEXT_LENGTH = 20
 MAX_CONTEXT_LENGTH = 2000
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_DESCENDING = True
+QUOTATION_GROUP_COLUMN = "quotation"
+CORE_QUOTATION_COLUMNS = QUOTE_COLUMN_NAMES
 
 
 def normalize_context_length(value: Any) -> int:
@@ -108,105 +110,6 @@ def to_polars_dataframe(data: Any) -> pl.DataFrame:
     )
 
 
-def empty_quote_dataframe(text_column: Optional[str] = None) -> pl.DataFrame:
-    """Return an empty quotation-schema DataFrame.
-
-    Used by:
-    - `remote_payload_to_dataframe`
-    - `compute_quote_dataframe`
-
-    Why:
-    - Ensures callers always receive a predictable schema, even with no quotes.
-    """
-    columns: Dict[str, pl.Series] = {
-        QUOTE_SPEAKER_COLUMN: pl.Series(QUOTE_SPEAKER_COLUMN, [], dtype=pl.Utf8),
-        QUOTE_SPEAKER_START_IDX_COLUMN: pl.Series(
-            QUOTE_SPEAKER_START_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_SPEAKER_END_IDX_COLUMN: pl.Series(
-            QUOTE_SPEAKER_END_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_QUOTE_COLUMN: pl.Series(QUOTE_QUOTE_COLUMN, [], dtype=pl.Utf8),
-        QUOTE_QUOTE_START_IDX_COLUMN: pl.Series(
-            QUOTE_QUOTE_START_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_QUOTE_END_IDX_COLUMN: pl.Series(
-            QUOTE_QUOTE_END_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_VERB_COLUMN: pl.Series(QUOTE_VERB_COLUMN, [], dtype=pl.Utf8),
-        QUOTE_VERB_START_IDX_COLUMN: pl.Series(
-            QUOTE_VERB_START_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_VERB_END_IDX_COLUMN: pl.Series(
-            QUOTE_VERB_END_IDX_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_TYPE_COLUMN: pl.Series(QUOTE_TYPE_COLUMN, [], dtype=pl.Utf8),
-        QUOTE_TOKEN_COUNT_COLUMN: pl.Series(
-            QUOTE_TOKEN_COUNT_COLUMN, [], dtype=pl.Int64
-        ),
-        QUOTE_IS_FLOATING_COLUMN: pl.Series(
-            QUOTE_IS_FLOATING_COLUMN, [], dtype=pl.Boolean
-        ),
-        QUOTE_ROW_IDX_COLUMN: pl.Series(QUOTE_ROW_IDX_COLUMN, [], dtype=pl.Int64),
-    }
-
-    if text_column:
-        columns[text_column] = pl.Series(text_column, [], dtype=pl.Utf8)
-
-    return pl.DataFrame(columns)
-
-
-def ensure_quote_dataframe(
-    df: pl.DataFrame, *, text_column: Optional[str] = None
-) -> pl.DataFrame:
-    """Enforce expected quote dataframe column types and defaults.
-
-    Used by:
-    - `remote_payload_to_dataframe`
-    - `compute_quote_dataframe`
-    - `compute_on_demand_page`
-
-    Why:
-    - Normalizes mixed upstream outputs to a stable schema for API responses.
-    """
-    result = df
-
-    if QUOTE_ROW_IDX_COLUMN not in result.columns:
-        result = result.with_columns(
-            pl.arange(0, result.height, eager=True)
-            .cast(pl.Int64)
-            .alias(QUOTE_ROW_IDX_COLUMN)
-        )
-
-    cast_map = {
-        QUOTE_SPEAKER_START_IDX_COLUMN: pl.Int64,
-        QUOTE_SPEAKER_END_IDX_COLUMN: pl.Int64,
-        QUOTE_QUOTE_START_IDX_COLUMN: pl.Int64,
-        QUOTE_QUOTE_END_IDX_COLUMN: pl.Int64,
-        QUOTE_VERB_START_IDX_COLUMN: pl.Int64,
-        QUOTE_VERB_END_IDX_COLUMN: pl.Int64,
-        QUOTE_TOKEN_COUNT_COLUMN: pl.Int64,
-        QUOTE_ROW_IDX_COLUMN: pl.Int64,
-    }
-    numeric_exprs = [
-        pl.col(col).cast(dtype, strict=False)
-        for col, dtype in cast_map.items()
-        if col in result.columns
-    ]
-    boolean_exprs = []
-    if QUOTE_IS_FLOATING_COLUMN in result.columns:
-        boolean_exprs.append(
-            pl.col(QUOTE_IS_FLOATING_COLUMN).cast(pl.Boolean, strict=False)
-        )
-    if numeric_exprs or boolean_exprs:
-        result = result.with_columns(*numeric_exprs, *boolean_exprs)
-
-    if text_column and text_column not in result.columns:
-        result = result.with_columns(pl.lit(None).alias(text_column))
-
-    return result
-
-
 def prepare_documents_payload(
     base_df: pl.DataFrame, column: str
 ) -> Dict[str, Dict[str, Any]]:
@@ -233,48 +136,6 @@ def prepare_documents_payload(
             text_value = str(value)
         docs[str(idx)] = {"text": text_value}
     return docs
-
-
-def remote_payload_to_dataframe(payload: Dict[str, Any]) -> pl.DataFrame:
-    """Convert remote quotation service payloads into quote rows.
-
-    Used by:
-    - `compute_quote_dataframe`
-
-    Why:
-    - Normalizes service responses to the same structure as local extraction.
-    """
-    results = payload.get("results", []) if isinstance(payload, dict) else []
-    rows = []
-    for entry in results:
-        quotes = entry.get("quotes") if isinstance(entry, dict) else None
-        if not quotes:
-            continue
-        for quote_idx, quote in enumerate(quotes):
-            if not isinstance(quote, dict):
-                continue
-            rows.append(
-                {
-                    QUOTE_ROW_IDX_COLUMN: quote_idx,
-                    QUOTE_SPEAKER_COLUMN: quote.get("speaker"),
-                    QUOTE_SPEAKER_START_IDX_COLUMN: quote.get("speaker_start_idx"),
-                    QUOTE_SPEAKER_END_IDX_COLUMN: quote.get("speaker_end_idx"),
-                    QUOTE_QUOTE_COLUMN: quote.get("quote"),
-                    QUOTE_QUOTE_START_IDX_COLUMN: quote.get("quote_start_idx"),
-                    QUOTE_QUOTE_END_IDX_COLUMN: quote.get("quote_end_idx"),
-                    QUOTE_VERB_COLUMN: quote.get("verb"),
-                    QUOTE_VERB_START_IDX_COLUMN: quote.get("verb_start_idx"),
-                    QUOTE_VERB_END_IDX_COLUMN: quote.get("verb_end_idx"),
-                    QUOTE_TYPE_COLUMN: quote.get("quote_type"),
-                    QUOTE_TOKEN_COUNT_COLUMN: quote.get("quote_token_count"),
-                    QUOTE_IS_FLOATING_COLUMN: quote.get("is_floating_quote"),
-                }
-            )
-
-    if not rows:
-        return empty_quote_dataframe()
-
-    return ensure_quote_dataframe(pl.DataFrame(rows))
 
 
 def stable_document_items(
@@ -378,54 +239,204 @@ async def extract_remote_paginated(
     return combined_payload
 
 
-def quotation_via_polars_text(df: pl.DataFrame, column: str) -> pl.DataFrame:
-    """Extract quotations locally using the `polars_text` plugin.
-
-    Used by:
-    - `compute_quote_dataframe`
-
-    Why:
-    - Provides the in-process quotation path when remote engine is not selected.
-    """
+def quotation_groups_via_polars_text(df: pl.DataFrame, column: str) -> pl.DataFrame:
+    """Extract quotations into one grouped list column per source document."""
     import polars_text as pt
 
-    tmp = df.with_columns(pt.quotation(pl.col(column)).alias("__quotation__"))
-    exploded = tmp.explode("__quotation__")
-    quote_dtype = exploded.schema.get("__quotation__")
-    available_fields: set[str] = set()
-    if isinstance(quote_dtype, pl.Struct):
-        try:
-            available_fields = set(quote_dtype.to_schema().keys())
-        except Exception:
-            available_fields = set()
+    return df.with_columns(pt.quotation(pl.col(column)).alias(QUOTATION_GROUP_COLUMN))
 
-    projection_by_field = {
-        "speaker": QUOTE_SPEAKER_COLUMN,
-        "speaker_start_idx": QUOTE_SPEAKER_START_IDX_COLUMN,
-        "speaker_end_idx": QUOTE_SPEAKER_END_IDX_COLUMN,
-        "quote": QUOTE_QUOTE_COLUMN,
-        "quote_start_idx": QUOTE_QUOTE_START_IDX_COLUMN,
-        "quote_end_idx": QUOTE_QUOTE_END_IDX_COLUMN,
-        "verb": QUOTE_VERB_COLUMN,
-        "verb_start_idx": QUOTE_VERB_START_IDX_COLUMN,
-        "verb_end_idx": QUOTE_VERB_END_IDX_COLUMN,
-        "quote_type": QUOTE_TYPE_COLUMN,
-        "quote_token_count": QUOTE_TOKEN_COUNT_COLUMN,
-        "is_floating_quote": QUOTE_IS_FLOATING_COLUMN,
-        "quote_row_idx": QUOTE_ROW_IDX_COLUMN,
+
+def remote_payload_to_grouped_dataframe(
+    base_df: pl.DataFrame,
+    payload: Dict[str, Any],
+) -> pl.DataFrame:
+    """Attach remote quotation lists to their source rows without exploding."""
+    results = payload.get("results", []) if isinstance(payload, dict) else []
+    quotes_by_identifier: dict[str, list[dict[str, Any]]] = {}
+
+    for result_index, entry in enumerate(results):
+        if not isinstance(entry, dict):
+            continue
+        identifier_value = entry.get("identifier")
+        identifier = (
+            str(identifier_value) if identifier_value is not None else str(result_index)
+        )
+        quotes = entry.get("quotes")
+        if not isinstance(quotes, list):
+            quotes_by_identifier[identifier] = []
+            continue
+
+        normalized_quotes: list[dict[str, Any]] = []
+        for quote_idx, quote in enumerate(quotes):
+            if not isinstance(quote, dict):
+                continue
+            quote_record = cast(dict[str, Any], quote)
+            normalized_quotes.append(
+                {
+                    "speaker": quote_record.get("speaker"),
+                    "speaker_start_idx": quote_record.get("speaker_start_idx"),
+                    "speaker_end_idx": quote_record.get("speaker_end_idx"),
+                    "quote": quote_record.get("quote"),
+                    "quote_start_idx": quote_record.get("quote_start_idx"),
+                    "quote_end_idx": quote_record.get("quote_end_idx"),
+                    "verb": quote_record.get("verb"),
+                    "verb_start_idx": quote_record.get("verb_start_idx"),
+                    "verb_end_idx": quote_record.get("verb_end_idx"),
+                    "quote_type": quote_record.get("quote_type"),
+                    "quote_token_count": quote_record.get("quote_token_count"),
+                    "is_floating_quote": quote_record.get("is_floating_quote"),
+                    "quote_row_idx": quote_record.get("quote_row_idx", quote_idx),
+                }
+            )
+        quotes_by_identifier[identifier] = normalized_quotes
+
+    grouped_quotes = [
+        quotes_by_identifier.get(str(idx), []) for idx in range(base_df.height)
+    ]
+    return base_df.with_columns(pl.Series(QUOTATION_GROUP_COLUMN, grouped_quotes))
+
+
+def _project_quotation_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:
+    """Project raw quotation-struct fields into canonical quotation columns."""
+    return {
+        QUOTE_SPEAKER_COLUMN: raw_hit.get("speaker"),
+        QUOTE_SPEAKER_START_IDX_COLUMN: raw_hit.get("speaker_start_idx"),
+        QUOTE_SPEAKER_END_IDX_COLUMN: raw_hit.get("speaker_end_idx"),
+        QUOTE_QUOTE_COLUMN: raw_hit.get("quote"),
+        QUOTE_QUOTE_START_IDX_COLUMN: raw_hit.get("quote_start_idx"),
+        QUOTE_QUOTE_END_IDX_COLUMN: raw_hit.get("quote_end_idx"),
+        QUOTE_VERB_COLUMN: raw_hit.get("verb"),
+        QUOTE_VERB_START_IDX_COLUMN: raw_hit.get("verb_start_idx"),
+        QUOTE_VERB_END_IDX_COLUMN: raw_hit.get("verb_end_idx"),
+        QUOTE_TYPE_COLUMN: raw_hit.get("quote_type"),
+        QUOTE_TOKEN_COUNT_COLUMN: raw_hit.get("quote_token_count"),
+        QUOTE_IS_FLOATING_COLUMN: raw_hit.get("is_floating_quote"),
+        QUOTE_ROW_IDX_COLUMN: raw_hit.get("quote_row_idx"),
     }
-    struct_projection = [
-        pl.col("__quotation__").struct.field(field_name).alias(alias)
-        for field_name, alias in projection_by_field.items()
-        if field_name in available_fields
+
+
+def _quotation_hit_has_content(hit: dict[str, Any]) -> bool:
+    """Return whether a projected quotation hit contains meaningful content."""
+    for key in (QUOTE_QUOTE_COLUMN, QUOTE_SPEAKER_COLUMN, QUOTE_VERB_COLUMN):
+        value = hit.get(key)
+        if value is None:
+            continue
+        if str(value).strip():
+            return True
+    return False
+
+
+def _serialize_grouped_quotation_rows(
+    result_df: pl.DataFrame,
+) -> tuple[list[list[dict[str, Any]]], list[str]]:
+    """Serialize collected quotation rows into grouped per-document hit lists."""
+    if result_df.height == 0:
+        return [], []
+
+    metadata_columns = [
+        column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
+    ]
+    columns = [
+        *metadata_columns,
+        *CORE_QUOTATION_COLUMNS,
     ]
 
-    return exploded.select(
-        [
-            pl.exclude("__quotation__"),
-            *struct_projection,
+    grouped_rows: list[list[dict[str, Any]]] = []
+    for row in result_df.to_dicts():
+        raw_hits = row.get(QUOTATION_GROUP_COLUMN) or []
+        if not isinstance(raw_hits, list):
+            continue
+
+        base_row = {
+            key: value for key, value in row.items() if key != QUOTATION_GROUP_COLUMN
+        }
+        grouped_hits: list[dict[str, Any]] = []
+        for raw_hit in raw_hits:
+            if not isinstance(raw_hit, dict):
+                continue
+            projected_hit = {
+                **base_row,
+                **_project_quotation_hit(raw_hit),
+            }
+            if _quotation_hit_has_content(projected_hit):
+                grouped_hits.append(projected_hit)
+
+        if grouped_hits:
+            grouped_rows.append(grouped_hits)
+
+    return grouped_rows, columns
+
+
+def flatten_grouped_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame:
+    """Flatten grouped quotation rows into a detach/export friendly dataframe."""
+    if result_df.height == 0:
+        metadata_columns = [
+            column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
         ]
-    )
+        schema: dict[str, pl.DataType] = {
+            **{column: result_df.schema[column] for column in metadata_columns},
+            QUOTE_SPEAKER_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_SPEAKER_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_SPEAKER_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_QUOTE_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_QUOTE_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_QUOTE_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_VERB_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_VERB_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_VERB_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_TYPE_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_TOKEN_COUNT_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_IS_FLOATING_COLUMN: cast(pl.DataType, pl.Boolean),
+            QUOTE_ROW_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        }
+        return pl.DataFrame(schema=schema)
+
+    flattened_rows: list[dict[str, Any]] = []
+    for row in result_df.to_dicts():
+        raw_hits = row.get(QUOTATION_GROUP_COLUMN) or []
+        if not isinstance(raw_hits, list):
+            continue
+
+        base_row = {
+            key: value for key, value in row.items() if key != QUOTATION_GROUP_COLUMN
+        }
+        for raw_hit in raw_hits:
+            if not isinstance(raw_hit, dict):
+                continue
+            projected_hit = {
+                **base_row,
+                **_project_quotation_hit(raw_hit),
+            }
+            if _quotation_hit_has_content(projected_hit):
+                flattened_rows.append(projected_hit)
+
+    if not flattened_rows:
+        metadata_columns = [
+            column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
+        ]
+        schema: dict[str, pl.DataType] = {
+            **{column: result_df.schema[column] for column in metadata_columns},
+            QUOTE_SPEAKER_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_SPEAKER_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_SPEAKER_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_QUOTE_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_QUOTE_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_QUOTE_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_VERB_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_VERB_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_VERB_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_TYPE_COLUMN: cast(pl.DataType, pl.Utf8),
+            QUOTE_TOKEN_COUNT_COLUMN: cast(pl.DataType, pl.Int64),
+            QUOTE_IS_FLOATING_COLUMN: cast(pl.DataType, pl.Boolean),
+            QUOTE_ROW_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        }
+        return pl.DataFrame(schema=schema)
+
+    metadata_columns = [
+        column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
+    ]
+    ordered_columns = [*metadata_columns, *CORE_QUOTATION_COLUMNS]
+    return pl.DataFrame(flattened_rows).select(ordered_columns)
 
 
 async def compute_quote_dataframe(
@@ -439,7 +450,7 @@ async def compute_quote_dataframe(
     quotation_service_max_batch_size: int,
     quotation_service_timeout: float,
 ) -> pl.DataFrame:
-    """Compute normalized quote rows for one node/column pair.
+    """Compute grouped quote rows for one node/column pair.
 
     Used by:
     - quotation API endpoints and on-demand page computation flow
@@ -450,7 +461,9 @@ async def compute_quote_dataframe(
     if engine.type is QuotationEngineType.REMOTE:
         documents = prepare_documents_payload(base_df, column)
         if not documents:
-            return empty_quote_dataframe(text_column=column)
+            return base_df.with_columns(
+                pl.Series(QUOTATION_GROUP_COLUMN, [], dtype=pl.List(pl.Null))
+            )
         payload = await extract_remote_paginated(
             engine,
             documents,
@@ -458,17 +471,14 @@ async def compute_quote_dataframe(
             timeout=quotation_service_timeout,
             extract_remote_fn=extract_remote_fn,
         )
-        quote_df = remote_payload_to_dataframe(payload)
-        return ensure_quote_dataframe(quote_df, text_column=column)
+        return remote_payload_to_grouped_dataframe(base_df, payload)
 
     if not use_base_only:
         node_data = node.data
         source_df = to_polars_dataframe(node_data)
-        quote_raw = quotation_via_polars_text(source_df, column)
-        return ensure_quote_dataframe(quote_raw, text_column=column)
+        return quotation_groups_via_polars_text(source_df, column)
 
-    quote_raw = quotation_via_polars_text(base_df, column)
-    return ensure_quote_dataframe(quote_raw, text_column=column)
+    return quotation_groups_via_polars_text(base_df, column)
 
 
 async def compute_on_demand_page(
@@ -507,7 +517,11 @@ async def compute_on_demand_page(
         )
 
     total_source_rows = lazy_df.select(pl.len()).collect().item()
-    total_source_pages = max(1, math.ceil(total_source_rows / page_size))
+    total_source_pages = (
+        0
+        if total_source_rows == 0
+        else max(1, math.ceil(total_source_rows / page_size))
+    )
 
     start_doc = (page - 1) * page_size
     slice_df = lazy_df.slice(start_doc, page_size).collect()
@@ -515,22 +529,23 @@ async def compute_on_demand_page(
     quote_df = await compute_quote_dataframe_fn(
         node, slice_df, column, engine, use_base_only=True
     )
-    quote_df = ensure_quote_dataframe(quote_df, text_column=column)
-
-    if QUOTE_QUOTE_COLUMN in quote_df.columns:
-        quote_df = quote_df.filter(pl.col(QUOTE_QUOTE_COLUMN).is_not_null())
-
-    result_count = quote_df.height
+    page_rows, columns = _serialize_grouped_quotation_rows(quote_df)
+    metadata = {
+        "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
+        "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
+        "all_columns": columns,
+    }
 
     return {
-        "data": quote_df.to_dicts(),
-        "columns": list(quote_df.columns),
+        "data": page_rows,
+        "columns": columns,
+        "metadata": metadata,
         "pagination": {
             "page": page,
             "page_size": page_size,
             "total_source_rows": total_source_rows,
             "total_source_pages": total_source_pages,
-            "result_count": result_count,
+            "result_count": len(page_rows),
             "has_next": page < total_source_pages,
             "has_prev": page > 1,
         },
@@ -538,5 +553,4 @@ async def compute_on_demand_page(
             "sort_by": effective_sort_by,
             "descending": descending,
         },
-        "column": column,
     }

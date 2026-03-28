@@ -404,6 +404,7 @@ class ConcordanceAnalysisRequest(BaseModel):
     num_left_tokens: int = 10
     num_right_tokens: int = 10
     regex: bool = False
+    whole_word: bool = False
     case_sensitive: bool = False
     combined: bool = False  # if true, backend builds a combined view across nodes
     # Sorting parameters
@@ -420,6 +421,7 @@ class ConcordanceDetachRequest(BaseModel):
     num_left_tokens: int = 10
     num_right_tokens: int = 10
     regex: bool = False
+    whole_word: bool = False
     case_sensitive: bool = False
     new_node_name: Optional[str] = None  # If not provided, will be auto-generated
     selected_columns: Optional[list[str]] = None

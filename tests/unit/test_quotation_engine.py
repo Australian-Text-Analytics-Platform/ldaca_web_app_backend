@@ -2,8 +2,6 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
-from pydantic import AnyHttpUrl, TypeAdapter
-
 from ldaca_web_app_backend.api.workspaces.analyses.quotation_core import (
     compute_quote_dataframe,
     prepare_documents_payload,
@@ -15,6 +13,7 @@ from ldaca_web_app_backend.core.services.quotation_client import (
 )
 from ldaca_web_app_backend.models import QuotationEngineConfig, QuotationEngineType
 from ldaca_web_app_backend.settings import settings
+from pydantic import AnyHttpUrl, TypeAdapter
 
 HTTP_URL = TypeAdapter(AnyHttpUrl).validate_python
 
@@ -115,11 +114,106 @@ async def test_remote_compute_chunks_based_on_settings(monkeypatch):
         ["2", "3"],
         ["4"],
     ]
-    assert set(result.columns) >= {"QUOTE_quote"}
-    assert sorted(result["QUOTE_quote"].to_list()) == [
-        "quote-0",
-        "quote-1",
-        "quote-2",
-        "quote-3",
-        "quote-4",
+    assert result.columns == ["body", "quotation"]
+    assert result.to_dicts() == [
+        {
+            "body": "doc-0",
+            "quotation": [
+                {
+                    "speaker": None,
+                    "speaker_start_idx": None,
+                    "speaker_end_idx": None,
+                    "quote": "quote-0",
+                    "quote_start_idx": 0,
+                    "quote_end_idx": 1,
+                    "verb": None,
+                    "verb_start_idx": None,
+                    "verb_end_idx": None,
+                    "quote_type": None,
+                    "quote_token_count": None,
+                    "is_floating_quote": None,
+                    "quote_row_idx": 0,
+                }
+            ],
+        },
+        {
+            "body": "doc-1",
+            "quotation": [
+                {
+                    "speaker": None,
+                    "speaker_start_idx": None,
+                    "speaker_end_idx": None,
+                    "quote": "quote-1",
+                    "quote_start_idx": 0,
+                    "quote_end_idx": 1,
+                    "verb": None,
+                    "verb_start_idx": None,
+                    "verb_end_idx": None,
+                    "quote_type": None,
+                    "quote_token_count": None,
+                    "is_floating_quote": None,
+                    "quote_row_idx": 0,
+                }
+            ],
+        },
+        {
+            "body": "doc-2",
+            "quotation": [
+                {
+                    "speaker": None,
+                    "speaker_start_idx": None,
+                    "speaker_end_idx": None,
+                    "quote": "quote-2",
+                    "quote_start_idx": 0,
+                    "quote_end_idx": 1,
+                    "verb": None,
+                    "verb_start_idx": None,
+                    "verb_end_idx": None,
+                    "quote_type": None,
+                    "quote_token_count": None,
+                    "is_floating_quote": None,
+                    "quote_row_idx": 0,
+                }
+            ],
+        },
+        {
+            "body": "doc-3",
+            "quotation": [
+                {
+                    "speaker": None,
+                    "speaker_start_idx": None,
+                    "speaker_end_idx": None,
+                    "quote": "quote-3",
+                    "quote_start_idx": 0,
+                    "quote_end_idx": 1,
+                    "verb": None,
+                    "verb_start_idx": None,
+                    "verb_end_idx": None,
+                    "quote_type": None,
+                    "quote_token_count": None,
+                    "is_floating_quote": None,
+                    "quote_row_idx": 0,
+                }
+            ],
+        },
+        {
+            "body": "doc-4",
+            "quotation": [
+                {
+                    "speaker": None,
+                    "speaker_start_idx": None,
+                    "speaker_end_idx": None,
+                    "quote": "quote-4",
+                    "quote_start_idx": 0,
+                    "quote_end_idx": 1,
+                    "verb": None,
+                    "verb_start_idx": None,
+                    "verb_end_idx": None,
+                    "quote_type": None,
+                    "quote_token_count": None,
+                    "is_floating_quote": None,
+                    "quote_row_idx": 0,
+                }
+            ],
+        },
     ]

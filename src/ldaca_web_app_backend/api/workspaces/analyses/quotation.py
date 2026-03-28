@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONTEXT_LENGTH = qcore.DEFAULT_CONTEXT_LENGTH
 DEFAULT_PAGE_SIZE = qcore.DEFAULT_PAGE_SIZE
 DEFAULT_DESCENDING = qcore.DEFAULT_DESCENDING
-CORE_QUOTATION_COLUMNS = list(qcore.QUOTE_COLUMN_NAMES)
+CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
 
 
 async def _compute_on_demand_page(
@@ -412,7 +412,7 @@ async def get_quotation(
         task.complete(GenericAnalysisResult(result_payload))
         task_manager.save_task(task)
 
-        result_payload["metadata"] = {"task_id": task.task_id}
+        result_payload["task_id"] = task.task_id
         return result_payload
     except HTTPException:
         raise

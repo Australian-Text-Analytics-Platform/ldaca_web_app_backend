@@ -10,30 +10,39 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
 ):
     progress_updates: list[tuple[float, str]] = []
 
-    def fake_quotation_via_polars_text(input_df: pl.DataFrame, source_column: str):
+    def fake_quotation_groups_via_polars_text(
+        input_df: pl.DataFrame, source_column: str
+    ):
         assert source_column == "__quotation_source__"
-        return pl.DataFrame({
-            "__quotation_source__": input_df.get_column(source_column).to_list(),
-            "document": input_df.get_column("document").to_list(),
-            "speaker_label": ["narrator"],
-            "QUOTE_speaker": ["Ada"],
-            "QUOTE_speaker_start_idx": [0],
-            "QUOTE_speaker_end_idx": [3],
-            "QUOTE_quote": ["Hello"],
-            "QUOTE_quote_start_idx": [5],
-            "QUOTE_quote_end_idx": [10],
-            "QUOTE_verb": ["said"],
-            "QUOTE_verb_start_idx": [11],
-            "QUOTE_verb_end_idx": [15],
-            "QUOTE_quote_type": ["direct"],
-            "QUOTE_quote_token_count": [1],
-            "QUOTE_is_floating_quote": [False],
-            "QUOTE_quote_row_idx": [0],
-        })
+        return pl.DataFrame(
+            {
+                "document": input_df.get_column("document").to_list(),
+                "speaker_label": ["narrator"],
+                "quotation": [
+                    [
+                        {
+                            "speaker": "Ada",
+                            "speaker_start_idx": 0,
+                            "speaker_end_idx": 3,
+                            "quote": "Hello",
+                            "quote_start_idx": 5,
+                            "quote_end_idx": 10,
+                            "verb": "said",
+                            "verb_start_idx": 11,
+                            "verb_end_idx": 15,
+                            "quote_type": "direct",
+                            "quote_token_count": 1,
+                            "is_floating_quote": False,
+                            "quote_row_idx": 0,
+                        }
+                    ]
+                ],
+            }
+        )
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.quotation_via_polars_text",
-        fake_quotation_via_polars_text,
+        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.quotation_groups_via_polars_text",
+        fake_quotation_groups_via_polars_text,
     )
 
     result = run_quotation_detach_task(
@@ -46,10 +55,12 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         new_node_name="detached_quotation",
         include_document_column=True,
         extra_columns_data={"speaker_label": ["narrator"]},
-        progress_callback=lambda progress, message: progress_updates.append((
-            progress,
-            message,
-        )),
+        progress_callback=lambda progress, message: progress_updates.append(
+            (
+                progress,
+                message,
+            )
+        ),
     )
 
     assert result["state"] == "successful"

@@ -31,6 +31,7 @@ class ConcordanceRequest(BaseAnalysisRequest):
     num_left_tokens: int = 50
     num_right_tokens: int = 50
     regex: bool = False
+    whole_word: bool = False
     case_sensitive: bool = False
     combined: bool = False
 

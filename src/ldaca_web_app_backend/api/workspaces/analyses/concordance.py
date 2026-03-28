@@ -147,6 +147,7 @@ async def run_concordance(
             num_left_tokens=request.num_left_tokens,
             num_right_tokens=request.num_right_tokens,
             regex=request.regex,
+            whole_word=request.whole_word,
             case_sensitive=request.case_sensitive,
             combined=bool(request.combined),
         )
@@ -375,6 +376,7 @@ async def detach_concordance(
                 "num_left_tokens": request.num_left_tokens,
                 "num_right_tokens": request.num_right_tokens,
                 "regex": request.regex,
+                "whole_word": request.whole_word,
                 "case_sensitive": request.case_sensitive,
                 "new_node_name": request.new_node_name,
                 "include_document_column": include_document_column,
