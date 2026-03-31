@@ -11,10 +11,10 @@ from datetime import datetime
 from typing import Any, Literal, Optional, cast
 
 import polars as pl
-from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from docworkspace import Node
+from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
@@ -24,13 +24,11 @@ from ...models import (
     ConcatPreviewRequest,
     ConcatRequest,
     ExpressionApplyResponse,
-    ExpressionPreviewResponse,
     ExpressionTransformRequest,
     FilterPreviewResponse,
     FilterRequest,
     PaginationInfo,
     ReplaceApplyResponse,
-    ReplacePreviewResponse,
     ReplaceRequest,
     SliceRequest,
 )
@@ -313,11 +311,25 @@ def _extract_lazy_schema(
 def _build_replace_expression(request: ReplaceRequest) -> tuple[str, pl.Expr]:
     source_column = request.source_column.strip()
     column_name = _resolve_replace_column_name(request)
-    replace_expr = pl.col(source_column).str.replace(
-        request.pattern,
-        request.replacement,
-    )
-    return column_name, replace_expr.alias(column_name)
+
+    col_expr = pl.col(source_column)
+    connector = request.connector
+
+    if request.mode == "extract":
+        extracted = col_expr.str.extract_all(request.pattern)
+        if request.count == "first":
+            n = request.n if request.n is not None else 1
+            extracted = extracted.list.head(n)
+        joined = extracted.list.join(connector)
+        expr = pl.when(extracted.list.len() > 0).then(joined).otherwise(pl.lit(None))
+    else:
+        if request.count == "all":
+            expr = col_expr.str.replace_all(request.pattern, request.replacement)
+        else:
+            n = request.n if request.n is not None else 1
+            expr = col_expr.str.replace(request.pattern, request.replacement, n=n)
+
+    return column_name, expr.alias(column_name)
 
 
 def _validate_and_align_concat_nodes(
@@ -399,11 +411,13 @@ def _derive_concat_node_name(nodes: list[Node], desired_name: Optional[str]) -> 
 
 @router.post(
     "/nodes/{node_id}/compute-column/preview",
-    response_model=ExpressionPreviewResponse,
+    response_model=FilterPreviewResponse,
 )
 async def compute_column_preview(
     node_id: str,
     request: ExpressionTransformRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
@@ -414,23 +428,46 @@ async def compute_column_preview(
         columns, _ = _extract_lazy_schema(lazy_data)
         expr = build_polars_expression(request.expression, columns=columns)
         column_name = _resolve_expression_column_name(request)
+        computed_lazy = lazy_data.with_columns(
+            expr.cast(pl.Utf8, strict=False).alias(column_name)
+        )
+
+        total_rows_df = cast(
+            pl.DataFrame,
+            computed_lazy.select(pl.len().alias("_len")).collect(),
+        )
+        total_rows = (
+            int(total_rows_df.to_series(0).item())
+            if total_rows_df.to_series(0).len()
+            else 0
+        )
+
+        normalized_page_size = page_size
+        total_pages = math.ceil(total_rows / normalized_page_size) if total_rows else 0
+        normalized_page = min(max(page, 1), total_pages or 1)
+        start_idx = (normalized_page - 1) * normalized_page_size if total_rows else 0
+
         preview_df = cast(
             pl.DataFrame,
-            lazy_data.with_columns(expr.cast(pl.Utf8, strict=False).alias(column_name))
-            .limit(max(1, min(request.preview_limit or 50, 500)))
-            .collect(),
+            computed_lazy.slice(start_idx, normalized_page_size).collect(),
         )
     except ExpressionParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    columns_out = list(preview_df.columns)
-    dtypes_out = {col: str(dtype) for col, dtype in preview_df.schema.items()}
-    data_rows = preview_df.to_dicts()
-
-    return ExpressionPreviewResponse(
-        columns=columns_out, dtypes=dtypes_out, data=data_rows
+    return FilterPreviewResponse(
+        data=preview_df.to_dicts(),
+        columns=list(preview_df.columns),
+        dtypes={col: str(dtype) for col, dtype in preview_df.schema.items()},
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=normalized_page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=normalized_page < total_pages,
+            has_prev=normalized_page > 1 and total_rows > 0,
+        ),
     )
 
 
@@ -490,11 +527,13 @@ async def compute_column_apply(
 
 @router.post(
     "/nodes/{node_id}/replace/preview",
-    response_model=ReplacePreviewResponse,
+    response_model=FilterPreviewResponse,
 )
 async def replace_preview(
     node_id: str,
     request: ReplaceRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
@@ -503,19 +542,42 @@ async def replace_preview(
 
     try:
         _, replace_expr = _build_replace_expression(request)
+        replaced_lazy = lazy_data.with_columns(replace_expr)
+
+        total_rows_df = cast(
+            pl.DataFrame,
+            replaced_lazy.select(pl.len().alias("_len")).collect(),
+        )
+        total_rows = (
+            int(total_rows_df.to_series(0).item())
+            if total_rows_df.to_series(0).len()
+            else 0
+        )
+
+        normalized_page_size = page_size
+        total_pages = math.ceil(total_rows / normalized_page_size) if total_rows else 0
+        normalized_page = min(max(page, 1), total_pages or 1)
+        start_idx = (normalized_page - 1) * normalized_page_size if total_rows else 0
+
         preview_df = cast(
             pl.DataFrame,
-            lazy_data.with_columns(replace_expr)
-            .limit(max(1, min(request.preview_limit or 50, 500)))
-            .collect(),
+            replaced_lazy.slice(start_idx, normalized_page_size).collect(),
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return ReplacePreviewResponse(
+    return FilterPreviewResponse(
+        data=preview_df.to_dicts(),
         columns=list(preview_df.columns),
         dtypes={col: str(dtype) for col, dtype in preview_df.schema.items()},
-        data=preview_df.to_dicts(),
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=normalized_page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=normalized_page < total_pages,
+            has_prev=normalized_page > 1 and total_rows > 0,
+        ),
     )
 
 

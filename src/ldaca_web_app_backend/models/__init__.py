@@ -333,6 +333,10 @@ class ReplaceRequest(BaseModel):
     replacement: str = Field(default="")
     output_column_name: Optional[str] = Field(default=None, max_length=200)
     preview_limit: Optional[int] = Field(default=50, ge=1, le=500)
+    mode: Literal["replace", "extract"] = Field(default="replace")
+    count: Literal["all", "first"] = Field(default="all")
+    n: Optional[int] = Field(default=None, ge=1)
+    connector: str = Field(default=" ")
 
 
 class ReplacePreviewResponse(BaseModel):
