@@ -170,3 +170,50 @@ async def test_slice_preview_respects_offset_and_length(fake_workspace_manager):
     assert len(preview_page_two.data) == 1
     assert preview_page_two.data[0]["value"] == 4
     assert preview_page_two.data[0]["value"] == 4
+
+
+@pytest.mark.asyncio
+async def test_random_sample_node_uses_fraction_and_seed(fake_workspace_manager):
+    request = SliceRequest(
+        mode="random_sample",
+        fraction=0.4,
+        random_seed=7,
+        new_node_name="sample_rows",
+    )
+
+    result = await nodes_api.slice_node(
+        "node_base", request, current_user={"id": "user"}
+    )
+
+    assert result["node_name"] == "sample_rows"
+    assert result["node_id"] == "generated_0"
+
+    assert len(fake_workspace_manager.add_calls) == 1
+    created = fake_workspace_manager.add_calls[0]["node"]
+    collected = created.data.collect()
+    assert collected.shape == (2, 2)
+    assert collected.get_column("value").to_list() == [5, 1]
+    assert collected.get_column("label").to_list() == ["e", "a"]
+    assert created.parents == [fake_workspace_manager.nodes["node_base"]]
+    assert created.operation == "sample(base_node, fraction=0.4, seed=7)"
+
+
+@pytest.mark.asyncio
+async def test_random_sample_preview_respects_seed(fake_workspace_manager):
+    request = SliceRequest(mode="random_sample", fraction=0.4, random_seed=7)
+
+    preview = await nodes_api.slice_preview(
+        "node_base",
+        request,
+        page=1,
+        page_size=10,
+        current_user={"id": "user"},
+    )
+
+    assert preview.columns == ["value", "label"]
+    assert preview.pagination.total_rows == 2
+    assert preview.pagination.page == 1
+    assert len(preview.data) == 2
+    assert [row["value"] for row in preview.data] == [5, 1]
+    assert [row["label"] for row in preview.data] == ["e", "a"]
+    assert [row["label"] for row in preview.data] == ["e", "a"]

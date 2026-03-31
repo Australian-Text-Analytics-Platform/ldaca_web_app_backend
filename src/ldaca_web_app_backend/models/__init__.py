@@ -639,9 +639,18 @@ class FilterRequest(BaseModel):
 
 
 class SliceRequest(BaseModel):
+    mode: Literal["slice", "random_sample"] = "slice"
     offset: int = Field(default=0, ge=0)
     length: Optional[int] = Field(default=None, ge=0)
+    fraction: Optional[float] = Field(default=None, gt=0, le=1)
+    random_seed: Optional[int] = Field(default=None, ge=0)
     new_node_name: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_sampling_mode(self) -> "SliceRequest":
+        if self.mode == "random_sample" and self.fraction is None:
+            raise ValueError("fraction is required when mode is 'random_sample'")
+        return self
 
 
 class PaginationInfo(BaseModel):

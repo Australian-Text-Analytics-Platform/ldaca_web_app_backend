@@ -11,10 +11,10 @@ from datetime import datetime
 from typing import Any, Literal, Optional, cast
 
 import polars as pl
+from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from docworkspace import Node
-from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
@@ -269,6 +269,40 @@ def _require_current_workspace(user_id: str) -> Workspace:
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
+
+
+def _build_slice_or_sample_lazy(
+    lazy_data: pl.LazyFrame,
+    node_name: str,
+    request: SliceRequest,
+) -> tuple[pl.LazyFrame, str, str]:
+    if request.mode == "random_sample":
+        if request.fraction is None:
+            raise HTTPException(
+                status_code=422,
+                detail="fraction is required when mode is 'random_sample'",
+            )
+        sample_indices = pl.int_range(pl.len()).sample(
+            fraction=request.fraction,
+            seed=request.random_seed,
+        )
+        sampled_data = lazy_data.select(pl.all().gather(sample_indices))
+        sample_args = f"fraction={request.fraction}"
+        if request.random_seed is not None:
+            sample_args = f"{sample_args}, seed={request.random_seed}"
+        return (
+            sampled_data,
+            f"{node_name}_sampled",
+            f"sample({node_name}, {sample_args})",
+        )
+
+    offset = int(request.offset or 0)
+    length = request.length
+    sliced_data = lazy_data.slice(offset, length)
+    slice_args = f"offset={offset}"
+    if length is not None:
+        slice_args = f"{slice_args}, length={length}"
+    return sliced_data, f"{node_name}_sliced", f"slice({node_name}, {slice_args})"
 
 
 def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
@@ -990,19 +1024,17 @@ async def slice_node(
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
     node = workspace.nodes[node_id]
-    lazy_data = node.data
-    offset = int(request.offset or 0)
-    length = request.length
-    sliced_data = lazy_data.slice(offset, length)
-    new_node_name = request.new_node_name or f"{node.name}_sliced"
-    slice_args = f"offset={offset}"
-    if length is not None:
-        slice_args = f"{slice_args}, length={length}"
+    output_data, default_node_name, operation = _build_slice_or_sample_lazy(
+        node.data,
+        node.name,
+        request,
+    )
+    new_node_name = request.new_node_name or default_node_name
     new_node = Node(
-        data=sliced_data,
+        data=output_data,
         name=new_node_name,
         workspace=workspace,
-        operation=f"slice({node.name}, {slice_args})",
+        operation=operation,
         parents=[node],
     )
     workspace.add_node(new_node)
@@ -1024,16 +1056,16 @@ async def slice_preview(
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
 
-    offset = int(request.offset or 0)
-    length = request.length if request.length is None else int(request.length)
-
     try:
-        lazy_data = workspace.nodes[node_id].data
-        sliced_lazy = lazy_data.slice(offset, length)
+        preview_lazy, _default_node_name, _operation = _build_slice_or_sample_lazy(
+            workspace.nodes[node_id].data,
+            workspace.nodes[node_id].name,
+            request,
+        )
 
         total_rows_df = cast(
             pl.DataFrame,
-            sliced_lazy.select(pl.len().alias("_len")).collect(),
+            preview_lazy.select(pl.len().alias("_len")).collect(),
         )
         total_rows_series = total_rows_df.to_series(0)
         total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
@@ -1047,7 +1079,7 @@ async def slice_preview(
 
         preview_df = cast(
             pl.DataFrame,
-            sliced_lazy.slice(preview_offset, normalized_page_size).collect(),
+            preview_lazy.slice(preview_offset, normalized_page_size).collect(),
         )
     except Exception as exc:  # pragma: no cover
         raise HTTPException(status_code=400, detail=str(exc)) from exc

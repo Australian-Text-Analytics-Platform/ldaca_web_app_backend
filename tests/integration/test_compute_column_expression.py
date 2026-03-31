@@ -54,13 +54,16 @@ async def test_compute_column_preview_adds_new_column(
         "/api/workspaces/nodes/node-123/compute-column/preview",
         json={
             "expression": 'A + "Total Count"',
-            "preview_limit": 2,
         },
+        params={"page": 1, "page_size": 2},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert len(payload["data"]) == 2
+    assert payload["pagination"]["page"] == 1
+    assert payload["pagination"]["page_size"] == 2
+    assert payload["pagination"]["total_rows"] == 3
     column_set = set(payload["columns"])
     assert {"A", "B", "Total Count"}.issubset(column_set)
     new_columns = column_set - {"A", "B", "Total Count"}
@@ -163,4 +166,5 @@ async def test_compute_column_preview_rejects_string_regex_replace_helper(
     )
 
     assert response.status_code == 400
+    assert "Unsupported function 'str_replace'" in response.json()["detail"]
     assert "Unsupported function 'str_replace'" in response.json()["detail"]
