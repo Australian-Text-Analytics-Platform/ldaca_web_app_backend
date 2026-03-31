@@ -277,19 +277,27 @@ def _build_slice_or_sample_lazy(
     request: SliceRequest,
 ) -> tuple[pl.LazyFrame, str, str]:
     if request.mode == "random_sample":
-        if request.fraction is None:
+        if request.sample_size is None:
             raise HTTPException(
                 status_code=422,
-                detail="fraction is required when mode is 'random_sample'",
+                detail="sample_size is required when mode is 'random_sample'",
             )
-        sample_indices = pl.int_range(pl.len()).sample(
-            fraction=request.fraction,
-            seed=request.random_seed,
-        )
-        sampled_data = lazy_data.select(pl.all().gather(sample_indices))
-        sample_args = f"fraction={request.fraction}"
+        if request.sample_size < 1:
+            sample_indices = pl.int_range(pl.len()).sample(
+                fraction=request.sample_size,
+                seed=request.random_seed,
+            )
+            sample_args = f"fraction={request.sample_size}"
+        else:
+            n = int(request.sample_size)
+            sample_indices = pl.int_range(pl.len()).sample(
+                n=n,
+                seed=request.random_seed,
+            )
+            sample_args = f"n={n}"
         if request.random_seed is not None:
             sample_args = f"{sample_args}, seed={request.random_seed}"
+        sampled_data = lazy_data.select(pl.all().gather(sample_indices))
         return (
             sampled_data,
             f"{node_name}_sampled",

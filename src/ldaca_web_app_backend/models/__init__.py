@@ -642,14 +642,19 @@ class SliceRequest(BaseModel):
     mode: Literal["slice", "random_sample"] = "slice"
     offset: int = Field(default=0, ge=0)
     length: Optional[int] = Field(default=None, ge=0)
-    fraction: Optional[float] = Field(default=None, gt=0, le=1)
+    sample_size: Optional[float] = Field(default=None, gt=0)
     random_seed: Optional[int] = Field(default=None, ge=0)
     new_node_name: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_sampling_mode(self) -> "SliceRequest":
-        if self.mode == "random_sample" and self.fraction is None:
-            raise ValueError("fraction is required when mode is 'random_sample'")
+        if self.mode == "random_sample":
+            if self.sample_size is None:
+                raise ValueError("sample_size is required when mode is 'random_sample'")
+            if self.sample_size >= 1 and self.sample_size != int(self.sample_size):
+                raise ValueError(
+                    "sample_size >= 1 must be an integer (absolute row count)"
+                )
         return self
 
 

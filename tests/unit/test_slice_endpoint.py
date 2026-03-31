@@ -176,7 +176,7 @@ async def test_slice_preview_respects_offset_and_length(fake_workspace_manager):
 async def test_random_sample_node_uses_fraction_and_seed(fake_workspace_manager):
     request = SliceRequest(
         mode="random_sample",
-        fraction=0.4,
+        sample_size=0.4,
         random_seed=7,
         new_node_name="sample_rows",
     )
@@ -200,7 +200,7 @@ async def test_random_sample_node_uses_fraction_and_seed(fake_workspace_manager)
 
 @pytest.mark.asyncio
 async def test_random_sample_preview_respects_seed(fake_workspace_manager):
-    request = SliceRequest(mode="random_sample", fraction=0.4, random_seed=7)
+    request = SliceRequest(mode="random_sample", sample_size=0.4, random_seed=7)
 
     preview = await nodes_api.slice_preview(
         "node_base",
@@ -216,4 +216,28 @@ async def test_random_sample_preview_respects_seed(fake_workspace_manager):
     assert len(preview.data) == 2
     assert [row["value"] for row in preview.data] == [5, 1]
     assert [row["label"] for row in preview.data] == ["e", "a"]
-    assert [row["label"] for row in preview.data] == ["e", "a"]
+
+
+@pytest.mark.asyncio
+async def test_random_sample_node_uses_n_for_integer(fake_workspace_manager):
+    """When sample_size >= 1, it should use n= instead of fraction=."""
+    request = SliceRequest(
+        mode="random_sample",
+        sample_size=3,
+        random_seed=7,
+        new_node_name="sample_n_rows",
+    )
+
+    result = await nodes_api.slice_node(
+        "node_base", request, current_user={"id": "user"}
+    )
+
+    assert result["node_name"] == "sample_n_rows"
+    assert result["node_id"] == "generated_0"
+
+    assert len(fake_workspace_manager.add_calls) == 1
+    created = fake_workspace_manager.add_calls[0]["node"]
+    collected = created.data.collect()
+    assert collected.shape == (3, 2)
+    assert created.operation == "sample(base_node, n=3, seed=7)"
+    assert created.operation == "sample(base_node, n=3, seed=7)"
