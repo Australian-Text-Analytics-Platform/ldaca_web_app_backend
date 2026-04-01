@@ -1398,7 +1398,7 @@ dependencies = [
 
 [[package]]
 name = "ldaca-web-app"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -1409,7 +1409,6 @@ dependencies = [
     { name = "fastexcel" },
     { name = "google-auth-oauthlib" },
     { name = "httpx" },
-    { name = "ldaca-loader" },
     { name = "openai" },
     { name = "psutil" },
     { name = "pyairtable" },
@@ -1422,6 +1421,9 @@ dependencies = [
 deploy = [
     { name = "ipython" },
     { name = "jupyter-server-proxy" },
+]
+ldaca = [
+    { name = "ldaca-loader" },
 ]
 
 [package.dev-dependencies]
@@ -1442,7 +1444,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "ipython", marker = "extra == 'deploy'", specifier = ">=9.5.0" },
     { name = "jupyter-server-proxy", marker = "extra == 'deploy'", specifier = ">=4.4.0" },
-    { name = "ldaca-loader", git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator?branch=ldaca_web_app_integration" },
+    { name = "ldaca-loader", marker = "extra == 'ldaca'", git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator?branch=ldaca_web_app_integration" },
     { name = "openai", specifier = ">=2.26.0" },
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "pyairtable", specifier = ">=3.3.0" },
@@ -1450,7 +1452,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "tbb", marker = "sys_platform != 'darwin'", specifier = ">=2022.3.1" },
 ]
-provides-extras = ["deploy"]
+provides-extras = ["ldaca", "deploy"]
 
 [package.metadata.requires-dev]
 dev = [

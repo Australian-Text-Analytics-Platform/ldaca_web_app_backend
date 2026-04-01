@@ -36,7 +36,13 @@ def run_ldaca_import_task(
 
     try:
         from ldacatabulator.tabulator import LDaCATabulator
+    except ImportError:
+        raise RuntimeError(
+            "ldaca-loader is not installed. "
+            "Install with: pip install 'ldaca-web-app[ldaca]'"
+        )
 
+    try:
         from ldaca_web_app.core.utils import get_user_data_folder
 
         print(f"[Worker {os.getpid()}] Starting LDaCA import task for user {user_id}")
