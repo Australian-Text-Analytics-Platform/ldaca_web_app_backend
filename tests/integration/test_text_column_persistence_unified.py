@@ -4,8 +4,8 @@ import polars as pl
 import pytest
 
 from docworkspace import Node
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 @pytest.fixture(autouse=True)

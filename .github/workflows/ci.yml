@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ldaca-web-app-backend-ci-${{ github.ref }}
+  group: ldaca-web-app-ci-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

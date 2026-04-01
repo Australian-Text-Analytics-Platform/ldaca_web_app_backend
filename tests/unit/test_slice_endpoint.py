@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
-from ldaca_web_app_backend.api.workspaces import utils as workspace_utils
-from ldaca_web_app_backend.models import SliceRequest
+from ldaca_web_app.api.workspaces import nodes as nodes_api
+from ldaca_web_app.api.workspaces import utils as workspace_utils
+from ldaca_web_app.models import SliceRequest
 
 
 class DummyNode:

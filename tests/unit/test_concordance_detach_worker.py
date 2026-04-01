@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
-from ldaca_web_app_backend.core import worker
-from ldaca_web_app_backend.core.worker_tasks_concordance import (
+from ldaca_web_app.core import worker
+from ldaca_web_app.core.worker_tasks_concordance import (
     run_concordance_detach_task,
 )
 

@@ -70,7 +70,7 @@ class TestAuthFunctionBehavior:
     async def test_get_current_user_single_user_mode(self):
         from unittest.mock import MagicMock, patch
 
-        from ldaca_web_app_backend.core.auth import get_current_user
+        from ldaca_web_app.core.auth import get_current_user
 
         # Create a mock settings object with test values
         mock_settings = MagicMock()
@@ -80,7 +80,7 @@ class TestAuthFunctionBehavior:
         mock_settings.single_user_email = TEST_USER_EMAIL
 
         # Patch settings in the core.auth module
-        with patch("ldaca_web_app_backend.core.auth.settings", mock_settings):
+        with patch("ldaca_web_app.core.auth.settings", mock_settings):
             result1 = await get_current_user("Bearer test-token")
             result2 = await get_current_user("different-token")
             result3 = await get_current_user(None)
@@ -92,13 +92,13 @@ class TestAuthFunctionBehavior:
     async def test_available_auth_methods_single_user(self):
         from unittest.mock import MagicMock, patch
 
-        from ldaca_web_app_backend.core.auth import get_available_auth_methods
+        from ldaca_web_app.core.auth import get_available_auth_methods
 
         # Create a mock settings object with test values
         mock_settings = MagicMock()
         mock_settings.multi_user = False
 
         # Patch settings in the core.auth module
-        with patch("ldaca_web_app_backend.core.auth.settings", mock_settings):
+        with patch("ldaca_web_app.core.auth.settings", mock_settings):
             methods = get_available_auth_methods()
             assert methods == []

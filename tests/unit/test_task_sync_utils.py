@@ -2,14 +2,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from ldaca_web_app_backend.analysis.models import (
+from ldaca_web_app.analysis.models import (
     AnalysisStatus,
     AnalysisTask,
     BaseAnalysisRequest,
 )
-from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
-from ldaca_web_app_backend.api.workspaces.utils import ensure_task_synced
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.analysis.results import GenericAnalysisResult
+from ldaca_web_app.api.workspaces.utils import ensure_task_synced
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 class _DummyRequest(BaseAnalysisRequest):

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from ldaca_web_app_backend.core import worker_tasks_topic
+from ldaca_web_app.core import worker_tasks_topic
 
 
 def test_run_topic_modeling_task_emits_representative_words_as_list_string(

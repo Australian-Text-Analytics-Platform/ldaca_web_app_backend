@@ -1,4 +1,4 @@
-import ldaca_web_app_backend.core.worker as worker
+import ldaca_web_app.core.worker as worker
 
 
 def test_worker_module_exposes_no_dataframe_materialize_shim():

@@ -3,11 +3,11 @@ import time
 
 import polars as pl
 import pytest
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.api.workspaces.analyses.concordance import (
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.api.workspaces.analyses.concordance import (
     DEFAULT_CONCORDANCE_PAGE_SIZE,
 )
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.core.workspace import workspace_manager
 
 from docworkspace import Node
 

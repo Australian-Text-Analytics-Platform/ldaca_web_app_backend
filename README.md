@@ -1,9 +1,22 @@
-# LDaCA Web App Backend
+# LDaCA Web App
 
-FastAPI backend for the LDaCA platform. This README is a short entry point; full docs live under `docs/`.
+All-in-one Python package for the LDaCA platform: a FastAPI backend with a bundled production React frontend. Install once, run with a single command.
+
+## Quick start
+
+```bash
+# Install and run (backend + frontend on one port)
+uvx ldaca-web-app
+
+# Or run only the backend API
+uvx ldaca-web-app --backend
+
+# Custom port
+uvx ldaca-web-app --port 9000
+```
 
 ## Start here
 
-- Backend docs: `ldaca_web_app/ldaca_web_app_backend/docs/index.md`
-- Run locally: `ldaca_web_app/ldaca_web_app_backend/docs/user-guide/running-locally.md`
-- Configuration: `ldaca_web_app/ldaca_web_app_backend/docs/reference/configuration.md`
+- Full docs: `docs/index.md`
+- Run locally: `docs/user-guide/running-locally.md`
+- Configuration: `docs/reference/configuration.md`

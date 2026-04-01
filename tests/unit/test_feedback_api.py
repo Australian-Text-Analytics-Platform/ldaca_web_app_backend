@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from ldaca_web_app_backend.api import feedback as feedback_api
+from ldaca_web_app.api import feedback as feedback_api
 
 
 def test_require_airtable_config_returns_strings(monkeypatch: pytest.MonkeyPatch):

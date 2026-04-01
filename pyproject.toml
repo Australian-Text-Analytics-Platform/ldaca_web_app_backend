@@ -1,12 +1,19 @@
 [project]
-name = "ldaca-web-app-backend"
-version = "0.3.3"
-description = "LDaCA Web App Backend - FastAPI backend for the Language Data Commons of Australia"
+name = "ldaca-web-app"
+version = "0.1.0"
+description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [{ name = "Australian Text Analytics Platform" }]
-keywords = ["ldaca", "text-analytics", "corpus", "linguistics", "fastapi"]
+keywords = [
+    "ldaca",
+    "text-analytics",
+    "corpus",
+    "linguistics",
+    "fastapi",
+    "web-app",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -37,7 +44,8 @@ dependencies = [
 deploy = ["jupyter-server-proxy>=4.4.0", "ipython>=9.5.0"]
 
 [project.scripts]
-ldaca_web_app_backend = "ldaca_web_app_backend.cli:main"
+ldaca-web-app = "ldaca_web_app.cli:main"
+ldaca_web_app = "ldaca_web_app.cli:main"
 
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
@@ -58,11 +66,11 @@ build-backend = "hatchling.build"
 dev = ["twine>=6.2.0", "pytest-asyncio>=0.23.0"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/src/ldaca_web_app_backend/resources/*.txt"]
+include = ["/src", "/src/ldaca_web_app/resources/**"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ldaca_web_app_backend"]
-include = ["src/ldaca_web_app_backend/resources/*.txt"]
+packages = ["src/ldaca_web_app"]
+include = ["src/ldaca_web_app/resources/**"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""

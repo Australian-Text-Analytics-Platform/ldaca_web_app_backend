@@ -4,14 +4,14 @@ from unittest.mock import MagicMock
 
 import polars as pl
 import pytest
-from ldaca_web_app_backend.analysis.implementations.quotation import QuotationRequest
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
-from ldaca_web_app_backend.api.workspaces.analyses.generated_columns import (
+from ldaca_web_app.analysis.implementations.quotation import QuotationRequest
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.analysis.results import GenericAnalysisResult
+from ldaca_web_app.api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
 )
-from ldaca_web_app_backend.core.workspace import workspace_manager
-from ldaca_web_app_backend.models import QuotationEngineConfig
+from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_web_app.models import QuotationEngineConfig
 
 USER_ID = "test"
 WORKSPACE_ID = "test-workspace"
@@ -226,7 +226,7 @@ async def test_quotation_current_result_respects_page_params(
         return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
         fake_compute,
     )
     response = await authenticated_client.get(
@@ -269,7 +269,7 @@ async def test_update_quotation_current_result_returns_page_payload(
         return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
         fake_compute,
     )
     response = await authenticated_client.post(
@@ -318,7 +318,7 @@ async def test_quotation_current_result_returns_all_quotes_for_document_page(
         return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
         fake_compute,
     )
 
@@ -386,7 +386,7 @@ async def test_quotation_endpoint_recomputes_on_demand(
         return base_df_slice.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
         fake_compute,
     )
 

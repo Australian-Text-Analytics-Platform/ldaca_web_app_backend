@@ -11,15 +11,15 @@ import polars as pl
 import pytest
 from httpx import AsyncClient
 
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
-from ldaca_web_app_backend.api.workspaces.analyses.token_frequencies import (
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.analysis.results import GenericAnalysisResult
+from ldaca_web_app.api.workspaces.analyses.token_frequencies import (
     DEFAULT_TOKEN_LIMIT,
     MAX_SERVER_TOKEN_LIMIT,
     SERVER_LIMIT_MULTIPLIER,
 )
-from ldaca_web_app_backend.core.worker import token_frequencies_task
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.core.worker import token_frequencies_task
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 # Helper functions
@@ -504,7 +504,7 @@ class TestSequentialAnalysisPersistence:
         node_id: str,
         monkeypatch: pytest.MonkeyPatch,
     ) -> dict:
-        from ldaca_web_app_backend.api.workspaces.analyses import (
+        from ldaca_web_app.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -670,7 +670,7 @@ class TestSequentialAnalysisPersistence:
         dummy_node = SimpleNamespace(data=dummy_df.lazy())
         dummy_workspace = SimpleNamespace(nodes={timeline_node_id: dummy_node})
 
-        from ldaca_web_app_backend.api.workspaces.analyses import (
+        from ldaca_web_app.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -724,7 +724,7 @@ class TestSequentialAnalysisPersistence:
         dummy_node = SimpleNamespace(data=dummy_df.lazy())
         dummy_workspace = SimpleNamespace(nodes={timeline_node_id: dummy_node})
 
-        from ldaca_web_app_backend.api.workspaces.analyses import (
+        from ldaca_web_app.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 

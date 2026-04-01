@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 @pytest.fixture()
 def client(tmp_path: Path):
     with (
-        patch("ldaca_web_app_backend.main.settings") as mock_settings,
-        patch("ldaca_web_app_backend.main.init_db"),
-        patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
-        patch("ldaca_web_app_backend.core.utils.settings") as mock_utils_settings,
+        patch("ldaca_web_app.main.settings") as mock_settings,
+        patch("ldaca_web_app.main.init_db"),
+        patch("ldaca_web_app.main.cleanup_expired_sessions"),
+        patch("ldaca_web_app.core.utils.settings") as mock_utils_settings,
     ):
         mock_settings.debug = False
         mock_settings.cors_allow_origin_regex = r"http://localhost(:\\d+)?"
@@ -33,12 +33,12 @@ def client(tmp_path: Path):
         (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)
         (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
 
-        app = __import__("ldaca_web_app_backend.main", fromlist=["app"]).app
+        app = __import__("ldaca_web_app.main", fromlist=["app"]).app
 
         def fake_user():
             return {"id": "test_user"}
 
-        from ldaca_web_app_backend.api import files as files_api
+        from ldaca_web_app.api import files as files_api
 
         app.dependency_overrides[files_api.get_current_user] = fake_user
 
@@ -138,7 +138,7 @@ def test_list_files_serializes_empty_directory_children_as_empty_list(
     client: TestClient,
 ):
     with patch(
-        "ldaca_web_app_backend.api.files._build_file_tree",
+        "ldaca_web_app.api.files._build_file_tree",
         return_value=[
             {
                 "name": "Empty Folder",

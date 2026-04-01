@@ -1,4 +1,4 @@
-from ldaca_web_app_backend.core.utils import get_user_data_folder
+from ldaca_web_app.core.utils import get_user_data_folder
 
 
 async def test_delete_file_removes_parent_folder_when_only_readme_remains(

@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 class TestMainApp:
     """Test cases for the main FastAPI application"""
 
-    @patch("ldaca_web_app_backend.main.settings")
-    @patch("ldaca_web_app_backend.main.init_db")
-    @patch("ldaca_web_app_backend.main.cleanup_expired_sessions")
+    @patch("ldaca_web_app.main.settings")
+    @patch("ldaca_web_app.main.init_db")
+    @patch("ldaca_web_app.main.cleanup_expired_sessions")
     def test_app_creation(self, mock_cleanup, mock_init_db, mock_settings):
         """Test that the FastAPI app can be created"""
         # Mock config properties
@@ -21,7 +21,7 @@ class TestMainApp:
         mock_settings.get.return_value = True
 
         # Import after mocking
-        from ldaca_web_app_backend.main import app
+        from ldaca_web_app.main import app
 
         assert app is not None
         assert app.title == "Enhanced LDaCA Web App API"
@@ -30,9 +30,9 @@ class TestMainApp:
     async def test_health_endpoint_structure(self):
         """Test health endpoint response structure"""
         with (
-            patch("ldaca_web_app_backend.main.settings") as mock_config,
-            patch("ldaca_web_app_backend.main.init_db"),
-            patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
+            patch("ldaca_web_app.main.settings") as mock_config,
+            patch("ldaca_web_app.main.init_db"),
+            patch("ldaca_web_app.main.cleanup_expired_sessions"),
         ):
             mock_data_folder = MagicMock()
             mock_data_folder.mkdir = MagicMock()
@@ -41,7 +41,7 @@ class TestMainApp:
             mock_config.get.return_value = True
             mock_config.debug = False
 
-            from ldaca_web_app_backend.main import health_check
+            from ldaca_web_app.main import health_check
 
             response = await health_check()
 
@@ -54,9 +54,9 @@ class TestMainApp:
     async def test_status_endpoint_structure(self):
         """Test status endpoint response structure"""
         with (
-            patch("ldaca_web_app_backend.main.settings") as mock_config,
-            patch("ldaca_web_app_backend.main.init_db"),
-            patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
+            patch("ldaca_web_app.main.settings") as mock_config,
+            patch("ldaca_web_app.main.init_db"),
+            patch("ldaca_web_app.main.cleanup_expired_sessions"),
         ):
             mock_config.data_folder = MagicMock()
             mock_config.allowed_origins = ["http://localhost:3000"]
@@ -64,7 +64,7 @@ class TestMainApp:
             mock_config.debug = False
             mock_config.data_folder.mkdir = MagicMock()
 
-            from ldaca_web_app_backend.main import status
+            from ldaca_web_app.main import status
 
             response = await status()
 
@@ -93,9 +93,9 @@ class TestMainApp:
     async def test_root_endpoint_structure(self):
         """Test root endpoint response structure"""
         with (
-            patch("ldaca_web_app_backend.main.settings") as mock_config,
-            patch("ldaca_web_app_backend.main.init_db"),
-            patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
+            patch("ldaca_web_app.main.settings") as mock_config,
+            patch("ldaca_web_app.main.init_db"),
+            patch("ldaca_web_app.main.cleanup_expired_sessions"),
         ):
             mock_config.data_folder = MagicMock()
             mock_config.allowed_origins = ["http://localhost:3000"]
@@ -103,7 +103,7 @@ class TestMainApp:
             mock_config.debug = False
             mock_config.data_folder.mkdir = MagicMock()
 
-            from ldaca_web_app_backend.main import root
+            from ldaca_web_app.main import root
 
             response = await root()
 
@@ -144,7 +144,7 @@ class TestApplicationConfiguration:
         assert Node is not None
         assert Workspace is not None
 
-    @patch("ldaca_web_app_backend.main.settings")
+    @patch("ldaca_web_app.main.settings")
     def test_cors_configuration(self, mock_config):
         """Test CORS middleware configuration"""
         mock_config.cors_allowed_origins = [
@@ -161,16 +161,16 @@ class TestApplicationConfiguration:
     def test_api_router_inclusion(self):
         """Test that all API routers are included"""
         with (
-            patch("ldaca_web_app_backend.main.settings") as mock_config,
-            patch("ldaca_web_app_backend.main.init_db"),
-            patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
+            patch("ldaca_web_app.main.settings") as mock_config,
+            patch("ldaca_web_app.main.init_db"),
+            patch("ldaca_web_app.main.cleanup_expired_sessions"),
         ):
             mock_config.data_folder = MagicMock()
             mock_config.allowed_origins = ["http://localhost:3000"]
             mock_config.get.return_value = True
             mock_config.data_folder.mkdir = MagicMock()
 
-            from ldaca_web_app_backend.main import app
+            from ldaca_web_app.main import app
 
             # Check that routers are included by looking at the app's routes
             route_prefixes = {

@@ -1,11 +1,11 @@
 import pytest
 
-from ldaca_web_app_backend.analysis.implementations.topic_modeling import (
+from ldaca_web_app.analysis.implementations.topic_modeling import (
     TopicModelingRequest as AnalysisTopicModelingRequest,
 )
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.analysis.models import AnalysisStatus, AnalysisTask
-from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.analysis.models import AnalysisStatus, AnalysisTask
+from ldaca_web_app.analysis.results import GenericAnalysisResult
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import polars as pl
 import pytest
 
-from ldaca_web_app_backend.core.utils import (
+from ldaca_web_app.core.utils import (
     detect_file_type,
     generate_workspace_id,
     get_user_data_folder,
@@ -24,7 +24,7 @@ from ldaca_web_app_backend.core.utils import (
 class TestUserFolders:
     """Test user folder management functions"""
 
-    @patch("ldaca_web_app_backend.core.utils.settings")
+    @patch("ldaca_web_app.core.utils.settings")
     def test_get_user_data_folder(self, mock_settings, temp_dir):
         """Test getting user data folder"""
         # New path scheme: base under DATA_ROOT / user_data_folder
@@ -38,7 +38,7 @@ class TestUserFolders:
         assert folder == expected_path
         assert folder.exists()
 
-    @patch("ldaca_web_app_backend.core.utils.settings")
+    @patch("ldaca_web_app.core.utils.settings")
     def test_get_user_workspace_folder(self, mock_settings, temp_dir):
         """Test getting user workspace folder"""
         mock_settings.get_data_root.return_value = temp_dir
@@ -51,7 +51,7 @@ class TestUserFolders:
         assert folder == expected_path
         assert folder.exists()
 
-    @patch("ldaca_web_app_backend.core.utils.settings")
+    @patch("ldaca_web_app.core.utils.settings")
     def test_setup_user_folders(self, mock_settings, temp_dir):
         """Test setting up complete user folder structure (no auto sample copy)"""
         mock_settings.get_data_root.return_value = temp_dir
@@ -228,7 +228,7 @@ class TestFileOperations:
             assert isinstance(df, pl.DataFrame)
             assert df.shape[0] == 3
 
-    @patch("ldaca_web_app_backend.core.utils.pl.read_excel")
+    @patch("ldaca_web_app.core.utils.pl.read_excel")
     def test_load_excel_file_selects_requested_sheet(self, mock_read_excel, temp_dir):
         """load_data_file should request and return the selected Excel sheet."""
 
@@ -244,7 +244,7 @@ class TestFileOperations:
         assert isinstance(result, pl.DataFrame)
         assert result.to_dicts() == expected.to_dicts()
 
-    @patch("ldaca_web_app_backend.core.utils.pl.read_excel")
+    @patch("ldaca_web_app.core.utils.pl.read_excel")
     def test_load_excel_file_dict_result_uses_selected_sheet(
         self, mock_read_excel, temp_dir
     ):

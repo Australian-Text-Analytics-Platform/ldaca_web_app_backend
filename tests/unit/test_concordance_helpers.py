@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from ldaca_web_app_backend.api.workspaces.analyses.concordance_core import (
+from ldaca_web_app.api.workspaces.analyses.concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     build_concordance_search_pattern,
     collect_interleaved_combined,

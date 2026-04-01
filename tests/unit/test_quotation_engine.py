@@ -2,17 +2,17 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
-from ldaca_web_app_backend.api.workspaces.analyses.quotation_core import (
+from ldaca_web_app.api.workspaces.analyses.quotation_core import (
     compute_quote_dataframe,
     prepare_documents_payload,
 )
-from ldaca_web_app_backend.core.services.quotation_client import (
+from ldaca_web_app.core.services.quotation_client import (
     QuotationServiceError,
     extract_remote_quotations,
     normalise_engine_base_url,
 )
-from ldaca_web_app_backend.models import QuotationEngineConfig, QuotationEngineType
-from ldaca_web_app_backend.settings import settings
+from ldaca_web_app.models import QuotationEngineConfig, QuotationEngineType
+from ldaca_web_app.settings import settings
 from pydantic import AnyHttpUrl, TypeAdapter
 
 HTTP_URL = TypeAdapter(AnyHttpUrl).validate_python

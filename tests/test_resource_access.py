@@ -5,16 +5,16 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
-from ldaca_web_app_backend.core.utils import (
+from ldaca_web_app.core.utils import (
     get_user_data_folder,
     import_sample_data_for_user,
 )
-from ldaca_web_app_backend.settings import settings
+from ldaca_web_app.settings import settings
 
 
 def _resource_path(relative: str) -> Path:
     """Resolve a resource path to a filesystem path."""
-    target = resources.files("ldaca_web_app_backend.resources").joinpath(relative)
+    target = resources.files("ldaca_web_app.resources").joinpath(relative)
     with resources.as_file(target) as resolved:
         return resolved
 
@@ -46,7 +46,7 @@ def test_nginx_template_resource():
 
 
 def test_stopwords_resources():
-    stopwords_dir = resources.files("ldaca_web_app_backend.resources")
+    stopwords_dir = resources.files("ldaca_web_app.resources")
     languages = ["en", "es", "fr", "de"]
     for lang in languages:
         path = stopwords_dir.joinpath(f"stopwords_{lang}.txt")

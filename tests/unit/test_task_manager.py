@@ -2,9 +2,9 @@
 
 from uuid import uuid4
 
-from ldaca_web_app_backend.analysis import manager as analysis_manager
-from ldaca_web_app_backend.analysis.manager import TaskManager
-from ldaca_web_app_backend.analysis.models import BaseAnalysisRequest
+from ldaca_web_app.analysis import manager as analysis_manager
+from ldaca_web_app.analysis.manager import TaskManager
+from ldaca_web_app.analysis.models import BaseAnalysisRequest
 
 
 def test_task_manager_roundtrip_and_current_mapping() -> None:

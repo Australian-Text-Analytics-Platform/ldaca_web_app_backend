@@ -1,7 +1,7 @@
 [run]
 branch = True
 source =
-    ldaca_web_app_backend
+    ldaca_web_app
 omit =
     */tests/*
     */scripts/*

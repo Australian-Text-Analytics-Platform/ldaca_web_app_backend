@@ -2,7 +2,7 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from ldaca_web_app_backend.main import app
+from ldaca_web_app.main import app
 
 
 @pytest.mark.asyncio

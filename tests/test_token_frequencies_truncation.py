@@ -2,17 +2,17 @@ import csv
 from types import SimpleNamespace
 
 import pytest
-from ldaca_web_app_backend.analysis.manager import get_task_manager
-from ldaca_web_app_backend.analysis.results import GenericAnalysisResult
-from ldaca_web_app_backend.api.workspaces.analyses.token_frequencies import (
+from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.analysis.results import GenericAnalysisResult
+from ldaca_web_app.api.workspaces.analyses.token_frequencies import (
     DEFAULT_TOKEN_LIMIT,
     MAX_SERVER_TOKEN_LIMIT,
     SERVER_LIMIT_MULTIPLIER,
     _safe_float,
 )
-from ldaca_web_app_backend.core.utils import get_user_data_folder
-from ldaca_web_app_backend.core.worker import token_frequencies_task
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.core.utils import get_user_data_folder
+from ldaca_web_app.core.worker import token_frequencies_task
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 def _simulate_token_frequency_completion(workspace_id: str):

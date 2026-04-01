@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import polars as pl
 
-from ldaca_web_app_backend.core.worker_tasks_token import run_token_frequencies_task
+from ldaca_web_app.core.worker_tasks_token import run_token_frequencies_task
 
 
 def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypatch):

@@ -4,10 +4,10 @@ from pathlib import Path
 
 import polars as pl
 from docworkspace import Workspace
-from ldaca_web_app_backend.api.workspaces.utils import stage_dataframe_as_lazy
-from ldaca_web_app_backend.core import utils as core_utils
-from ldaca_web_app_backend.core.utils import generate_workspace_id
-from ldaca_web_app_backend.core.workspace import WorkspaceManager
+from ldaca_web_app.api.workspaces.utils import stage_dataframe_as_lazy
+from ldaca_web_app.core import utils as core_utils
+from ldaca_web_app.core.utils import generate_workspace_id
+from ldaca_web_app.core.workspace import WorkspaceManager
 
 
 def test_stage_dataframe_as_lazy_scans_relative_path(tmp_path, monkeypatch):

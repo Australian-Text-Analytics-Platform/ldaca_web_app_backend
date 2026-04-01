@@ -1,22 +1,22 @@
-# LDaCA Backend Documentation
+# LDaCA Web App Documentation
 
-**Scope statement:** This doc set covers the FastAPI backend and its workspace orchestration. It does not describe frontend UI behavior.
+**Scope statement:** This doc set covers the `ldaca-web-app` Python package — a FastAPI backend bundled with a production React frontend. It documents the API, workspace orchestration, CLI, and server configuration. It does not describe frontend component internals.
 
 ## Start here
 
-**Question:** *What should I read first?*
+**Question:** _What should I read first?_
 
-**Answer:** If you want to run the backend locally, start with `user-guide/running-locally.md`.
+**Answer:** If you want to run the app locally, start with `user-guide/running-locally.md`. The package ships a CLI that can serve the full app (backend + frontend) on a single port, or start only the backend API.
 
 ## Developer reference
 
-**Question:** *Where is the architecture overview?*
+**Question:** _Where is the architecture overview?_
 
 **Answer:** See `developer-guide/architecture.md`.
 
 ## Configuration and tasks
 
-**Question:** *Where are environment variables and background task docs?*
+**Question:** _Where are environment variables and background task docs?_
 
 **Answer:**
 
@@ -28,6 +28,6 @@
 
 ## Tutorials
 
-**Question:** *Is there a guided API example?*
+**Question:** _Is there a guided API example?_
 
 **Answer:** Yes — `tutorials/first-api-call.md`.

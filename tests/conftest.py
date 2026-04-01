@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ldaca_web_app_backend import db
+from ldaca_web_app import db
 
 
 @pytest.fixture(scope="session")
@@ -89,7 +89,7 @@ def settings_override(tmp_path: Path):
 @pytest.fixture
 async def test_db_session():
     """Provide a test database session"""
-    from ldaca_web_app_backend import db
+    from ldaca_web_app import db
 
     async with db.async_session_maker() as session:
         yield session
@@ -102,7 +102,7 @@ def temp_data_root(test_user):
     This creates the user's data directory used by get_user_data_folder so tests
     that write files without explicitly creating directories will work reliably.
     """
-    from ldaca_web_app_backend.core.utils import get_user_data_folder
+    from ldaca_web_app.core.utils import get_user_data_folder
 
     user_data_dir = get_user_data_folder(test_user["id"])
     user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -115,8 +115,8 @@ async def authenticated_client(settings_override):
     from datetime import datetime
 
     import httpx
-    from ldaca_web_app_backend.core.auth import get_current_user
-    from ldaca_web_app_backend.main import app
+    from ldaca_web_app.core.auth import get_current_user
+    from ldaca_web_app.main import app
 
     mock_user = {
         "id": "test",
@@ -133,13 +133,13 @@ async def authenticated_client(settings_override):
         return mock_user
 
     patches = [
-        patch("ldaca_web_app_backend.settings.settings", settings_override),
-        patch("ldaca_web_app_backend.main.settings", settings_override),
-        patch("ldaca_web_app_backend.api.auth.settings", settings_override),
-        patch("ldaca_web_app_backend.core.auth.settings", settings_override),
-        patch("ldaca_web_app_backend.core.utils.settings", settings_override),
-        patch("ldaca_web_app_backend.db.init_db"),
-        patch("ldaca_web_app_backend.db.cleanup_expired_sessions"),
+        patch("ldaca_web_app.settings.settings", settings_override),
+        patch("ldaca_web_app.main.settings", settings_override),
+        patch("ldaca_web_app.api.auth.settings", settings_override),
+        patch("ldaca_web_app.core.auth.settings", settings_override),
+        patch("ldaca_web_app.core.utils.settings", settings_override),
+        patch("ldaca_web_app.db.init_db"),
+        patch("ldaca_web_app.db.cleanup_expired_sessions"),
     ]
 
     for p in patches:
@@ -163,16 +163,16 @@ async def authenticated_client(settings_override):
 async def test_client(settings_override):
     """Provide an async test client without authentication (single-user mode)."""
     import httpx
-    from ldaca_web_app_backend.main import app
+    from ldaca_web_app.main import app
 
     patches = [
-        patch("ldaca_web_app_backend.settings.settings", settings_override),
-        patch("ldaca_web_app_backend.main.settings", settings_override),
-        patch("ldaca_web_app_backend.api.auth.settings", settings_override),
-        patch("ldaca_web_app_backend.core.auth.settings", settings_override),
-        patch("ldaca_web_app_backend.core.utils.settings", settings_override),
-        patch("ldaca_web_app_backend.db.init_db"),
-        patch("ldaca_web_app_backend.db.cleanup_expired_sessions"),
+        patch("ldaca_web_app.settings.settings", settings_override),
+        patch("ldaca_web_app.main.settings", settings_override),
+        patch("ldaca_web_app.api.auth.settings", settings_override),
+        patch("ldaca_web_app.core.auth.settings", settings_override),
+        patch("ldaca_web_app.core.utils.settings", settings_override),
+        patch("ldaca_web_app.db.init_db"),
+        patch("ldaca_web_app.db.cleanup_expired_sessions"),
     ]
 
     for p in patches:
@@ -200,7 +200,7 @@ def temp_dir():
 @pytest.fixture
 def mock_settings():
     """Mock the config module with test configuration"""
-    with patch("ldaca_web_app_backend.settings.settings") as mock_config:
+    with patch("ldaca_web_app.settings.settings") as mock_config:
         # Core settings
         mock_config.database_url = "sqlite+aiosqlite:///:memory:"
         mock_config.user_data_folder = "./test_data"
@@ -240,7 +240,7 @@ def mock_settings():
 def mock_workspace_manager():
     """Mock workspace manager for testing"""
     with patch(
-        "ldaca_web_app_backend.core.workspace.workspace_manager"
+        "ldaca_web_app.core.workspace.workspace_manager"
     ) as mock_manager:
         mock_manager.get_user_workspaces.return_value = {}
         mock_manager.create_workspace.return_value = {
@@ -400,7 +400,7 @@ def tiny_text_file(test_user):
     """Create a tiny CSV file for testing."""
     import csv
 
-    from ldaca_web_app_backend.core.utils import get_user_data_folder
+    from ldaca_web_app.core.utils import get_user_data_folder
 
     user_data_dir = get_user_data_folder(test_user["id"])
     user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -421,7 +421,7 @@ def sample_text_file(test_user):
     """Create a sample CSV file for testing."""
     import csv
 
-    from ldaca_web_app_backend.core.utils import get_user_data_folder
+    from ldaca_web_app.core.utils import get_user_data_folder
 
     user_data_dir = get_user_data_folder(test_user["id"])
     user_data_dir.mkdir(parents=True, exist_ok=True)
@@ -444,7 +444,7 @@ def timeline_csv_file(test_user):
     """Create a CSV file with timestamped records for frequency analysis tests."""
     import csv
 
-    from ldaca_web_app_backend.core.utils import get_user_data_folder
+    from ldaca_web_app.core.utils import get_user_data_folder
 
     user_data_dir = get_user_data_folder(test_user["id"])
     user_data_dir.mkdir(parents=True, exist_ok=True)

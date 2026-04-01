@@ -5,14 +5,14 @@ from unittest.mock import patch
 
 import polars as pl
 from docworkspace import Node, Workspace
-from ldaca_web_app_backend.core.utils import generate_workspace_id
-from ldaca_web_app_backend.core.workspace import workspace_manager
+from ldaca_web_app.core.utils import generate_workspace_id
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 def test_add_node_preserves_document_metadata(settings_override):
     """Ensure document column metadata persists for lazy nodes."""
 
-    with patch("ldaca_web_app_backend.core.utils.settings", settings_override):
+    with patch("ldaca_web_app.core.utils.settings", settings_override):
         workspace = Workspace(name="docdf_ws")
         workspace.id = generate_workspace_id()
         workspace.description = "LazyFrame workspace"

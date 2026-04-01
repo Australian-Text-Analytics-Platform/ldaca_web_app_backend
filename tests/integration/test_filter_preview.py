@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from ldaca_web_app_backend.api.workspaces import nodes as nodes_api
+from ldaca_web_app.api.workspaces import nodes as nodes_api
 
 
 class DummyWorkspace:

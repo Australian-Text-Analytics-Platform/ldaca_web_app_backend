@@ -22,8 +22,8 @@ def test_first_import(tmp_path):
     mock_settings.multi_user = False
 
     # Import function and patch
-    with patch("ldaca_web_app_backend.core.utils.settings", mock_settings):
-        from ldaca_web_app_backend.core.utils import import_sample_data_for_user
+    with patch("ldaca_web_app.core.utils.settings", mock_settings):
+        from ldaca_web_app.core.utils import import_sample_data_for_user
 
         result = import_sample_data_for_user("test_user")
 
@@ -56,8 +56,8 @@ def test_reimport_replaces_existing(tmp_path):
     mock_settings.user_data_folder = "users"
     mock_settings.multi_user = False
 
-    with patch("ldaca_web_app_backend.core.utils.settings", mock_settings):
-        from ldaca_web_app_backend.core.utils import import_sample_data_for_user
+    with patch("ldaca_web_app.core.utils.settings", mock_settings):
+        from ldaca_web_app.core.utils import import_sample_data_for_user
 
         # First import
         result1 = import_sample_data_for_user("test_user")
@@ -92,8 +92,8 @@ def test_missing_source_folder(tmp_path):
     mock_settings.user_data_folder = "users"
     mock_settings.multi_user = False
 
-    with patch("ldaca_web_app_backend.core.utils.settings", mock_settings):
-        from ldaca_web_app_backend.core.utils import import_sample_data_for_user
+    with patch("ldaca_web_app.core.utils.settings", mock_settings):
+        from ldaca_web_app.core.utils import import_sample_data_for_user
 
         with pytest.raises(FileNotFoundError):
             import_sample_data_for_user("test_user")

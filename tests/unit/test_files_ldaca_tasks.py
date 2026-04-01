@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 def client(tmp_path):
     """Create a lightweight test client with mocked auth and settings."""
     with (
-        patch("ldaca_web_app_backend.main.settings") as mock_settings,
-        patch("ldaca_web_app_backend.main.init_db"),
-        patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
-        patch("ldaca_web_app_backend.core.utils.settings") as mock_utils_settings,
+        patch("ldaca_web_app.main.settings") as mock_settings,
+        patch("ldaca_web_app.main.init_db"),
+        patch("ldaca_web_app.main.cleanup_expired_sessions"),
+        patch("ldaca_web_app.core.utils.settings") as mock_utils_settings,
     ):
         mock_settings.debug = False
         mock_settings.cors_allow_origin_regex = r"http://localhost(:\\d+)?"
@@ -33,12 +33,12 @@ def client(tmp_path):
         (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)
         (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
 
-        app = __import__("ldaca_web_app_backend.main", fromlist=["app"]).app
+        app = __import__("ldaca_web_app.main", fromlist=["app"]).app
 
         def fake_user():
             return {"id": "test_user"}
 
-        from ldaca_web_app_backend.api import files as files_api
+        from ldaca_web_app.api import files as files_api
 
         app.dependency_overrides[files_api.get_current_user] = fake_user
 
@@ -49,7 +49,7 @@ def client(tmp_path):
 
 def test_import_ldaca_starts_background_task_under_user_scope(client: TestClient):
     """Import should return running state and task metadata without blocking."""
-    from ldaca_web_app_backend.api import files as files_api
+    from ldaca_web_app.api import files as files_api
 
     mock_tm = MagicMock()
     mock_tm.submit_task = AsyncMock(return_value=MagicMock(id="task-123"))
@@ -81,7 +81,7 @@ def test_import_ldaca_starts_background_task_under_user_scope(client: TestClient
 
 def test_import_ldaca_ignores_current_workspace_for_task_scope(client: TestClient):
     """LDaCA import must remain user-scoped even when a workspace is active."""
-    from ldaca_web_app_backend.api import files as files_api
+    from ldaca_web_app.api import files as files_api
 
     mock_tm = MagicMock()
     mock_tm.submit_task = AsyncMock(return_value=MagicMock(id="task-456"))
@@ -112,7 +112,7 @@ def test_import_ldaca_ignores_current_workspace_for_task_scope(client: TestClien
 
 def test_list_files_tasks_returns_user_scope_tasks(client: TestClient):
     """Files task listing should be filtered to user scope for the current user."""
-    from ldaca_web_app_backend.api import files as files_api
+    from ldaca_web_app.api import files as files_api
 
     mock_user_tm = MagicMock()
     mock_user_tm.list = AsyncMock(

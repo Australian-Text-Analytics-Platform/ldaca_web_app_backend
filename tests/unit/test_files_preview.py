@@ -16,10 +16,10 @@ def client(tmp_path):
     """Create test client with mocked settings and user authentication"""
     # Patch settings and DB init to keep app lightweight
     with (
-        patch("ldaca_web_app_backend.main.settings") as mock_settings,
-        patch("ldaca_web_app_backend.main.init_db"),
-        patch("ldaca_web_app_backend.main.cleanup_expired_sessions"),
-        patch("ldaca_web_app_backend.core.utils.settings") as mock_utils_settings,
+        patch("ldaca_web_app.main.settings") as mock_settings,
+        patch("ldaca_web_app.main.init_db"),
+        patch("ldaca_web_app.main.cleanup_expired_sessions"),
+        patch("ldaca_web_app.core.utils.settings") as mock_utils_settings,
     ):
         # Configure main settings
         mock_settings.debug = False
@@ -44,13 +44,13 @@ def client(tmp_path):
         (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
 
         # Import app after settings are patched
-        app = __import__("ldaca_web_app_backend.main", fromlist=["app"]).app
+        app = __import__("ldaca_web_app.main", fromlist=["app"]).app
 
         # Mock auth dependency to return a fixed user
         def fake_user():
             return {"id": "test_user"}
 
-        from ldaca_web_app_backend.api import files as files_api
+        from ldaca_web_app.api import files as files_api
 
         app.dependency_overrides[files_api.get_current_user] = fake_user
 
@@ -148,7 +148,7 @@ def test_excel_preview_handles_dataframe_return_for_sheet_listing(client, tmp_pa
         raise AssertionError("Unexpected read_excel call signature")
 
     with patch(
-        "ldaca_web_app_backend.api.files.pl.read_excel", side_effect=fake_read_excel
+        "ldaca_web_app.api.files.pl.read_excel", side_effect=fake_read_excel
     ):
         resp = client.post(
             "/api/files/preview",
@@ -185,7 +185,7 @@ def test_excel_preview_handles_dict_return_for_sheet_id_zero(client, tmp_path):
         raise AssertionError("Unexpected read_excel call signature")
 
     with patch(
-        "ldaca_web_app_backend.api.files.pl.read_excel", side_effect=fake_read_excel
+        "ldaca_web_app.api.files.pl.read_excel", side_effect=fake_read_excel
     ):
         resp = client.post(
             "/api/files/preview",
@@ -232,9 +232,9 @@ def test_excel_preview_returns_sheet_names_for_selector(client, tmp_path):
             return FakeReader()
 
     with (
-        patch("ldaca_web_app_backend.api.files.fastexcel", FakeFastExcel),
+        patch("ldaca_web_app.api.files.fastexcel", FakeFastExcel),
         patch(
-            "ldaca_web_app_backend.api.files.pl.read_excel", side_effect=fake_read_excel
+            "ldaca_web_app.api.files.pl.read_excel", side_effect=fake_read_excel
         ),
     ):
         resp = client.post(
@@ -280,9 +280,9 @@ def test_excel_preview_sheet_names_xml_fallback_without_fastexcel(client, tmp_pa
         raise AssertionError("Unexpected read_excel call signature")
 
     with (
-        patch("ldaca_web_app_backend.api.files.fastexcel", None),
+        patch("ldaca_web_app.api.files.fastexcel", None),
         patch(
-            "ldaca_web_app_backend.api.files.pl.read_excel", side_effect=fake_read_excel
+            "ldaca_web_app.api.files.pl.read_excel", side_effect=fake_read_excel
         ),
     ):
         resp = client.post(

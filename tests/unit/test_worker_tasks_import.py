@@ -3,7 +3,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, cast
 
-from ldaca_web_app_backend.core import worker_tasks_import
+from ldaca_web_app.core import worker_tasks_import
 
 
 def test_run_ldaca_import_task_uses_data_root_cache_and_restores_cwd(
@@ -49,7 +49,7 @@ def test_run_ldaca_import_task_uses_data_root_cache_and_restores_cwd(
         raising=False,
     )
     monkeypatch.setattr(
-        "ldaca_web_app_backend.core.utils.get_user_data_folder",
+        "ldaca_web_app.core.utils.get_user_data_folder",
         lambda _user_id: user_data_dir,
     )
 

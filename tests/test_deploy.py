@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
-from ldaca_web_app_backend import deploy
+from ldaca_web_app import deploy
 
 
 def test_start_backend_updates_settings_backend_port(

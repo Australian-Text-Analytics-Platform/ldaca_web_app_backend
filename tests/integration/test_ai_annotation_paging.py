@@ -1,5 +1,5 @@
 import pytest
-from ldaca_web_app_backend.analysis.manager import get_task_manager
+from ldaca_web_app.analysis.manager import get_task_manager
 
 
 @pytest.mark.anyio
@@ -24,7 +24,7 @@ async def test_ai_annotation_recomputes_pages_without_persisting_results(
         ]
 
     monkeypatch.setattr(
-        "ldaca_web_app_backend.api.workspaces.analyses.ai_annotation.classify_texts",
+        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
         fake_classify_texts,
     )
 

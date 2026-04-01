@@ -2,7 +2,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from ldaca_web_app_backend.core.utils import get_user_data_folder
+from ldaca_web_app.core.utils import get_user_data_folder
 
 
 @pytest.mark.anyio
