@@ -101,12 +101,22 @@ def _run_all(*, port: int | None = None, host: str | None = None):
     print(f"[ldaca] Open http://localhost:{_port} in your browser", flush=True)
 
     import uvicorn
-    from starlette.responses import FileResponse
+    from starlette.responses import FileResponse, HTMLResponse
     from starlette.staticfiles import StaticFiles
 
     from ldaca_web_app.main import app as fastapi_app
 
     index_html = build_dir / "index.html"
+
+    # Inject window.__BACKEND_URL__ so the frontend discovers the API on this origin
+    # instead of falling back to the hardcoded default port (8001).
+    _index_html_text = index_html.read_text()
+    _backend_url_script = (
+        f'<script>window.__BACKEND_URL__="http://localhost:{_port}";</script>'
+    )
+    _index_html_text = _index_html_text.replace(
+        "<head>", f"<head>{_backend_url_script}", 1
+    )
 
     # Serve static asset subdirectories (JS/CSS/images) under /assets, /tutorials, etc.
     for subdir in build_dir.iterdir():
@@ -132,7 +142,7 @@ def _run_all(*, port: int | None = None, host: str | None = None):
 
     @fastapi_app.get("/")
     async def _serve_index():
-        return FileResponse(str(index_html))
+        return HTMLResponse(_index_html_text)
 
     # Catch-all for root-level static files (favicon.ico, images) and SPA fallback
     @fastapi_app.get("/{path:path}")
@@ -140,7 +150,19 @@ def _run_all(*, port: int | None = None, host: str | None = None):
         file_path = build_dir / path
         if path and file_path.is_file():
             return FileResponse(str(file_path))
-        return FileResponse(str(index_html))
+        return HTMLResponse(_index_html_text)
+
+    # Open the browser once the server is ready
+    import threading
+    import webbrowser
+
+    def _open_browser():
+        import time
+
+        time.sleep(1.5)
+        webbrowser.open(f"http://localhost:{_port}")
+
+    threading.Thread(target=_open_browser, daemon=True).start()
 
     uvicorn.run(
         fastapi_app,
@@ -186,6 +208,18 @@ def _run_frontend(*, port: int | None = None, host: str | None = None):
 
     server = http.server.HTTPServer((_host, _port), SPAHandler)
     print(f"[ldaca] Frontend server listening on {_host}:{_port}", flush=True)
+
+    import threading
+    import webbrowser
+
+    def _open_browser():
+        import time
+
+        time.sleep(0.5)
+        webbrowser.open(f"http://localhost:{_port}")
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
