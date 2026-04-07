@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.1.3"
+version = "0.1.4"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -32,11 +32,12 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
     "psutil>=6.1.0",                            # Process management for proper cleanup of child processes
-    "docworkspace>=0.2.1",
+    "docworkspace>=0.2.2",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
     "pyairtable>=3.3.0",
+    "spacy>=3.7.0",
 ]
 
 [project.optional-dependencies]
@@ -66,11 +67,18 @@ build-backend = "hatchling.build"
 dev = ["twine>=6.2.0", "pytest-asyncio>=0.23.0"]
 
 [tool.hatch.build.targets.sdist]
-include = ["/src", "/src/ldaca_web_app/resources/**"]
+include = [
+    "/src",
+    "/src/ldaca_web_app/resources/**",
+    "/src/ldaca_web_app/_vendor/quotation-tool/**",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ldaca_web_app"]
-include = ["src/ldaca_web_app/resources/**"]
+include = [
+    "src/ldaca_web_app/resources/**",
+    "src/ldaca_web_app/_vendor/quotation-tool/**",
+]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""

@@ -240,11 +240,11 @@ async def extract_remote_paginated(
     return combined_payload
 
 
-def quotation_groups_via_polars_text(df: pl.DataFrame, column: str) -> pl.DataFrame:
-    """Extract quotations into one grouped list column per source document."""
-    import polars_text as pt
+def quotation_groups_via_quote_extractor(df: pl.DataFrame, column: str) -> pl.DataFrame:
+    """Extract quotations using the vendored QuoteExtractor (replaces polars-text)."""
+    from ....core.quotation_extractor import quotation_groups_for_dataframe
 
-    return df.with_columns(pt.quotation(pl.col(column)).alias(QUOTATION_GROUP_COLUMN))
+    return quotation_groups_for_dataframe(df, column)
 
 
 def remote_payload_to_grouped_dataframe(
@@ -477,9 +477,9 @@ async def compute_quote_dataframe(
     if not use_base_only:
         node_data = node.data
         source_df = to_polars_dataframe(node_data)
-        return quotation_groups_via_polars_text(source_df, column)
+        return quotation_groups_via_quote_extractor(source_df, column)
 
-    return quotation_groups_via_polars_text(base_df, column)
+    return quotation_groups_via_quote_extractor(base_df, column)
 
 
 async def compute_on_demand_page(

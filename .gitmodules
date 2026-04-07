@@ -1,0 +1,3 @@
+[submodule "src/ldaca_web_app/_vendor/quotation-tool"]
+	path = src/ldaca_web_app/_vendor/quotation-tool
+	url = https://github.com/Australian-Text-Analytics-Platform/quotation-tool.git

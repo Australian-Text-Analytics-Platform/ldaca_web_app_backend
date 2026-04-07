@@ -10,7 +10,7 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
 ):
     progress_updates: list[tuple[float, str]] = []
 
-    def fake_quotation_groups_via_polars_text(
+    def fake_quotation_groups_via_quote_extractor(
         input_df: pl.DataFrame, source_column: str
     ):
         assert source_column == "__quotation_source__"
@@ -41,8 +41,8 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         )
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.quotation_core.quotation_groups_via_polars_text",
-        fake_quotation_groups_via_polars_text,
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.quotation_groups_via_quote_extractor",
+        fake_quotation_groups_via_quote_extractor,
     )
 
     result = run_quotation_detach_task(

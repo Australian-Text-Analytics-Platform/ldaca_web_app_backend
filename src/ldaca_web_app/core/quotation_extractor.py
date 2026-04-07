@@ -1,0 +1,243 @@
+"""Adapter for the vendored quotation-tool QuoteExtractor.
+
+Wraps the GenderGapTracker QuoteExtractor to provide a Polars-compatible
+interface matching the output format expected by quotation_core.py.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import logging
+import re
+import sys
+import types
+from pathlib import Path
+from typing import Any
+
+import polars as pl
+
+_ENGLISH_DIR = (
+    Path(__file__).resolve().parents[1]
+    / "_vendor"
+    / "quotation-tool"
+    / "GenderGapTracker"
+    / "nlp"
+    / "english"
+)
+_QUOTE_VERBS_PATH = _ENGLISH_DIR / "rules" / "quote_verb_list.txt"
+_SPACY_MODEL = "en_core_web_md"
+
+_nlp_model = None
+_extractor = None
+
+QUOTATION_GROUP_COLUMN = "quotation"
+
+
+def _ensure_stubs():
+    """Install the minimal bson stub required by quote_extractor.py."""
+    if "bson" not in sys.modules:
+        sys.modules["bson"] = types.ModuleType("bson")
+    bson = sys.modules["bson"]
+    if not hasattr(bson, "ObjectId"):
+        setattr(bson, "ObjectId", str)
+
+
+def _load_module(module_name: str, file_path: Path):
+    """Load a vendored Python module from an explicit file path."""
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+
+    spec = importlib.util.spec_from_file_location(module_name, file_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module {module_name} from {file_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _install_quote_extractor_utils_stub():
+    """Provide the minimal utils module required by quote_extractor.py.
+
+    The original module creates a file logger at import time. We only need a
+    quiet in-memory logger because the backend uses `QuoteExtractor.extract_quotes`
+    directly and does not call the script entrypoints.
+    """
+    if "utils" in sys.modules:
+        return
+
+    stub = types.ModuleType("utils")
+
+    def create_logger(*_args, **_kwargs):
+        logger = logging.getLogger("ldaca_web_app.quotation_tool")
+        if not logger.handlers:
+            logger.addHandler(logging.NullHandler())
+        return logger
+
+    setattr(stub, "create_logger", create_logger)
+    sys.modules["utils"] = stub
+
+
+def _get_extractor():
+    """Lazy-load spaCy model and QuoteExtractor (expensive, cached)."""
+    global _nlp_model, _extractor
+
+    if _extractor is not None:
+        return _extractor
+
+    import spacy
+
+    _ensure_stubs()
+    _install_quote_extractor_utils_stub()
+
+    quote_extractor_module = _load_module(
+        "ldaca_vendor_quote_extractor",
+        _ENGLISH_DIR / "quote_extractor.py",
+    )
+    QuoteExtractor = quote_extractor_module.QuoteExtractor
+
+    _nlp_model = spacy.load(_SPACY_MODEL)
+
+    config = {
+        "spacy_lang": _nlp_model,
+        "NLP": {
+            "MAX_BODY_LENGTH": 20000,
+            "QUOTE_VERBS": str(_QUOTE_VERBS_PATH),
+        },
+    }
+    _extractor = QuoteExtractor(config)
+    return _extractor
+
+
+_INDEX_RE = re.compile(r"\((\d+),(\d+)\)")
+
+
+def _remove_accents(txt: str) -> str:
+    """Mirror the quotation-tool accent normalization used before parsing."""
+    txt = re.sub("[àáâãäåā]", "a", txt)
+    txt = re.sub("[èéêëē]", "e", txt)
+    txt = re.sub("[ìíîïıī]", "i", txt)
+    txt = re.sub("[òóôõöō]", "o", txt)
+    txt = re.sub("[ùúûüū]", "u", txt)
+    txt = re.sub("[ýÿȳ]", "y", txt)
+    txt = re.sub("ç", "c", txt)
+    txt = re.sub("ğḡ", "g", txt)
+    txt = re.sub("ñ", "n", txt)
+    txt = re.sub("ş", "s", txt)
+    txt = re.sub("[ÀÁÂÃÄÅĀ]", "A", txt)
+    txt = re.sub("[ÈÉÊËĒ]", "E", txt)
+    txt = re.sub("[ÌÍÎÏİĪ]", "I", txt)
+    txt = re.sub("[ÒÓÔÕÖŌ]", "O", txt)
+    txt = re.sub("[ÙÚÛÜŪ]", "U", txt)
+    txt = re.sub("[ÝŸȲ]", "Y", txt)
+    txt = re.sub("Ç", "C", txt)
+    txt = re.sub("ĞḠ", "G", txt)
+    txt = re.sub("Ñ", "N", txt)
+    txt = re.sub("Ş", "S", txt)
+    return txt
+
+
+def _parse_index(value: str) -> tuple[int | None, int | None]:
+    """Parse '(start,end)' string into (start, end) integers."""
+    if not value:
+        return None, None
+    m = _INDEX_RE.match(value)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
+
+
+def _normalize_quote(raw: dict[str, Any], row_idx: int) -> dict[str, Any]:
+    """Convert QuoteExtractor output dict to the canonical field format."""
+    speaker_start, speaker_end = _parse_index(raw.get("speaker_index", ""))
+    quote_start, quote_end = _parse_index(raw.get("quote_index", ""))
+    verb_start, verb_end = _parse_index(raw.get("verb_index", ""))
+
+    return {
+        "speaker": raw.get("speaker") or None,
+        "speaker_start_idx": speaker_start,
+        "speaker_end_idx": speaker_end,
+        "quote": raw.get("quote") or None,
+        "quote_start_idx": quote_start,
+        "quote_end_idx": quote_end,
+        "verb": raw.get("verb") or None,
+        "verb_start_idx": verb_start,
+        "verb_end_idx": verb_end,
+        "quote_type": raw.get("quote_type") or None,
+        "quote_token_count": raw.get("quote_token_count"),
+        "is_floating_quote": raw.get("is_floating_quote", False),
+        "quote_row_idx": row_idx,
+    }
+
+
+def _preprocess_text(txt: str) -> str:
+    """Apply the subset of quotation-tool preprocessing needed for extraction."""
+    txt = txt.replace("\xa0", " ")
+    txt = _remove_accents(txt)
+    txt = txt.replace("\n", ".\n ")
+    txt = txt.replace("..\n ", ".\n ")
+    txt = txt.replace(". .\n ", ".\n ")
+    txt = txt.replace("  ", " ")
+    txt = txt.replace("\\n", " ")
+    txt = txt.replace("\\n\\n", " ")
+    txt = txt.replace("”", '"')
+    txt = txt.replace("“", '"')
+    txt = txt.replace("〝", '"')
+    txt = txt.replace("〞", '"')
+    return txt
+
+
+def extract_quotations_for_texts(texts: list[str]) -> list[list[dict[str, Any]]]:
+    """Extract quotations from a list of texts using the vendored QuoteExtractor."""
+    extractor = _get_extractor()
+    nlp = extractor.nlp
+    results: list[list[dict[str, Any]]] = []
+
+    for text in texts:
+        if not text or not text.strip():
+            results.append([])
+            continue
+
+        preprocessed = _preprocess_text(text)
+        doc = nlp(preprocessed)
+        raw_quotes = extractor.extract_quotes(doc)
+        normalized = [_normalize_quote(q, idx) for idx, q in enumerate(raw_quotes)]
+        results.append(normalized)
+
+    return results
+
+
+def quotation_groups_for_dataframe(df: pl.DataFrame, column: str) -> pl.DataFrame:
+    """Extract quotations and attach as a grouped list column, matching the
+    format previously produced by polars-text pt.quotation()."""
+    texts = df.get_column(column).to_list()
+    texts = [str(t) if t is not None else "" for t in texts]
+
+    all_quotes = extract_quotations_for_texts(texts)
+
+    struct_dtype = pl.Struct(
+        {
+            "speaker": pl.Utf8,
+            "speaker_start_idx": pl.Int64,
+            "speaker_end_idx": pl.Int64,
+            "quote": pl.Utf8,
+            "quote_start_idx": pl.Int64,
+            "quote_end_idx": pl.Int64,
+            "verb": pl.Utf8,
+            "verb_start_idx": pl.Int64,
+            "verb_end_idx": pl.Int64,
+            "quote_type": pl.Utf8,
+            "quote_token_count": pl.Int64,
+            "is_floating_quote": pl.Boolean,
+            "quote_row_idx": pl.Int64,
+        }
+    )
+
+    return df.with_columns(
+        pl.Series(
+            QUOTATION_GROUP_COLUMN,
+            all_quotes,
+            dtype=pl.List(struct_dtype),
+        )
+    )
