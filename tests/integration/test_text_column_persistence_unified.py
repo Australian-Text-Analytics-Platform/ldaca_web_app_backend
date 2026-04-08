@@ -2,10 +2,10 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
-
-from docworkspace import Node
 from ldaca_web_app.analysis.manager import get_task_manager
 from ldaca_web_app.core.workspace import workspace_manager
+
+from docworkspace import Node
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +30,7 @@ def _stub_worker_task_manager(monkeypatch):
 
 @pytest.mark.anyio
 async def test_text_column_preference_persists_across_text_analyses(
-    authenticated_client, workspace_id
+    authenticated_client, workspace_id, monkeypatch
 ):
     user_id = "test"
     workspace = workspace_manager.get_current_workspace(user_id)
@@ -91,6 +91,23 @@ async def test_text_column_preference_persists_across_text_analyses(
     refreshed = workspace.nodes.get(node.id)
     assert refreshed is not None
     assert refreshed.document == "text_b"
+
+    async def fake_compute_quote_dataframe(
+        node,
+        base_df,
+        column,
+        engine,
+        *,
+        use_base_only=False,
+        **_kwargs,
+    ):
+        grouped_quotes = [[] for _ in range(base_df.height)]
+        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
+
+    monkeypatch.setattr(
+        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        fake_compute_quote_dataframe,
+    )
 
     quotation_response = await authenticated_client.post(
         f"/api/workspaces/nodes/{node.id}/quotation",
