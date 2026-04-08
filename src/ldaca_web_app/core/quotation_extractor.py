@@ -137,7 +137,7 @@ def _download_spacy_model_to_cache() -> Path:
     cache_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="ldaca-spacy-") as temp_dir_name:
         temp_dir = Path(temp_dir_name)
-        archive_path = temp_dir / archive_name
+        archive_path = temp_dir / Path(archive_name).name
 
         with httpx.stream(
             "GET",
