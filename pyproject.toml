@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.1.7"
+version = "0.1.8"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -70,14 +70,14 @@ dev = ["twine>=6.2.0", "pytest-asyncio>=0.23.0"]
 include = [
     "/src",
     "/src/ldaca_web_app/resources/**",
-    "/src/ldaca_web_app/_vendor/quotation-tool/**",
+    "/src/ldaca_web_app/_vendor/GenderGapTracker/**",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ldaca_web_app"]
 include = [
     "src/ldaca_web_app/resources/**",
-    "src/ldaca_web_app/_vendor/quotation-tool/**",
+    "src/ldaca_web_app/_vendor/GenderGapTracker/**",
 ]
 
 [tool.hatch.build.targets.wheel.sources]

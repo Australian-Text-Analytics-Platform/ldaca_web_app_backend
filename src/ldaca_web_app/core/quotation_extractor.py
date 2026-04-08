@@ -23,7 +23,6 @@ import polars as pl
 _ENGLISH_DIR = (
     Path(__file__).resolve().parents[1]
     / "_vendor"
-    / "quotation-tool"
     / "GenderGapTracker"
     / "nlp"
     / "english"
