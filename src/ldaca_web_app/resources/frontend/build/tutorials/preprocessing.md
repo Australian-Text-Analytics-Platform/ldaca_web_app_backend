@@ -6,14 +6,20 @@
 
 ![Preprocessing screenshot](tutorials/assets/preprocessing.png)
 
-Data Preprocessing turns raw text data into analysis-ready datasets. Each sub-tab helps you shape data in a focused way, and every action creates a **new data block** so you can compare results without overwriting the original.
+The Data Preprocessing tools transform and prepare raw text data blocks into analysis-ready datasets. Each tab lets you transform data in a specific way, and every action creates a **new data block** so the original data blocks are not overwritten and all operations are recoverable. There are currently six tool tabs in this section:
+1. Filter - Create a subset of the selected data block based on one or more filter conditions.
+2. Sample - Create a subset of the selected data block by either randomly sampling a certain fraction or number of rows, or by slicing a contiguous chunk of rows from the data block.
+3. Join - Create a new data block by linking two selected data blocks on columns with common values.
+4. Stack - Create a new data block by vertically stacking two selected data blocks that share identical column headers.
+5. Find - Use Regular Expressions (RegEx) to match text patterns in the selected text column, then remove, replace, or extract the matched text into the same column or a new column in the data block.
+6. Create - Combine the contents of two or more columns and save the result as a new column in the data block.
 
-Use this workflow in any tab:
+In order to process relevant data block(s) in any tab, the user needs to:
 
-1. Select one or more data blocks from the workspace.
-2. Configure the transformation.
-3. Review the preview table.
-4. Add the result back to the workspace.
+1. Select one or more data blocks from the workspace - depending on the need.
+2. Configure the transformation to be done with the selected tool.
+3. Review the preview table and make sure it shows expected outcomes.
+4. Add the result back to the workspace as a new child data block of the original selected data block(s).
 
 <h2 id="help-preprocessing-common-section">Common controls</h2>
 
@@ -21,33 +27,37 @@ These controls appear in multiple preprocessing tabs and behave the same way acr
 
 <h3 id="help-preprocessing-common-node-selection">Data block selection panel</h3>
 
-Select one or more data blocks from the workspace graph. Each tab will show only the number of data blocks it supports.
+Select one or more data blocks from the workspace graph or the data block list. Each tool will only work when the required number of data blocks are selected.
 
 <h3 id="help-preprocessing-common-apply-button">Apply action</h3>
 
-Use **Add to Workspace** or **Add to Data Block** to run the transformation. A new data block is created (or the selected data block is updated) without overwriting your source data.
+Use **Add to Workspace** or **Add to Data Block** to run the transformation. A new data block is created (or the selected data block is updated) without overwriting your source data block.
 
 <h3 id="help-preprocessing-common-preview">Preview table</h3>
 
-The preview shows a paginated sample of what the output will look like. It is a quick way to confirm your configuration before applying it.
+The preview pane displays the outcomes in a paginated format with an estimated size. The user can quickly check the results of different configurations before applying the pre-processing and producing a new data block to the workspace.
 
 <h2 id="help-preprocessing-filter-section">Filter</h2>
 
-![Filter screenshot](tutorials/assets/preprocessing_filter.png)
+![Filter screenshot](tutorials/assets/preprocessing/filter.png)
 
-Filter keeps only the rows that match your conditions. Use it to remove noise, focus on a subset, or create a clean working dataset before analysis.
+The filter tool keeps only the rows that match defined conditions. Use it to remove noise, focus on a subset, or create a clean working dataset before analysis. This tool accepts only one selected data block at a time.
 
 <h3 id="help-preprocessing-filter-conditions">Filter conditions</h3>
 
-![Filter conditions screenshot](tutorials/assets/preprocessing_filter_conditions.png)
+![Filter conditions screenshot](tutorials/assets/preprocessing/filter_conditions.png)
 
-Define one or more column-based rules, then choose AND/OR logic to combine them.
+Define one or more column-based filter conditions. Each condition can be configured differently depending on the data type of the selected column. All conditions can be combined using either AND or OR logic.
+1. Use the "Add Condition" button to add additional conditions.
+2. Select the combining logic for all conditions. The app does not support mixed logic chains (e.g. a mix of AND and OR).
+3. Any individual condition can be negated by checking its "Negate" checkbox.
+4. The preview pane displays the number of rows that match the current condition set. It is possible to produce an empty data block if no rows satisfy the conditions or if the conditions conflict with one another.
 
 <h3 id="help-preprocessing-filter-new-node-name">New data block name</h3>
 
-![Filter new data block name screenshot](tutorials/assets/preprocessing_filter_new_node_name.png)
+![Filter new data block name screenshot](tutorials/assets/preprocessing/filter_new_node_name.png)
 
-Name the filtered output so it is easy to spot in the workspace.
+The user can name the filtered output data block so it is easy to spot in the workspace. The new data block is a child data block of the original selected data block.
 
 Key controls include the data block selection panel, the filter conditions builder (with AND/OR logic), the new data block name input, the status summary, the **Add to Workspace** action, and the preview table that shows matched rows.
 
@@ -57,25 +67,42 @@ Practice exercise:
 2. Add a condition that keeps only one category.
 3. Add the filtered result as a new data block.
 
-<h2 id="help-preprocessing-slice-section">Sample</h2>
+<h2 id="help-preprocessing-slice-section">Sample Tool</h2>
 
-![Slice screenshot](tutorials/assets/preprocessing_slice.png)
+![Sample screenshot](tutorials/assets/preprocessing/sample.png)
 
-Sample lets you either extract a contiguous range of rows with <strong>Slice</strong> or draw a <strong>Random Sample</strong> using a fraction (0–1) or absolute row count (≥ 1) and an optional seed. It is useful for debugging, quick inspection, and creating repeatable subsets of larger text data.
+The Sample tool extracts either a contiguous range or a randomly selected set of rows from the selected data block. Extracting a small, representative subset of the data makes exploring and debugging quicker than working with the full-size dataset.
 
-Use the sampling method dropdown at the top of the card to switch between Slice and Random Sample.
+<h3 id="help-preprocessing-slice-offset">Slice</h3>
 
-<h3 id="help-preprocessing-slice-offset">Offset</h3>
+![Slice screenshot](tutorials/assets/preprocessing/sample_slice.png)
 
-When Slice is selected, Offset is the zero-based index of the first row to include.
+The slice option extracts a continuous chunk of rows from the data block. The offset parameter sets the starting row of the chunk (where the first row is 0).
 
 <h3 id="help-preprocessing-slice-length">Length</h3>
 
-When Slice is selected, Length is the number of rows to include.
+The number of rows to include in the extraction. Leave it blank to slice until the end of the data block. To include rows 101–200, set offset = 100 and length = 100.
+
+<h3 id="help-preprocessing-sample-fraction">Fraction/Count</h3>
+
+![Random screenshot](tutorials/assets/preprocessing/sample_random.png)
+
+The random sample option extracts a randomly selected set of rows from the data block. You can specify either a proportion (e.g. 30%) or a fixed number of rows (e.g. 500) from the selected data block.
+
+For proportional sampling, enter a decimal number between 0 and 1. For example, enter 0.3 to extract 30% of the data block. For a fixed row count, enter a whole number, e.g. 100 to extract 100 rows. If the number entered exceeds the size of the data block, all rows will be extracted in a shuffled order.
+
+<h3 id="help-preprocessing-sample-seed">Random Seed</h3>
+
+The random seed controls the reproducibility of the random sampling process. Setting a fixed seed ensures the same rows/order are extracted each time from the **same data**.
+
+- Use any non-negative integer (e.g. 0, 42, 12345).
+- Remember the seed value when you want consistent, reproducible results.
+- If you would like to have a **True Random** subset of selected data block, check the *No Random See* box after the seed control. 
+  - **Warning**: This will not only generate a random sample with unknown seed (*unreproducible*) at the time of creation, but also randomly redraw the sample everytime it is accessed or analysed again. *This randomness will be passed to all derived child data blocks if you elect to sample without a seed, and the results are subject to change at each analysis.* Please only use this option for exploring the dataset.
 
 <h3 id="help-preprocessing-slice-new-node-name">New data block name</h3>
 
-Label the sampled output so it is easy to find later.
+Label the sample output so it is easy to find later. The pre-populated name includes the parameters of the selected operation.
 
 Key controls include the data block selection panel, the sampling method dropdown, mode-specific parameter inputs, the new data block name field, the status summary, the **Add to Workspace** action, and the preview table for the output rows.
 
@@ -87,22 +114,25 @@ Practice exercise:
 
 <h2>Join</h2>
 
-![Join screenshot](tutorials/assets/preprocessing_join.png)
+![Join screenshot](tutorials/assets/preprocessing/join.png)
 
 Join combines two data blocks using matching columns. Use it when your text data lives in one data block and metadata lives in another, or when you need to enrich a data block before analysis.
 
 <h3 id="help-preprocessing-join-section">Join sub-tab overview</h3>
 
-The Join sub-tab guides you through selecting up to two data blocks, choosing join columns, and producing a combined data block.
+The Join tab guides you through selecting two data blocks, choosing the columns from each data block that share common values, and then joining both data blocks side by side based on those columns.
+
+Depending on the join type and the common values between the two data blocks, the resulting data block can have more or fewer rows than either source, but it will include all columns from both data blocks, making it wider than either source.
 
 <h3 id="help-preprocessing-join-column-picker">Join column picker</h3>
 
-![Join column picker screenshot](tutorials/assets/preprocessing_join_column_picker.png)
+![Join column picker screenshot](tutorials/assets/preprocessing/join_column_picker.png)
 
-Column pickers choose which column to match in each data block.
+The column pickers let you choose which column to match in each data block.
 
 - Pick columns that represent the same identifier in both data blocks.
 - Clean, consistent IDs produce the best joins.
+- The app will *guess* and pre-populate the columns most likely to share common values between the two data blocks, but you are responsible for selecting the correct joining columns and join type.
 
 <h3 id="help-preprocessing-join-type">Join type selector</h3>
 
@@ -132,9 +162,9 @@ Practice exercise:
 
 <h2 id="help-preprocessing-concat-section">Stack</h2>
 
-![Stack screenshot](tutorials/assets/preprocessing_concat.png)
+![Stack screenshot](tutorials/assets/preprocessing/concat.png)
 
-Stack combines multiple data blocks vertically. Use it when you want to merge similar tables into one larger data block.
+The Stack tab combines multiple data blocks vertically. Use it when you want to merge multiple data blocks with identical headers into one longer data block.
 
 <h3 id="help-preprocessing-concat-new-node-name">New data block name</h3>
 
@@ -142,7 +172,7 @@ Provide a label for the stacked output. Leave it blank to use the suggested name
 
 <h3 id="help-preprocessing-concat-schema-status">Schema status</h3>
 
-![Schema status screenshot](tutorials/assets/preprocessing_concat_schema_status.png)
+![Schema status screenshot](tutorials/assets/preprocessing/concat_schema_status.png)
 
 The schema status summary tells you whether all selected data blocks share the same column structure and highlights mismatches.
 
@@ -154,11 +184,26 @@ Practice exercise:
 2. Leave the new data block name blank.
 3. Add the stacked result and confirm the column list matches.
 
+<h2 id="help-preprocessing-find-replace">Find</h2>
+
+![Find screenshot](tutorials/assets/preprocessing/find.png)
+The Find tool supports versatile text column manipulation, including cleaning, extracting, replacing, and creating content, powered by Regular Expressions (RegEx). You need to know how to write RegEx patterns to match the words and phrases you need.
+
+The **Find** tool supports two operations on the matched text contents, Replace or Extract. The outcomes can overwrite the same column of text or add to the data block as a new column, if the column name is defined.
+
+![Replace screenshot](tutorials/assets/preprocessing/find_replace.png)
+
+**Replace**: The above figure shows an example of replacing all urls in the post by empty string, hence deleting the urls and create a new column named url_removed.
+
+![Extract screenshot](tutorials/assets/preprocessing/find_extract.png)
+
+**Extract**: This is the example to match and extract all twitter mentions (@username) from the tweet messages, connect with space and create a new column named mentioned to include all mentioned usernames.
+
 <h2 id="help-preprocessing-aggregate-section">Create</h2>
 
-![Create screenshot](tutorials/assets/preprocessing_create.png)
+![Create screenshot](tutorials/assets/preprocessing/create.png)
 
-Create builds computed columns on top of a selected data block. Use it to create derived fields before analysis.
+The **Create** tab allows users to build new columns in a selected data block by merging the contents of multiple columns as text. This is useful when different columns need to be analysed as a whole, e.g. combining a title, abstract, and body text as the full article content.
 
 <h3 id="help-preprocessing-aggregate-builder">Expression builder</h3>
 
@@ -173,7 +218,7 @@ How it works:
 
 <h3 id="help-preprocessing-aggregate-expression">Advanced expression</h3>
 
-![Advanced expression screenshot](tutorials/assets/preprocessing_create_expression.png)
+![Advanced expression screenshot](tutorials/assets/preprocessing/create_expression.png)
 
 Write the expression directly when you need full control, helper functions, or complex logic.
 
