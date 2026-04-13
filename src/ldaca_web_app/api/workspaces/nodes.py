@@ -681,6 +681,23 @@ async def get_node_info(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/nodes/{node_id}/query-plan")
+async def get_node_query_plan(
+    node_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    ws = _require_current_workspace(user_id)
+    try:
+        lazyframe = ws.nodes[node_id].data
+        plan = lazyframe.explain(format="tree")
+        return {"plan": plan}
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/nodes/{node_id}/data")
 async def get_node_data(
     node_id: str,

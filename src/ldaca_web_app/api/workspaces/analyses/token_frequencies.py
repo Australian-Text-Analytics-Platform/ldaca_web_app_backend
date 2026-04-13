@@ -45,7 +45,7 @@ def _token_freq_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock
     return lock
 
 
-DEFAULT_TOKEN_LIMIT = 10
+DEFAULT_TOKEN_LIMIT = 25
 SERVER_LIMIT_MULTIPLIER = 5
 MAX_SERVER_TOKEN_LIMIT = 5000
 
@@ -184,11 +184,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
                 detail=f"Token artifact missing for node {node_id}",
             )
 
-        token_lf = pl.scan_parquet(token_path)
-        if stop_word_set:
-            token_lf = token_lf.filter(~pl.col("token").is_in(list(stop_word_set)))
-
-        token_df = cast(pl.DataFrame, token_lf.collect())
+        token_df = cast(pl.DataFrame, pl.scan_parquet(token_path).collect())
         rows = token_df.to_dicts()
         total_tokens = len(rows)
         display_name = str(node_entry.get("node_name") or node_id)

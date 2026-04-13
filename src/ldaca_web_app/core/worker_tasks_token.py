@@ -58,9 +58,9 @@ def run_token_frequencies_task(
             progress_callback(0.2, "Preparing text data...")
 
         requested_stop_words = sanitize_stop_words(stop_words)
-        effective_limit = int(token_limit) if int(token_limit) > 0 else 10
+        effective_limit = int(token_limit) if int(token_limit) > 0 else 25
 
-        DEFAULT_TOKEN_LIMIT = 10
+        DEFAULT_TOKEN_LIMIT = 25
         SERVER_LIMIT_MULTIPLIER = 5
         MAX_SERVER_TOKEN_LIMIT = 5000
         server_limit = min(
@@ -118,16 +118,20 @@ def run_token_frequencies_task(
                 artifact_root
                 / f"{artifact_prefix}_token_frequencies_{frame_key}.parquet"
             )
-            pl.DataFrame(token_rows).with_columns([
-                pl.col("token").cast(pl.Utf8),
-                pl.col("frequency").cast(pl.Int64),
-            ]).lazy().sink_parquet(token_path)
+            pl.DataFrame(token_rows).with_columns(
+                [
+                    pl.col("token").cast(pl.Utf8),
+                    pl.col("frequency").cast(pl.Int64),
+                ]
+            ).lazy().sink_parquet(token_path)
             display_name = node_display_names.get(frame_key, frame_key)
-            node_artifacts.append({
-                "node_id": frame_key,
-                "node_name": display_name,
-                "token_parquet_path": str(token_path),
-            })
+            node_artifacts.append(
+                {
+                    "node_id": frame_key,
+                    "node_name": display_name,
+                    "token_parquet_path": str(token_path),
+                }
+            )
 
         statistics_path: str | None = None
         if len(node_ids) == 2 and stats_df is not None:
