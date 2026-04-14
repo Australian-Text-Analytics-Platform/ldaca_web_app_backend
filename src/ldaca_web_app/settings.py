@@ -104,22 +104,6 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Feedback / Airtable Configuration
-    airtable_api_key: str | None = Field(default=None, description="Airtable API Key")
-    airtable_base_id: str | None = Field(default=None, description="Airtable Base ID")
-    airtable_table_id: str | None = Field(
-        default=None, description="Airtable Table ID or name"
-    )
-    airtable_field_reply_to_id: str | None = Field(
-        default=None, description="Airtable Field ID for Reply-To / email"
-    )
-    airtable_field_subject_id: str | None = Field(
-        default=None, description="Airtable Field ID for Subject"
-    )
-    airtable_field_comments_id: str | None = Field(
-        default=None, description="Airtable Field ID for Comments"
-    )
-
     model_config = SettingsConfigDict(
         case_sensitive=False,
         extra="ignore",

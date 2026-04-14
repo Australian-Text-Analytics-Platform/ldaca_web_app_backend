@@ -923,26 +923,6 @@ class TopicModelingData(BaseModel):
     meta: Optional[Dict[str, Any]] = None
 
 
-# =============================================================================
-# FEEDBACK MODELS
-# =============================================================================
-
-
-class FeedbackRequest(BaseModel):
-    subject: str
-    comments: str
-    email: Optional[str] = None
-
-
-class FeedbackResponse(BaseModel):
-    """Unified feedback response model."""
-
-    state: str  # 'successful' | 'failed'
-    message: str
-    record_id: Optional[str] = None
-    meta: Dict[str, Any] = {}
-
-
 class TopicModelingResponse(BaseModel):
     state: str  # 'successful', 'failed', 'running', 'cancelled'
     message: str
