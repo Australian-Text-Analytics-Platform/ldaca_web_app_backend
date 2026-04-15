@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import re
 import shutil
 import tempfile
@@ -9,16 +10,17 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-
-from docworkspace.workspace.core import Workspace
 
 from ...core.auth import get_current_user
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
 from .utils import update_workspace
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["lifecycle"])
 
@@ -122,10 +124,7 @@ async def create_workspace(
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-
-        print(f"ERROR: Workspace creation error: {e}")
-        print(traceback.format_exc())
+        logger.error("Workspace creation error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
             detail=f"Internal server error during workspace creation: {e}",

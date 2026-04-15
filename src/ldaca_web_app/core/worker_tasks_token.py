@@ -5,10 +5,13 @@ Separated from `worker.py` to keep the worker module focused and smaller.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from .analysis_helpers import sanitize_stop_words
+
+logger = logging.getLogger(__name__)
 
 
 def run_token_frequencies_task(
@@ -46,7 +49,7 @@ def run_token_frequencies_task(
         import polars as pl
         import polars_text as pt
 
-        print(f"[Worker] Starting token frequencies task for workspace {workspace_id}")
+        logger.info("Starting token frequencies task for workspace %s", workspace_id)
 
         artifact_root = Path(artifact_dir)
         artifact_root.mkdir(parents=True, exist_ok=True)
@@ -169,11 +172,11 @@ def run_token_frequencies_task(
         if progress_callback:
             progress_callback(1.0, "Token frequency analysis completed")
 
-        print("[Worker] Token frequencies completed successfully")
+        logger.info("Token frequencies completed successfully")
         return result_payload
 
     except Exception as e:
-        print(f"[Worker] Token frequencies failed: {str(e)}")
+        logger.error("Token frequencies failed: %s", e)
         if progress_callback:
             progress_callback(-1, f"Failed: {str(e)}")
         raise

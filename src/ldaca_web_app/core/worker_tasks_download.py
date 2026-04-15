@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
 import zipfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_download_name(name: str) -> str:
@@ -36,9 +39,11 @@ def run_workspace_download_task(
     try:
         from ldaca_web_app.core.utils import get_user_data_folder
 
-        print(
-            f"[Worker {os.getpid()}] Starting workspace download task "
-            f"for user {user_id}, workspace {workspace_id}"
+        logger.info(
+            "[Worker %d] Starting workspace download task for user %s, workspace %s",
+            os.getpid(),
+            user_id,
+            workspace_id,
         )
 
         if progress_callback:
@@ -102,8 +107,10 @@ def run_workspace_download_task(
         if progress_callback:
             progress_callback(1.0, "ZIP archive ready for download")
 
-        print(
-            f"[Worker {os.getpid()}] Workspace download task completed: {artifact_path}"
+        logger.info(
+            "[Worker %d] Workspace download task completed: %s",
+            os.getpid(),
+            artifact_path,
         )
 
         return {
@@ -115,7 +122,7 @@ def run_workspace_download_task(
         }
 
     except Exception as e:
-        print(f"[Worker {os.getpid()}] Workspace download task failed: {e}")
+        logger.error("[Worker %d] Workspace download task failed: %s", os.getpid(), e)
         if progress_callback:
             progress_callback(-1, f"Failed: {e}")
         raise

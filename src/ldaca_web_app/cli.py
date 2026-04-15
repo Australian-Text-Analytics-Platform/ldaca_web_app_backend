@@ -9,8 +9,11 @@ Usage:
 """
 
 import atexit
+import logging
 import signal
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_args(argv: list[str] | None = None):
@@ -59,7 +62,7 @@ def _setup_signal_handlers() -> None:
             parent = psutil.Process(os.getpid())
             children = parent.children(recursive=True)
             if children:
-                print(f"Cleanup: Terminating {len(children)} child processes...")
+                logger.info("Cleanup: Terminating %d child processes...", len(children))
                 for child in children:
                     try:
                         child.terminate()
@@ -68,17 +71,17 @@ def _setup_signal_handlers() -> None:
                 gone, alive = psutil.wait_procs(children, timeout=1)
                 for child in alive:
                     try:
-                        print(f"Cleanup: Force killing process {child.pid}")
+                        logger.warning("Cleanup: Force killing process %s", child.pid)
                         child.kill()
                     except psutil.NoSuchProcess:
                         pass
         except ImportError:
-            print("Warning: psutil not available for comprehensive process cleanup")
+            logger.warning("psutil not available for comprehensive process cleanup")
         except Exception as e:
-            print(f"Warning: Error during child process cleanup: {e}")
+            logger.warning("Error during child process cleanup: %s", e)
 
     def _signal_handler(signum, frame):
-        print(f"\nReceived signal {signum}, shutting down gracefully...")
+        logger.info("Received signal %s, shutting down gracefully...", signum)
         _cleanup_child_processes()
         sys.exit(0)
 
@@ -108,8 +111,9 @@ def main(argv: list[str] | None = None):
     """CLI entry point dispatching to backend, frontend, or both."""
     args = _parse_args(argv)
 
-    from ._logging import setup_file_logging
+    from ._logging import setup_file_logging, setup_logging
 
+    setup_logging()
     setup_file_logging("cli")
     _setup_signal_handlers()
 
@@ -147,12 +151,12 @@ if __name__ == "__main__":
     # Worker processes will have names like 'Process-1', 'Process-2', etc.
     # The main process has name 'MainProcess'
     if mp.current_process().name == "MainProcess":
-        print("[cli] Running in MainProcess, starting server", flush=True)
+        logger.info("Running in MainProcess, starting server")
         main()
     else:
-        print(
-            f"[cli] Running in child process ({mp.current_process().name}), skipping server startup",
-            flush=True,
+        logger.debug(
+            "Running in child process (%s), skipping server startup",
+            mp.current_process().name,
         )
     # Child processes will exit here without starting uvicorn
     # Child processes will exit here without starting uvicorn

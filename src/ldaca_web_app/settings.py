@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     server_host: str = Field(default="0.0.0.0", description="Server host")
     backend_port: int = Field(default=8001, description="Backend server port")
     debug: bool = Field(default=False, description="Debug mode")
+    log_level: str = Field(
+        default="INFO",
+        description="Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+    )
+    log_file: str | None = Field(
+        default=None,
+        description="Log file name (relative to data_root). None disables file logging.",
+    )
     quotation_service_timeout: float = Field(
         default=30.0, description="Timeout (seconds) for remote quotation services"
     )

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from typing import Any, Dict, Optional
 
@@ -16,6 +17,8 @@ from fastapi.responses import StreamingResponse
 from ..analysis.manager import get_task_manager as get_analysis_task_manager
 from ..core.auth import get_current_user
 from ..core.workspace import workspace_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tasks", tags=["task_streaming"])
 
@@ -136,9 +139,9 @@ async def stream_tasks(
                 last_heartbeat = time.time()
 
         except asyncio.CancelledError:  # pragma: no cover
-            print(f"Unified SSE stream cancelled for user {user_id}")
+            logger.debug("Unified SSE stream cancelled for user %s", user_id)
         except Exception as exc:  # pragma: no cover
-            print(f"Unified SSE stream error: {exc}")
+            logger.error("Unified SSE stream error: %s", exc)
             error_data = {
                 "type": "error",
                 "message": str(exc),
@@ -149,7 +152,9 @@ async def stream_tasks(
             try:
                 await tm.unsubscribe(user_id, None, queue)
             except Exception as exc:
-                print(f"Error unsubscribing unified stream for user {user_id}: {exc}")
+                logger.error(
+                    "Error unsubscribing unified stream for user %s: %s", user_id, exc
+                )
 
     return StreamingResponse(
         event_generator(),

@@ -16,11 +16,14 @@ message so the UI can surface actionable feedback.
 from __future__ import annotations
 
 import ast
+import logging
 import math
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, List, Sequence
 
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "build_polars_expression",
@@ -83,6 +86,7 @@ def build_polars_expression(expression: str, *, columns: Iterable[str]) -> pl.Ex
     try:
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:  # pragma: no cover - exercised via integration tests
+        logger.debug("Expression parse failed: %s", expression)
         raise ExpressionParseError(f"Invalid expression syntax: {exc.msg}") from exc
 
     builder = _PolarsExpressionBuilder(columns=set(columns))
@@ -91,6 +95,7 @@ def build_polars_expression(expression: str, *, columns: Iterable[str]) -> pl.Ex
     except ExpressionParseError:
         raise
     except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("Expression build failed for %r: %s", expression, exc)
         raise ExpressionParseError(str(exc)) from exc
 
     return wrapped.expr

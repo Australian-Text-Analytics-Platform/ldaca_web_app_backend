@@ -431,10 +431,7 @@ async def run_sequential_analysis(
     except HTTPException:
         raise
     except Exception as e:  # pragma: no cover
-        import traceback
-
-        print(f"ERROR: Unexpected sequential analysis error: {e}")
-        print(traceback.format_exc())
+        logger.error("Unexpected sequential analysis error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 

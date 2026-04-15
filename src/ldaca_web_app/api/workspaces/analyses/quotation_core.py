@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
+
+logger = logging.getLogger(__name__)
 
 from ....core.utils import stringify_unsafe_integers
 from ....models import QuotationEngineConfig, QuotationEngineType
@@ -48,6 +51,7 @@ def normalize_context_length(value: Any) -> int:
     try:
         numeric = int(value)
     except TypeError, ValueError:
+        logger.debug("Non-numeric context length %r, using default", value)
         return DEFAULT_CONTEXT_LENGTH
     if numeric < 0:
         return 0
@@ -71,6 +75,7 @@ def normalize_pagination(
     try:
         normalized_size = int(page_size) if page_size is not None else DEFAULT_PAGE_SIZE
     except TypeError, ValueError:
+        logger.debug("Non-numeric page_size %r, using default", page_size)
         normalized_size = DEFAULT_PAGE_SIZE
     if normalized_size <= 0:
         normalized_size = DEFAULT_PAGE_SIZE
@@ -157,6 +162,7 @@ def stable_document_items(
         try:
             return (0, int(identifier))
         except TypeError, ValueError:
+            logger.debug("Non-numeric document key %r, sorting as string", identifier)
             return (1, identifier)
 
     items.sort(key=_key)
@@ -507,6 +513,7 @@ async def compute_on_demand_page(
         schema = lazy_df.collect_schema()
         available_columns = set(schema.keys())
     except Exception:
+        logger.debug("Could not collect schema for quotation sort")
         available_columns = set()
 
     effective_sort_by = sort_by if sort_by and sort_by in available_columns else None

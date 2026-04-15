@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import random
 from typing import Any, Callable, Dict, Optional, cast
@@ -10,6 +11,8 @@ from ..api.workspaces.analyses.generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
 )
+
+logger = logging.getLogger(__name__)
 
 _EMBEDDER_CACHE: dict[str, Any] = {}
 
@@ -66,8 +69,10 @@ def run_topic_modeling_task(
         from bertopic import BERTopic
         from bertopic._utils import select_topic_representation
 
-        print(
-            f"[Worker {os.getpid()}] Starting topic modeling task for workspace {workspace_id}"
+        logger.info(
+            "[Worker %d] Starting topic modeling task for workspace %s",
+            os.getpid(),
+            workspace_id,
         )
 
         artifact_root = Path(artifact_dir)
@@ -342,8 +347,10 @@ def run_topic_modeling_task(
                     ValueError,
                     RuntimeError,
                 ) as umap_error:
-                    print(
-                        f"[Worker {os.getpid()}] UMAP failed: {umap_error}. Falling back to PCA."
+                    logger.warning(
+                        "[Worker %d] UMAP failed: %s. Falling back to PCA.",
+                        os.getpid(),
+                        umap_error,
                     )
                     from sklearn.decomposition import PCA
 
@@ -435,11 +442,11 @@ def run_topic_modeling_task(
         if progress_callback:
             progress_callback(1.0, "Topic modeling completed")
 
-        print(f"[Worker {os.getpid()}] Topic modeling completed successfully")
+        logger.info("[Worker %d] Topic modeling completed successfully", os.getpid())
         return result
 
     except Exception as e:
-        print(f"[Worker {os.getpid()}] Topic modeling failed: {str(e)}")
+        logger.error("[Worker %d] Topic modeling failed: %s", os.getpid(), e)
         if progress_callback:
             progress_callback(-1, f"Failed: {str(e)}")
         raise

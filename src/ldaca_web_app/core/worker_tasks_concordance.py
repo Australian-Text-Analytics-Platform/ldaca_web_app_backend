@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Optional
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
@@ -10,6 +11,8 @@ from ..api.workspaces.analyses.generated_columns import (
     CORE_CONCORDANCE_COLUMNS,
     concordance_struct_projection,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run_concordance_detach_task(
@@ -43,7 +46,7 @@ def run_concordance_detach_task(
 
         from docworkspace import Node
 
-        print(f"[Worker {os.getpid()}] Starting concordance detach task")
+        logger.info("[Worker %d] Starting concordance detach task", os.getpid())
 
         if progress_callback:
             progress_callback(0.2, "Preparing text data...")
@@ -122,7 +125,9 @@ def run_concordance_detach_task(
         if progress_callback:
             progress_callback(1.0, "Concordance detach completed")
 
-        print(f"[Worker {os.getpid()}] Concordance detach task completed successfully")
+        logger.info(
+            "[Worker %d] Concordance detach task completed successfully", os.getpid()
+        )
 
         return {
             "state": "successful",

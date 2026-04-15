@@ -1,3 +1,4 @@
+import logging
 import secrets
 import uuid
 from collections.abc import AsyncGenerator
@@ -13,6 +14,8 @@ from sqlalchemy.sql import func
 from sqlalchemy.sql.elements import ColumnElement
 
 from .settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 # SQLAlchemy setup
@@ -103,7 +106,7 @@ async def init_db():
     data_root = settings.get_data_root()
     data_root.mkdir(parents=True, exist_ok=True)
     await create_db_and_tables()
-    print(f"SUCCESS: Database initialized at: {settings.get_database_url()}")
+    logger.info("Database initialized at: %s", settings.get_database_url())
 
 
 async def get_or_create_user(
@@ -322,6 +325,6 @@ async def update_user_folder_path(user_id: str, folder_path: str) -> None:
         if user:
             user.user_folder_path = folder_path
             await session.commit()
-            print(f"SUCCESS: Updated user {user_id} folder path to: {folder_path}")
+            logger.info("Updated user %s folder path to: %s", user_id, folder_path)
         else:
-            print(f"WARNING: User {user_id} not found for folder path update")
+            logger.warning("User %s not found for folder path update", user_id)

@@ -101,7 +101,7 @@ class WorkspaceManager:
             path.mkdir(parents=True, exist_ok=True)
             os.chdir(path)
         except Exception as exc:  # pragma: no cover
-            print(f"Failed to set working directory to {path}: {exc}")
+            logger.warning("Failed to set working directory to %s: %s", path, exc)
 
     def _workspace_artifacts_dir_from_workspace_dir(self, workspace_dir: Path) -> Path:
         """Return workspace-scoped analysis artifact directory.
@@ -159,8 +159,10 @@ class WorkspaceManager:
             self.unload_workspace(user_id, save=True)
         target_dir = self._get_indexed_path(user_id, workspace_id)
         if target_dir is None:
-            print(
-                f"Workspace folder not found for workspace {workspace_id} under user {user_id}"
+            logger.warning(
+                "Workspace folder not found for workspace %s under user %s",
+                workspace_id,
+                user_id,
             )
             return False
         try:
@@ -170,8 +172,11 @@ class WorkspaceManager:
             self._set_working_dir(updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover
-            print(
-                f"Failed to deserialize workspace {workspace_id} from {target_dir}: {e}"
+            logger.error(
+                "Failed to deserialize workspace %s from %s: %s",
+                workspace_id,
+                target_dir,
+                e,
             )
             return False
         if not new_ws:

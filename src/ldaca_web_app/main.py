@@ -6,6 +6,7 @@ Modular, production-ready text analysis platform with multi-user support
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -30,6 +31,8 @@ from .core import docworkspace_data_types  # noqa: F401
 from .db import cleanup_expired_sessions, init_db
 from .settings import settings
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,68 +45,72 @@ async def lifespan(app: FastAPI):
     - Initializes data folders/DB/session cleanup and performs safe worker shutdown.
     """
     # Setup file logging for packaged app (especially Windows)
-    from ._logging import setup_file_logging
+    from ._logging import setup_file_logging, setup_logging
 
+    setup_logging()
     log_file: IO[str] | None = setup_file_logging("main")
 
     # Startup
-    print("=" * 70, flush=True)
-    print("[main] Starting LDaCA Web App...", flush=True)
-    print(f"[main] Platform: {sys.platform}", flush=True)
-    print(f"[main] Python version: {sys.version}", flush=True)
-    print("=" * 70, flush=True)
+    logger.info("=" * 60)
+    logger.info("Starting LDaCA Web App...")
+    logger.info("Platform: %s", sys.platform)
+    logger.info("Python version: %s", sys.version)
+    logger.info("=" * 60)
 
-    print("[main] Step 1: Preparing runtime", flush=True)
-    print("[main] Step 1 complete", flush=True)
+    logger.info("Step 1: Preparing runtime")
+    logger.info("Step 1 complete")
 
     # Ensure DATA_ROOT and data folders exist before DB init
-    print("[main] Step 2: Creating data folders", flush=True)
+    logger.info("Step 2: Creating data folders")
     settings.get_data_root().mkdir(parents=True, exist_ok=True)
     settings.get_user_data_folder().mkdir(parents=True, exist_ok=True)
     sample_override = settings.get_sample_data_folder()
     if sample_override:
         sample_override.mkdir(parents=True, exist_ok=True)
-        print(f"[main] Sample data folder: {sample_override}", flush=True)
+        logger.info("Sample data folder: %s", sample_override)
     else:
-        print("[main] Sample data folder: packaged resources", flush=True)
+        logger.info("Sample data folder: packaged resources")
     settings.get_database_backup_folder().mkdir(parents=True, exist_ok=True)
-    print("[main] Step 2 complete", flush=True)
+    logger.info("Step 2 complete")
 
     # Initialize database
-    print("[main] Step 3: Initializing database", flush=True)
+    logger.info("Step 3: Initializing database")
     await init_db()
-    print("[main] Step 3a: Database initialized", flush=True)
+    logger.info("Step 3a: Database initialized")
     await cleanup_expired_sessions()
-    print("[main] Step 3 complete", flush=True)
+    logger.info("Step 3 complete")
 
     # Worker pool will start lazily on first task submission
-    print("[main] Step 4: Configuring worker pool", flush=True)
-    print("[main] Worker pool configured for lazy initialization", flush=True)
-    print("[main] Step 4 complete", flush=True)
+    logger.info("Step 4: Configuring worker pool")
+    logger.info("Worker pool configured for lazy initialization")
+    logger.info("Step 4 complete")
 
     # Prefetch heavy ML models in a background thread
-    print("[main] Step 5: Starting background model prefetch", flush=True)
+    logger.info("Step 5: Starting background model prefetch")
     from .core.model_prefetch import start_model_prefetch
 
     start_model_prefetch()
-    print("[main] Step 5 complete (downloads continue in background)", flush=True)
+    logger.info("Step 5 complete (downloads continue in background)")
 
-    print("=" * 70, flush=True)
-    print("[main] SUCCESS: Backend startup complete!", flush=True)
+    logger.info("=" * 60)
+    logger.info("SUCCESS: Backend startup complete!")
 
-    print(
-        f"[main] API Documentation: http://{settings.server_host}:{settings.backend_port}/api/docs"
+    logger.info(
+        "API Documentation: http://%s:%s/api/docs",
+        settings.server_host,
+        settings.backend_port,
     )
-    print(
-        f"[main] Health Check: http://{settings.server_host}:{settings.backend_port}/health",
-        flush=True,
+    logger.info(
+        "Health Check: http://%s:%s/health",
+        settings.server_host,
+        settings.backend_port,
     )
-    print("=" * 70, flush=True)
+    logger.info("=" * 60)
 
     yield  # Application runs here
 
     # Shutdown
-    print("[main] Shutting down Enhanced LDaCA Web App API...", flush=True)
+    logger.info("Shutting down Enhanced LDaCA Web App API...")
 
     # Close log file if it was opened
     if log_file:
@@ -118,11 +125,11 @@ async def lifespan(app: FastAPI):
 
         worker_pool = get_worker_pool()
         if worker_pool.is_running:
-            print("Shutting down worker pool...")
+            logger.info("Shutting down worker pool...")
             worker_pool.shutdown(wait=True, timeout=5.0)
-            print("Worker pool shutdown complete")
+            logger.info("Worker pool shutdown complete")
     except Exception as e:
-        print(f"Warning: Error during worker pool shutdown: {e}")
+        logger.warning("Error during worker pool shutdown: %s", e)
 
     await cleanup_expired_sessions()
 
@@ -323,10 +330,10 @@ def _get_frontend_build_dir():
     pkg = resources.files("ldaca_web_app.resources.frontend")
     build_dir = Path(str(pkg / "build"))
     if not build_dir.is_dir():
-        print(f"[ldaca] ERROR: Frontend build not found at {build_dir}", flush=True)
-        print("[ldaca] Run 'npm run build -w frontend' and copy build/ to", flush=True)
-        print(
-            "[ldaca]   backend/src/ldaca_web_app/resources/frontend/build/", flush=True
+        logger.error("Frontend build not found at %s", build_dir)
+        logger.error(
+            "Run 'npm run build -w frontend' and copy build/ to "
+            "backend/src/ldaca_web_app/resources/frontend/build/"
         )
         raise FileNotFoundError(f"Frontend build not found at {build_dir}")
     return build_dir
@@ -450,9 +457,9 @@ def start_server(
             if _server_task.done():
                 _clear_server_state()
             else:
-                print(
-                    f"Server already running at http://localhost:{current.backend_port}",
-                    flush=True,
+                logger.info(
+                    "Server already running at http://localhost:%s",
+                    current.backend_port,
                 )
                 return _server_task
 

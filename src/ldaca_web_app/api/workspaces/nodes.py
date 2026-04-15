@@ -5,6 +5,7 @@ Maintains identical routes and behavior to preserve backward compatibility.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from datetime import datetime
@@ -13,6 +14,8 @@ from typing import Any, Literal, Optional, cast
 import polars as pl
 from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 
 from docworkspace import Node
 
@@ -60,6 +63,7 @@ def _parse_temporal(value: Any) -> Any:
         try:
             return datetime.fromisoformat(s)
         except Exception:
+            logger.debug("Could not parse temporal value: %s", value)
             return value
     return value
 
@@ -82,6 +86,7 @@ def _coerce_scalar(value: Any) -> Any:
                 return float(value)
             return int(value)
         except Exception:
+            logger.debug("Could not coerce scalar: %s", value)
             return value
     return value
 
@@ -246,6 +251,7 @@ def _build_filter_expression(
             try:
                 expr = expr.not_()
             except Exception:
+                logger.debug("not_() failed for expression, falling back to ~ operator")
                 expr = ~expr
 
         if expr is None:
@@ -434,6 +440,7 @@ def _calculate_concat_row_count(
             )
             total += int(count_df.to_series(0).item())
         except Exception:
+            logger.debug("Could not count rows for concat frame, returning None")
             return None
     return total
 
@@ -549,6 +556,7 @@ async def compute_column_apply(
         if dtype is not None:
             dtype_str = str(dtype)
     except Exception:  # pragma: no cover - best effort only
+        logger.debug("Could not resolve dtype for column %s", column_name)
         dtype_str = None
 
     try:
@@ -896,6 +904,7 @@ async def update_node_name(
     try:
         return node.info()
     except Exception:
+        logger.debug("node.info() failed for %s, returning minimal dict", node_id)
         return {"id": getattr(node, "id", node_id), "name": new_name}
 
 
@@ -936,6 +945,7 @@ async def clone_node(
         try:
             return new_node.info()
         except Exception:
+            logger.debug("new_node.info() failed after clone, returning minimal dict")
             return {"id": getattr(new_node, "id", None), "name": new_name}
     except HTTPException:
         raise
@@ -1280,6 +1290,7 @@ async def join_nodes_preview(
             total_rows_series = total_rows_df.to_series(0)
             total_rows = int(total_rows_series.item())
         except Exception:
+            logger.debug("Could not determine total rows for join preview")
             total_rows = None
 
         offset = (page - 1) * page_size

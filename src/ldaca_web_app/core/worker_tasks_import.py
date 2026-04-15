@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from contextlib import chdir
 from typing import Any, Callable, Dict, Optional
 
 from ldaca_web_app.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _sanitize_name(name: str) -> str:
@@ -45,7 +48,9 @@ def run_ldaca_import_task(
     try:
         from ldaca_web_app.core.utils import get_user_data_folder
 
-        print(f"[Worker {os.getpid()}] Starting LDaCA import task for user {user_id}")
+        logger.info(
+            "[Worker %d] Starting LDaCA import task for user %s", os.getpid(), user_id
+        )
 
         if progress_callback:
             progress_callback(0.1, "Connecting to LDaCA...")
@@ -109,7 +114,7 @@ def run_ldaca_import_task(
         if progress_callback:
             progress_callback(1.0, "Import completed successfully")
 
-        print(f"[Worker {os.getpid()}] LDaCA import completed: {file_path}")
+        logger.info("[Worker %d] LDaCA import completed: %s", os.getpid(), file_path)
 
         return {
             "success": True,
@@ -120,7 +125,7 @@ def run_ldaca_import_task(
         }
 
     except Exception as e:
-        print(f"[Worker {os.getpid()}] LDaCA import failed: {str(e)}")
+        logger.error("[Worker %d] LDaCA import failed: %s", os.getpid(), e)
         if progress_callback:
             progress_callback(-1, f"Failed: {str(e)}")
         raise

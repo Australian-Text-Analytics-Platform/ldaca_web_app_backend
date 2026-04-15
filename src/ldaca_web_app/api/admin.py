@@ -2,6 +2,7 @@
 Admin endpoints
 """
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -10,6 +11,8 @@ from sqlalchemy import select
 from ..core.auth import get_current_user
 from ..db import User, UserSession, async_session_maker, cleanup_expired_sessions
 from ..settings import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -46,6 +49,7 @@ async def list_users(current_user: dict = Depends(get_current_user)):
     - Add `require_admin` dependency before wider deployment to avoid role drift.
     """
     _require_admin(current_user)
+    logger.info("Admin user list requested by %s", current_user["email"])
 
     async with async_session_maker() as session:
         # Get all users
@@ -62,14 +66,16 @@ async def list_users(current_user: dict = Depends(get_current_user)):
             )
             active_sessions = len(session_result.scalars().all())
 
-            user_list.append({
-                "id": str(user.id),
-                "email": user.email,
-                "name": user.name,
-                "created_at": user.created_at,
-                "last_login": user.last_login,
-                "active_sessions": active_sessions,
-            })
+            user_list.append(
+                {
+                    "id": str(user.id),
+                    "email": user.email,
+                    "name": user.name,
+                    "created_at": user.created_at,
+                    "last_login": user.last_login,
+                    "active_sessions": active_sessions,
+                }
+            )
 
         return {
             "users": user_list,
@@ -92,6 +98,7 @@ async def admin_cleanup(current_user: dict = Depends(get_current_user)):
     - Add `require_admin` dependency before wider deployment.
     """
     _require_admin(current_user)
+    logger.info("Session cleanup triggered by %s", current_user["email"])
     await cleanup_expired_sessions()
     return {
         "message": "Expired sessions cleaned up successfully",

@@ -3,6 +3,7 @@ Core utilities for the LDaCA Web App
 """
 
 import io
+import logging
 import os
 import shutil
 import uuid
@@ -16,6 +17,8 @@ from typing import Any, Dict, Iterable, Optional, Union
 import polars as pl
 
 from ..settings import settings
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_TEXT_FILE_EXTENSIONS: set[str] = {
     ".txt",
@@ -233,7 +236,7 @@ def import_sample_data_for_user(user_id: str) -> Dict[str, Any]:
             try:
                 bytes_copied += fp.stat().st_size
             except OSError:
-                pass
+                logger.debug("Could not stat file %s during sample copy", fp)
 
     return {
         "removed_existing": removed_existing,
@@ -316,6 +319,7 @@ def load_data_file(
                     pl.read_excel(file_path, sheet_id=0)
                 )
             except Exception as ex2:
+                logger.error("Failed to read Excel file %s: %s", file_path, ex2)
                 raise RuntimeError(f"Failed to read Excel via polars: {ex2}") from ex
     elif file_type == "zip":
         return read_zip_file(file_path)

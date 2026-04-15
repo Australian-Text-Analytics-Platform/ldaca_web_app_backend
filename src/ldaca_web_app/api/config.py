@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -5,6 +6,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from ..settings import reload_settings, settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/config", tags=["configuration"])
 
@@ -49,6 +52,7 @@ async def update_config(config: ConfigUpdate):
     """
     new_path = Path(config.data_root)
 
+    logger.info("Updating data_root to %s", new_path)
     # Write to env var and reload so the singleton stays in sync
     os.environ["DATA_ROOT"] = str(new_path)
     updated = reload_settings()

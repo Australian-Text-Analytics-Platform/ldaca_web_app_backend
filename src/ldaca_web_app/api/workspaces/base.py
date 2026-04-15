@@ -331,8 +331,8 @@ def _configure_numba_threading():
             if "NUMBA_NUM_THREADS" not in os.environ:
                 # TBB will manage its own threads
                 pass
-            print(
-                "INFO: Numba: Using TBB threading layer (thread-safe, TBB-managed threads)"
+            logger.info(
+                "Numba: Using TBB threading layer (thread-safe, TBB-managed threads)"
             )
         else:
             # Fall back to workqueue with single thread for safety
@@ -342,16 +342,17 @@ def _configure_numba_threading():
             if "NUMBA_NUM_THREADS" not in os.environ:
                 os.environ["NUMBA_NUM_THREADS"] = "1"
             if not numba_available:
-                print(
-                    "INFO: Numba: numba not detected; using workqueue defaults for safety"
+                logger.info(
+                    "Numba: numba not detected; using workqueue defaults for safety"
                 )
             elif tbb_import_error is not None:
-                print(
-                    f"INFO: Numba: TBB detected but not importable ({tbb_import_error}); using workqueue fallback"
+                logger.info(
+                    "Numba: TBB detected but not importable (%s); using workqueue fallback",
+                    tbb_import_error,
                 )
             else:
-                print(
-                    "INFO: Numba: TBB not installed; using workqueue threading layer (single-threaded fallback)"
+                logger.info(
+                    "Numba: TBB not installed; using workqueue threading layer (single-threaded fallback)"
                 )
 
     except Exception as e:
@@ -359,7 +360,7 @@ def _configure_numba_threading():
         os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
         os.environ.setdefault("NUMBA_THREADING_LAYER_PRIORITY", "workqueue omp tbb")
         os.environ.setdefault("NUMBA_NUM_THREADS", "1")
-        print(f"WARNING: Numba: Threading configuration warning: {e}")
+        logger.warning("Numba: Threading configuration warning: %s", e)
 
 
 # Apply the configuration
@@ -482,10 +483,7 @@ async def add_node_to_workspace(
         raise
     except Exception as e:
         # Log and convert unexpected errors to 500
-        import traceback
-
-        print(f"ERROR: Add node error: {str(e)}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error("Add node error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500, detail=f"Internal server error adding node: {str(e)}"
         )

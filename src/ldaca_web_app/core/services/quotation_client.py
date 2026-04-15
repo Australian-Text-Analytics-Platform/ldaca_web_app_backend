@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional
 
 import httpx
 
 from ...models import QuotationEngineConfig, QuotationEngineType
 from ...settings import settings
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "QuotationServiceError",
@@ -102,6 +105,7 @@ async def extract_remote_quotations(
         ) as client:
             response = await client.post(extract_url, json=payload)
     except httpx.RequestError as exc:
+        logger.error("Quotation service unreachable at %s: %s", engine.url, exc)
         raise QuotationServiceError(
             f"Failed to reach quotation service at {engine.url}: {exc}"
         ) from exc
@@ -117,6 +121,7 @@ async def extract_remote_quotations(
                     detail = body["message"]
         except ValueError:
             pass
+        logger.error("Quotation service returned %d: %s", response.status_code, detail)
         raise QuotationServiceError(
             f"Quotation service responded with {response.status_code}: {detail}"
         )

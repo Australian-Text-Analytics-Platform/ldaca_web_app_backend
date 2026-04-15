@@ -7,11 +7,14 @@ tasks can be bulk-cleared when a workspace is unloaded.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
 from .models import AnalysisStatus, AnalysisTask, BaseAnalysisRequest
+
+logger = logging.getLogger(__name__)
 
 # In-memory storage: user_id -> TaskManagerStore
 _TASK_MANAGER_STORE: Dict[str, TaskManagerStore] = {}
@@ -94,6 +97,7 @@ class TaskManager:
             status=AnalysisStatus.PENDING,
         )
         self.store.save_task(task)
+        logger.info("Created analysis task %s for user %s", task_id, self.user_id)
         return task_id
 
     def get_task(self, task_id: str) -> Optional[AnalysisTask]:
@@ -111,11 +115,13 @@ class TaskManager:
     def update_task(self, task_id: str, result: Any) -> None:
         task = self.store.get_task(task_id)
         if task is None:
+            logger.warning("Attempted to update non-existent task %s", task_id)
             return
         task.result = result
         task.status = AnalysisStatus.COMPLETED
         task.updated_at = datetime.now()
         self.store.save_task(task)
+        logger.info("Analysis task %s completed", task_id)
 
     def clear_task(self, task_id: str) -> None:
         self.store.clear_task(task_id)

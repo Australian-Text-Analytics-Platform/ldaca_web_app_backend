@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Dict, Optional
 
 from ..api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
     QUOTE_QUOTE_COLUMN,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def run_quotation_detach_task(
@@ -39,7 +42,7 @@ def run_quotation_detach_task(
             quotation_groups_via_quote_extractor,
         )
 
-        print(f"[Worker {os.getpid()}] Starting quotation detach task")
+        logger.info("[Worker %d] Starting quotation detach task", os.getpid())
 
         if progress_callback:
             progress_callback(0.2, "Preparing text data...")
@@ -100,7 +103,9 @@ def run_quotation_detach_task(
         if progress_callback:
             progress_callback(1.0, "Quotation detach completed")
 
-        print(f"[Worker {os.getpid()}] Quotation detach task completed successfully")
+        logger.info(
+            "[Worker %d] Quotation detach task completed successfully", os.getpid()
+        )
 
         return {
             "state": "successful",

@@ -2,11 +2,14 @@
 Text analysis utility endpoints
 """
 
+import logging
 from functools import lru_cache
 from importlib import resources
 from typing import List
 
 from fastapi import APIRouter
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/text", tags=["text_analysis"])
 
@@ -26,6 +29,7 @@ async def get_default_stop_words(
     try:
         return {"stopwords": _load_stopwords(language)}
     except Exception as e:
+        logger.error("Failed to load stopwords for language %s: %s", language, e)
         return {"error": f"Failed to load stopwords: {str(e)}", "stopwords": []}
 
 
@@ -54,8 +58,7 @@ def _load_stopwords(language: str) -> List[str]:
     normalized = (language or "english").strip().lower()
     filename = LANGUAGE_FILE_MAP.get(normalized, LANGUAGE_FILE_MAP["english"])
     text = (
-        resources
-        .files("ldaca_web_app.resources")
+        resources.files("ldaca_web_app.resources")
         .joinpath(filename)
         .read_text(encoding="utf-8")
     )
