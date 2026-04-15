@@ -3,12 +3,15 @@ Enhanced LDaCA Web App API - Main FastAPI Application
 Modular, production-ready text analysis platform with multi-user support
 """
 
+from __future__ import annotations
+
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, cast
+from typing import IO, Any, cast
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -39,53 +42,9 @@ async def lifespan(app: FastAPI):
     - Initializes data folders/DB/session cleanup and performs safe worker shutdown.
     """
     # Setup file logging for packaged app (especially Windows)
-    log_file = None
-    try:
-        from datetime import datetime
+    from ._logging import setup_file_logging
 
-        # Log to a file in the runtime directory for debugging packaged apps
-        backend_runtime = os.environ.get("LDACA_BACKEND_RUNTIME")
-        if backend_runtime:
-            log_dir = Path(backend_runtime) / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_file_path = log_dir / f"backend_startup_{timestamp}.log"
-            log_file = open(log_file_path, "w", encoding="utf-8")
-
-            # Redirect stdout and stderr to both console and file
-            class TeeOutput:
-                def __init__(self, file_obj, original):
-                    self.file = file_obj
-                    self.original = original
-
-                def write(self, data):
-                    try:
-                        self.original.write(data)
-                        self.original.flush()
-                    except UnicodeEncodeError:
-                        # Windows console may not support all Unicode characters
-                        # Replace problematic characters with ASCII equivalents
-                        safe_data = data.encode("ascii", "replace").decode("ascii")
-                        self.original.write(safe_data)
-                        self.original.flush()
-                    if self.file:
-                        self.file.write(data)
-                        self.file.flush()
-
-                def flush(self):
-                    self.original.flush()
-                    if self.file:
-                        self.file.flush()
-
-                def isatty(self):
-                    # Return False for file output (no TTY colors)
-                    return False
-
-            sys.stdout = TeeOutput(log_file, sys.__stdout__)
-            sys.stderr = TeeOutput(log_file, sys.__stderr__)
-            print(f"[main] Log file created: {log_file_path}", flush=True)
-    except Exception as e:
-        print(f"[main] Failed to setup file logging: {e}", flush=True)
+    log_file: IO[str] | None = setup_file_logging("main")
 
     # Startup
     print("=" * 70, flush=True)
@@ -122,19 +81,21 @@ async def lifespan(app: FastAPI):
     print("[main] Worker pool configured for lazy initialization", flush=True)
     print("[main] Step 4 complete", flush=True)
 
+    # Prefetch heavy ML models in a background thread
+    print("[main] Step 5: Starting background model prefetch", flush=True)
+    from .core.model_prefetch import start_model_prefetch
+
+    start_model_prefetch()
+    print("[main] Step 5 complete (downloads continue in background)", flush=True)
+
     print("=" * 70, flush=True)
     print("[main] SUCCESS: Backend startup complete!", flush=True)
 
-    # Read the actual port/host the server will use. The CLI may override
-    # settings via env vars, but the settings singleton was potentially
-    # created before those env vars were set (during package __init__).
-    _effective_port = os.environ.get("BACKEND_PORT", str(settings.backend_port))
-    _effective_host = os.environ.get("SERVER_HOST", settings.server_host)
     print(
-        f"[main] API Documentation: http://{_effective_host}:{_effective_port}/api/docs"
+        f"[main] API Documentation: http://{settings.server_host}:{settings.backend_port}/api/docs"
     )
     print(
-        f"[main] Health Check: http://{_effective_host}:{_effective_port}/health",
+        f"[main] Health Check: http://{settings.server_host}:{settings.backend_port}/health",
         flush=True,
     )
     print("=" * 70, flush=True)
@@ -148,8 +109,8 @@ async def lifespan(app: FastAPI):
     if log_file:
         try:
             log_file.close()
-        except Exception as exc:
-            print(f"[main] Failed to close startup log file cleanly: {exc}", flush=True)
+        except Exception:
+            pass
 
     # Shutdown worker pool with timeout to prevent hanging
     try:
@@ -339,15 +300,184 @@ async def status():
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
+# ---------------------------------------------------------------------------
+# Unified server launcher
+# ---------------------------------------------------------------------------
 
-    print("Starting Enhanced LDaCA Web App API server...")
+_server: uvicorn.Server | None = None
+_server_task: asyncio.Task[None] | None = None
+
+
+def _clear_server_state(_task: asyncio.Task[None] | None = None) -> None:
+    """Reset cached server state after a background task finishes."""
+    global _server, _server_task
+    _server = None
+    _server_task = None
+
+
+def _get_frontend_build_dir():
+    """Locate the bundled frontend build directory using importlib.resources."""
+    from importlib import resources
+    from pathlib import Path
+
+    pkg = resources.files("ldaca_web_app.resources.frontend")
+    build_dir = Path(str(pkg / "build"))
+    if not build_dir.is_dir():
+        print(f"[ldaca] ERROR: Frontend build not found at {build_dir}", flush=True)
+        print("[ldaca] Run 'npm run build -w frontend' and copy build/ to", flush=True)
+        print(
+            "[ldaca]   backend/src/ldaca_web_app/resources/frontend/build/", flush=True
+        )
+        raise FileNotFoundError(f"Frontend build not found at {build_dir}")
+    return build_dir
+
+
+def _mount_frontend(target_app: FastAPI, port: int) -> None:
+    """Mount the bundled frontend SPA onto *target_app*.
+
+    Injects ``window.__BACKEND_URL__`` into ``index.html`` so the frontend
+    discovers the API on the same origin.
+    """
+    from starlette.responses import FileResponse, HTMLResponse
+    from starlette.staticfiles import StaticFiles
+
+    build_dir = _get_frontend_build_dir()
+    index_html = build_dir / "index.html"
+
+    _index_html_text = index_html.read_text()
+    _backend_url_script = (
+        f'<script>window.__BACKEND_URL__="http://localhost:{port}";</script>'
+    )
+    _index_html_text = _index_html_text.replace(
+        "<head>", f"<head>{_backend_url_script}", 1
+    )
+
+    # Serve static asset subdirectories (JS/CSS/images)
+    for subdir in build_dir.iterdir():
+        if subdir.is_dir():
+            target_app.mount(
+                f"/{subdir.name}",
+                StaticFiles(directory=str(subdir)),
+                name=f"frontend-{subdir.name}",
+            )
+
+    # Replace the default JSON root endpoint with the frontend SPA handler
+    target_app.routes[:] = [
+        r
+        for r in target_app.routes
+        if not (
+            hasattr(r, "path")
+            and r.path == "/"
+            and hasattr(r, "methods")
+            and "GET" in getattr(r, "methods", set())
+        )
+    ]
+
+    @target_app.get("/")
+    async def _serve_index():
+        return HTMLResponse(_index_html_text)
+
+    @target_app.get("/{path:path}")
+    async def _serve_frontend(path: str):
+        file_path = build_dir / path
+        if path and file_path.is_file():
+            return FileResponse(str(file_path))
+        return HTMLResponse(_index_html_text)
+
+
+def _create_frontend_only_app(port: int) -> FastAPI:
+    """Build a minimal FastAPI app that only serves the frontend SPA."""
+    frontend_app = FastAPI(title="LDaCA Frontend", docs_url=None, redoc_url=None)
+    _mount_frontend(frontend_app, port)
+    return frontend_app
+
+
+def start_server(
+    *,
+    backend: bool = True,
+    frontend: bool = True,
+    port: int | None = None,
+    host: str | None = None,
+    background: bool = False,
+) -> asyncio.Task[None] | None:
+    """Unified entry point for launching the LDaCA server.
+
+    Args:
+        backend: Include the full API backend (routers, lifespan, DB, etc.).
+        frontend: Mount the bundled frontend SPA on the same server.
+        port: Port to bind to. Defaults to 8001 (backend) or 3000 (frontend-only).
+        host: Host to bind to. Defaults to ``"localhost"`` when *background* is
+            ``True``, ``"0.0.0.0"`` otherwise.
+        background: When ``True``, start the server as a non-blocking
+            ``asyncio.Task`` (for notebook / Colab usage) and return the task.
+            When ``False`` (default), block with ``uvicorn.run()``.
+
+    Returns:
+        The ``asyncio.Task`` when *background* is ``True``, otherwise ``None``
+        (blocks until the server shuts down).
+
+    Raises:
+        ValueError: If both *backend* and *frontend* are ``False``.
+    """
+    if not backend and not frontend:
+        raise ValueError("At least one of backend or frontend must be True")
+
+    global _server, _server_task
+
+    _port = port or (8001 if backend else 3000)
+    _host = host or ("localhost" if background else "0.0.0.0")
+
+    # Write effective values into env vars, then reload the settings singleton
+    # so every consumer reads consistent, up-to-date config.
+    os.environ["BACKEND_PORT"] = str(_port)
+    os.environ["SERVER_HOST"] = _host
+
+    from .settings import reload_settings
+
+    current = reload_settings()
+
+    # Choose which app to serve
+    if backend:
+        target_app = app
+        if frontend:
+            _mount_frontend(target_app, _port)
+    else:
+        target_app = _create_frontend_only_app(_port)
+
+    if background:
+        # Idempotent: reuse existing task if still running
+        if _server_task is not None:
+            if _server_task.done():
+                _clear_server_state()
+            else:
+                print(
+                    f"Server already running at http://localhost:{current.backend_port}",
+                    flush=True,
+                )
+                return _server_task
+
+        config = uvicorn.Config(
+            target_app,
+            host=current.server_host,
+            port=current.backend_port,
+            reload=False,
+            log_level="info",
+        )
+        _server = uvicorn.Server(config)
+        loop = asyncio.get_running_loop()
+        _server_task = loop.create_task(_server.serve())
+        _server_task.add_done_callback(_clear_server_state)
+        return _server_task
+
+    # Blocking mode
+    is_frozen = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
+    use_reload = current.debug and not is_frozen
 
     uvicorn.run(
-        app,
-        host=settings.server_host,
-        port=settings.backend_port,
-        reload=settings.debug,
+        target_app,
+        host=current.server_host,
+        port=current.backend_port,
+        reload=use_reload,
         log_level="info",
     )
+    return None

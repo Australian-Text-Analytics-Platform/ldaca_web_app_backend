@@ -8,7 +8,6 @@ Why:
 """
 
 from .core.workspace import workspace_manager
-from .deploy import start_backend, start_frontend
-from .main import app
+from .main import app, start_server
 
-__all__ = ["app", "workspace_manager", "start_backend", "start_frontend"]
+__all__ = ["app", "workspace_manager", "start_server"]

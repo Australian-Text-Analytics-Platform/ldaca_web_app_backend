@@ -1,9 +1,10 @@
+import os
 from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from ..settings import settings
+from ..settings import reload_settings, settings
 
 router = APIRouter(prefix="/config", tags=["configuration"])
 
@@ -48,9 +49,10 @@ async def update_config(config: ConfigUpdate):
     """
     new_path = Path(config.data_root)
 
-    # Update settings in memory
-    settings.data_root = new_path
+    # Write to env var and reload so the singleton stays in sync
+    os.environ["DATA_ROOT"] = str(new_path)
+    updated = reload_settings()
 
     return ConfigResponse(
-        data_root=str(settings.get_data_root()), multi_user_mode=settings.multi_user
+        data_root=str(updated.get_data_root()), multi_user_mode=updated.multi_user
     )

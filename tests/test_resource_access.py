@@ -5,10 +5,7 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
-from ldaca_web_app.core.utils import (
-    get_user_data_folder,
-    import_sample_data_for_user,
-)
+from ldaca_web_app.core.utils import get_user_data_folder, import_sample_data_for_user
 from ldaca_web_app.settings import settings
 
 
@@ -35,14 +32,6 @@ def test_binary_sample_resources_present():
     assert xlsx_file.is_file()
     assert zip_file.stat().st_size > 0
     assert xlsx_file.stat().st_size > 0
-
-
-def test_nginx_template_resource():
-    nginx_template = _resource_path("configs/nginx.conf.template")
-    assert nginx_template.is_file()
-    content = nginx_template.read_text(encoding="utf-8")
-    assert "FRONTEND_DIR" in content
-    assert "BACKEND_PORT" in content
 
 
 def test_stopwords_resources():

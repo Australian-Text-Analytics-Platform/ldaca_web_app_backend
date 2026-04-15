@@ -189,3 +189,10 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def reload_settings() -> Settings:
+    """Re-create the global settings singleton from current env vars."""
+    global settings
+    settings = Settings()
+    return settings

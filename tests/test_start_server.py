@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 from ldaca_web_app import main
@@ -10,6 +11,7 @@ def test_start_server_background_creates_task(
 ) -> None:
     monkeypatch.setattr(main, "_server", None)
     monkeypatch.setattr(main, "_server_task", None)
+    monkeypatch.setattr(os, "environ", os.environ.copy())
 
     created_config: dict[str, object] = {}
     task_callbacks: list[object] = []
@@ -49,7 +51,7 @@ def test_start_server_background_creates_task(
     monkeypatch.setattr(main.uvicorn, "Server", FakeServer)
     monkeypatch.setattr(main.asyncio, "get_running_loop", lambda: FakeLoop())
 
-    result = main.start_server(port=8123, background=True)
+    result = main.start_server(port=8123, frontend=False, background=True)
 
     assert result is task_marker
     assert created_config["port"] == 8123
@@ -61,12 +63,13 @@ def test_start_server_background_reuses_existing_task(monkeypatch) -> None:
 
     monkeypatch.setattr(main, "_server", SimpleNamespace(started=False))
     monkeypatch.setattr(main, "_server_task", existing_task)
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     monkeypatch.setattr(
         main.uvicorn,
         "Config",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected")),
     )
 
-    result = main.start_server(port=9000, background=True)
+    result = main.start_server(port=9000, frontend=False, background=True)
 
     assert result is existing_task
