@@ -339,7 +339,7 @@ def _get_frontend_build_dir():
     return build_dir
 
 
-def _mount_frontend(target_app: FastAPI, port: int) -> None:
+def _mount_frontend(target_app: FastAPI) -> None:
     """Mount the bundled frontend SPA onto *target_app*.
 
     Injects ``window.__BACKEND_URL__`` into ``index.html`` so the frontend
@@ -352,8 +352,12 @@ def _mount_frontend(target_app: FastAPI, port: int) -> None:
     index_html = build_dir / "index.html"
 
     _index_html_text = index_html.read_text()
+    # Use window.location.origin so the frontend discovers the API at the
+    # same origin it was loaded from.  A hardcoded "localhost" breaks remote
+    # environments (Colab, Binder, cloud VMs) where the browser is not on
+    # the same machine as the server.
     _backend_url_script = (
-        f'<script>window.__BACKEND_URL__="http://localhost:{port}";</script>'
+        "<script>window.__BACKEND_URL__=window.location.origin;</script>"
     )
     _index_html_text = _index_html_text.replace(
         "<head>", f"<head>{_backend_url_script}", 1
@@ -395,7 +399,7 @@ def _mount_frontend(target_app: FastAPI, port: int) -> None:
 def _create_frontend_only_app(port: int) -> FastAPI:
     """Build a minimal FastAPI app that only serves the frontend SPA."""
     frontend_app = FastAPI(title="LDaCA Frontend", docs_url=None, redoc_url=None)
-    _mount_frontend(frontend_app, port)
+    _mount_frontend(frontend_app)
     return frontend_app
 
 
@@ -447,7 +451,7 @@ def start_server(
     if backend:
         target_app = app
         if frontend:
-            _mount_frontend(target_app, _port)
+            _mount_frontend(target_app)
     else:
         target_app = _create_frontend_only_app(_port)
 
