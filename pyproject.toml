@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.1.12"
+version = "0.1.13"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -62,6 +62,9 @@ markers = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.hooks.custom]
+path = "scripts/hatch_build.py"
+
 [dependency-groups]
 dev = ["twine>=6.2.0", "pytest-asyncio>=0.23.0"]
 
@@ -70,11 +73,20 @@ exclude = ["**/_vendor/"]
 
 [tool.ty.analysis]
 # Optional dependencies guarded by try/except ImportError
-allowed-unresolved-imports = ["ldacatabulator.**"]
+allowed-unresolved-imports = [
+    "ldacatabulator.**",
+    "hatchling.builders.hooks.plugin.interface",
+]
+
+[tool.hatch.build]
+# The extracted build/ dir is in .gitignore; force-include it so both
+# the archive *and* the ready-to-serve directory ship in the package.
+artifacts = ["src/ldaca_web_app/resources/frontend/build/**"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
+    "/scripts/hatch_build.py",
     "/src/ldaca_web_app/resources/**",
     "/src/ldaca_web_app/_vendor/GenderGapTracker/**",
 ]
