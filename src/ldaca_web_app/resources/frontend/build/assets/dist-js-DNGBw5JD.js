@@ -1,2 +1,0 @@
-import{invoke as e}from"./core-rFJYj8lN.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};
-//# sourceMappingURL=dist-js-DNGBw5JD.js.map

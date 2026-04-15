@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 /build/
 dist/
+
+# Frontend build assets (decompressed from build.tar.gz; the archive is tracked)
+src/ldaca_web_app/resources/frontend/build/

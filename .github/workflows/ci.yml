@@ -41,6 +41,17 @@ jobs:
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
 
+      - name: Extract frontend build archive
+        shell: bash
+        run: |
+          FRONTEND_RES=src/ldaca_web_app/resources/frontend
+          if [ -f "$FRONTEND_RES/build.tar.gz" ]; then
+            tar -xzf "$FRONTEND_RES/build.tar.gz" -C "$FRONTEND_RES"
+            echo "Frontend build extracted"
+          else
+            echo "No frontend archive found — skipping extraction"
+          fi
+
       - name: Install dependencies
         shell: bash
         run: uv sync --group dev
