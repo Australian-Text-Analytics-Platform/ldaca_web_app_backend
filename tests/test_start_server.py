@@ -35,7 +35,7 @@ def test_start_server_background_creates_task(
         async def serve(self) -> None:
             return None
 
-    def fake_config(app, host, port, reload, log_level):
+    def fake_config(app, host, port, reload, log_level, root_path=""):
         created_config.update(
             {
                 "app": app,
@@ -43,6 +43,7 @@ def test_start_server_background_creates_task(
                 "port": port,
                 "reload": reload,
                 "log_level": log_level,
+                "root_path": root_path,
             }
         )
         return SimpleNamespace(port=port)
