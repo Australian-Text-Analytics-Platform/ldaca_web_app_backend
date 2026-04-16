@@ -342,26 +342,25 @@ def _get_frontend_build_dir():
 def _mount_frontend(target_app: FastAPI) -> None:
     """Mount the bundled frontend SPA onto *target_app*.
 
-    Injects ``window.__BACKEND_URL__`` into ``index.html`` so the frontend
-    discovers the API on the same origin.
+    Injects ``window.__BASE_PATH__`` into ``index.html`` so the frontend
+    discovers its base path and the API endpoint regardless of deployment
+    scenario (local, server, Binder/JupyterHub proxy, Tauri, etc.).
+
+    The base path comes from the ASGI ``root_path`` which is set by
+    reverse proxies or explicitly via ``--root-path`` in uvicorn.
     """
+    from starlette.requests import Request
     from starlette.responses import FileResponse, HTMLResponse
     from starlette.staticfiles import StaticFiles
 
     build_dir = _get_frontend_build_dir()
     index_html = build_dir / "index.html"
+    _raw_index_html = index_html.read_text()
 
-    _index_html_text = index_html.read_text()
-    # Use window.location.origin so the frontend discovers the API at the
-    # same origin it was loaded from.  A hardcoded "localhost" breaks remote
-    # environments (Colab, Binder, cloud VMs) where the browser is not on
-    # the same machine as the server.
-    _backend_url_script = (
-        "<script>window.__BACKEND_URL__=window.location.origin;</script>"
-    )
-    _index_html_text = _index_html_text.replace(
-        "<head>", f"<head>{_backend_url_script}", 1
-    )
+    def _inject_base_path(html: str, base_path: str) -> str:
+        """Inject __BASE_PATH__ into the HTML <head>."""
+        script = f'<script>window.__BASE_PATH__="{base_path}";</script>'
+        return html.replace("<head>", f"<head>{script}", 1)
 
     # Serve static asset subdirectories (JS/CSS/images)
     for subdir in build_dir.iterdir():
@@ -385,15 +384,17 @@ def _mount_frontend(target_app: FastAPI) -> None:
     ]
 
     @target_app.get("/")
-    async def _serve_index():
-        return HTMLResponse(_index_html_text)
+    async def _serve_index(request: Request):
+        base_path = (request.scope.get("root_path") or "").rstrip("/")
+        return HTMLResponse(_inject_base_path(_raw_index_html, base_path))
 
     @target_app.get("/{path:path}")
-    async def _serve_frontend(path: str):
+    async def _serve_frontend(path: str, request: Request):
         file_path = build_dir / path
         if path and file_path.is_file():
             return FileResponse(str(file_path))
-        return HTMLResponse(_index_html_text)
+        base_path = (request.scope.get("root_path") or "").rstrip("/")
+        return HTMLResponse(_inject_base_path(_raw_index_html, base_path))
 
 
 def _create_frontend_only_app(port: int) -> FastAPI:
@@ -410,6 +411,7 @@ def start_server(
     port: int | None = None,
     host: str | None = None,
     background: bool = False,
+    root_path: str | None = None,
 ) -> asyncio.Task[None] | None:
     """Unified entry point for launching the LDaCA server.
 
@@ -422,6 +424,9 @@ def start_server(
         background: When ``True``, start the server as a non-blocking
             ``asyncio.Task`` (for notebook / Colab usage) and return the task.
             When ``False`` (default), block with ``uvicorn.run()``.
+        root_path: ASGI root path prefix, used when behind a reverse proxy.
+            Auto-detected from ``JUPYTERHUB_SERVICE_PREFIX`` + ``proxy/<port>``
+            if not provided and running inside JupyterHub/Binder.
 
     Returns:
         The ``asyncio.Task`` when *background* is ``True``, otherwise ``None``
@@ -447,6 +452,13 @@ def start_server(
 
     current = reload_settings()
 
+    # Auto-detect root_path from JupyterHub/Binder environment
+    _root_path = root_path
+    if _root_path is None:
+        hub_prefix = os.environ.get("JUPYTERHUB_SERVICE_PREFIX", "")
+        if hub_prefix:
+            _root_path = f"{hub_prefix.rstrip('/')}/proxy/{_port}"
+
     # Choose which app to serve
     if backend:
         target_app = app
@@ -471,6 +483,7 @@ def start_server(
             target_app,
             host=current.server_host,
             port=current.backend_port,
+            root_path=_root_path or "",
             reload=False,
             log_level="info",
         )
@@ -488,6 +501,7 @@ def start_server(
         target_app,
         host=current.server_host,
         port=current.backend_port,
+        root_path=_root_path or "",
         reload=use_reload,
         log_level="info",
     )
