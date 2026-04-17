@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import IO, Any, cast
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import API routers
@@ -29,7 +29,7 @@ from .api.workspaces import router as workspaces_router
 # Ensure DocWorkspace API conversion utilities are available at startup.
 from .core import docworkspace_data_types  # noqa: F401
 from .db import cleanup_expired_sessions, init_db
-from .settings import settings
+from .settings import reload_settings, settings
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ async def lifespan(app: FastAPI):
 
     setup_logging()
     log_file: IO[str] | None = setup_file_logging("main")
+    current_settings = reload_settings()
 
     # Startup
     logger.info("=" * 60)
@@ -62,15 +63,15 @@ async def lifespan(app: FastAPI):
 
     # Ensure DATA_ROOT and data folders exist before DB init
     logger.info("Step 2: Creating data folders")
-    settings.get_data_root().mkdir(parents=True, exist_ok=True)
-    settings.get_user_data_folder().mkdir(parents=True, exist_ok=True)
-    sample_override = settings.get_sample_data_folder()
+    current_settings.get_data_root().mkdir(parents=True, exist_ok=True)
+    current_settings.get_user_data_folder().mkdir(parents=True, exist_ok=True)
+    sample_override = current_settings.get_sample_data_folder()
     if sample_override:
         sample_override.mkdir(parents=True, exist_ok=True)
         logger.info("Sample data folder: %s", sample_override)
     else:
         logger.info("Sample data folder: packaged resources")
-    settings.get_database_backup_folder().mkdir(parents=True, exist_ok=True)
+    current_settings.get_database_backup_folder().mkdir(parents=True, exist_ok=True)
     logger.info("Step 2 complete")
 
     # Initialize database
@@ -97,13 +98,13 @@ async def lifespan(app: FastAPI):
 
     logger.info(
         "API Documentation: http://%s:%s/api/docs",
-        settings.server_host,
-        settings.backend_port,
+        current_settings.server_host,
+        current_settings.backend_port,
     )
     logger.info(
         "Health Check: http://%s:%s/health",
-        settings.server_host,
-        settings.backend_port,
+        current_settings.server_host,
+        current_settings.backend_port,
     )
     logger.info("=" * 60)
 
@@ -349,7 +350,6 @@ def _mount_frontend(target_app: FastAPI) -> None:
     The base path comes from the ASGI ``root_path`` which is set by
     reverse proxies or explicitly via ``--root-path`` in uvicorn.
     """
-    from starlette.requests import Request
     from starlette.responses import FileResponse, HTMLResponse
     from starlette.staticfiles import StaticFiles
 
@@ -439,6 +439,7 @@ def start_server(
         raise ValueError("At least one of backend or frontend must be True")
 
     global _server, _server_task
+    global settings
 
     _port = port or (8001 if backend else 3000)
     _host = host or ("localhost" if background else "0.0.0.0")
@@ -448,9 +449,8 @@ def start_server(
     os.environ["BACKEND_PORT"] = str(_port)
     os.environ["SERVER_HOST"] = _host
 
-    from .settings import reload_settings
-
     current = reload_settings()
+    settings = current
 
     # Auto-detect root_path from JupyterHub/Binder environment
     _root_path = root_path

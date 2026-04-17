@@ -4,6 +4,8 @@ Tests for main application
 
 from unittest.mock import MagicMock, patch
 
+from fastapi.testclient import TestClient
+
 
 class TestMainApp:
     """Test cases for the main FastAPI application"""
@@ -136,7 +138,6 @@ class TestApplicationConfiguration:
         """Test that required features are properly imported and available"""
         # These imports should work with proper package installation
         import polars_text
-
         from docworkspace import Node, Workspace
 
         # Basic validation that classes exist
@@ -186,3 +187,14 @@ class TestApplicationConfiguration:
             assert any("/user" in pattern for pattern in route_prefixes)
             assert any("/admin" in pattern for pattern in route_prefixes)
             assert any("/admin" in pattern for pattern in route_prefixes)
+
+    def test_frontend_only_app_serves_index(self):
+        """Test that the frontend-only app serves the built SPA at root."""
+        from ldaca_web_app.main import _create_frontend_only_app
+
+        client = TestClient(_create_frontend_only_app(3000))
+
+        response = client.get("/")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]

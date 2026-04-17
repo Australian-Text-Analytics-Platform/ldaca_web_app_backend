@@ -45,7 +45,6 @@ deploy = ["jupyter-server-proxy>=4.4.0", "ipython>=9.5.0"]
 
 [project.scripts]
 ldaca-web-app = "ldaca_web_app.cli:main"
-ldaca_web_app = "ldaca_web_app.cli:main"
 
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-markers", "--strict-config"]

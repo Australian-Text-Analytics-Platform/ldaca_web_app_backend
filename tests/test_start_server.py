@@ -56,6 +56,8 @@ def test_start_server_background_creates_task(
 
     assert result is task_marker
     assert created_config["port"] == 8123
+    assert main.settings.backend_port == 8123
+    assert main.settings.server_host == "localhost"
     assert task_callbacks == [main._clear_server_state]
 
 
