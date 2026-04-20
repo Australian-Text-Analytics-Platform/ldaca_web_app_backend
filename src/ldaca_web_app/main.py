@@ -358,8 +358,19 @@ def _mount_frontend(target_app: FastAPI) -> None:
     _raw_index_html = index_html.read_text()
 
     def _inject_base_path(html: str, base_path: str) -> str:
-        """Inject __BASE_PATH__ into the HTML <head>."""
-        script = f'<script>window.__BASE_PATH__="{base_path}";</script>'
+        """Inject runtime globals into the HTML <head>."""
+        import json
+
+        globals_payload = {
+            "__BASE_PATH__": base_path,
+            "__GOOGLE_CLIENT_ID__": settings.google_client_id or "",
+            "__MULTI_USER__": settings.multi_user,
+        }
+        assignments = ";".join(
+            f"window.{key}={json.dumps(value)}"
+            for key, value in globals_payload.items()
+        )
+        script = f"<script>{assignments};</script>"
         return html.replace("<head>", f"<head>{script}", 1)
 
     # Serve static asset subdirectories (JS/CSS/images)

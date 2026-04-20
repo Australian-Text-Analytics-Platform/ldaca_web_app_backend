@@ -46,6 +46,14 @@ def _parse_args(argv: list[str] | None = None):
         default=None,
         help="Host to bind to (default: 0.0.0.0)",
     )
+    parser.add_argument(
+        "--multi-user",
+        action="store_true",
+        help=(
+            "Enable multi-user mode with Google OAuth login. "
+            "Requires the GOOGLE_CLIENT_ID environment variable to be set."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -110,6 +118,25 @@ def _open_browser_after_delay(port: int, delay: float = 1.5) -> None:
 def main(argv: list[str] | None = None):
     """CLI entry point dispatching to backend, frontend, or both."""
     args = _parse_args(argv)
+
+    # Set env vars BEFORE any imports that trigger settings initialization
+    if args.multi_user:
+        import os
+
+        os.environ["MULTI_USER"] = "true"
+        if not os.environ.get("GOOGLE_CLIENT_ID", "").strip():
+            logger.error(
+                "Multi-user mode requires the GOOGLE_CLIENT_ID environment variable. "
+                "Start with: GOOGLE_CLIENT_ID=<your-client-id> ldaca-web-app --multi-user"
+            )
+            sys.exit(2)
+
+        # The package __init__ eagerly imports .main, which constructs the
+        # Settings singleton before main() runs. Refresh it in place so every
+        # `from .settings import settings` binding sees MULTI_USER=true.
+        from .settings import reload_settings
+
+        reload_settings()
 
     from ._logging import setup_file_logging, setup_logging
 

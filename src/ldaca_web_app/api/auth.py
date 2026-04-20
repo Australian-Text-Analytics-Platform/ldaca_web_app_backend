@@ -4,10 +4,12 @@ Unified authentication endpoints following Single Source of Truth principle
 
 import logging
 from typing import Optional
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Request
 from google.auth.transport import requests as grequests
 from google.oauth2 import id_token
+from starlette.responses import RedirectResponse
 
 from ..core.auth import (
     get_available_auth_methods,
@@ -178,6 +180,77 @@ async def google_auth(payload: GoogleIn):
         raise HTTPException(
             status_code=500, detail=f"Failed to create user session: {str(e)}"
         )
+
+
+async def _verify_and_create_session(credential: str) -> dict:
+    """Verify a Google ID token and provision a local user session.
+
+    Shared by both the JSON API (``google_auth``) and the redirect callback
+    (``google_auth_callback``).
+    """
+    if not settings.multi_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Google authentication not available in single-user mode",
+        )
+    if not settings.google_client_id:
+        raise HTTPException(
+            status_code=500, detail="Google authentication not configured"
+        )
+
+    try:
+        info = id_token.verify_oauth2_token(
+            credential, grequests.Request(), audience=settings.google_client_id
+        )
+        logger.info(f"Google auth successful for: {info.get('email')}")
+    except ValueError as e:
+        logger.error(f"Google token verification failed: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid ID token: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error during Google token verification: {e}")
+        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+
+    if not info.get("email_verified"):
+        raise HTTPException(status_code=400, detail="Email not verified")
+
+    user = await get_or_create_user(
+        email=info.get("email"),
+        name=info.get("name"),
+        picture=info.get("picture"),
+        google_id=info.get("sub"),
+    )
+    user_folders = setup_user_folders(user["id"])
+    from ..db import update_user_folder_path
+
+    await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
+
+    session = await create_user_session(user["id"])
+    return {"user": user, "session": session}
+
+
+@router.post("/google/callback")
+async def google_auth_callback(
+    request: Request,
+    credential: str = Form(...),
+    g_csrf_token: str = Form(None),
+):
+    """Handle the Google Identity Services redirect callback.
+
+    Google POSTs the ID-token ``credential`` and a CSRF token here after the
+    user authenticates on Google's consent page (``ux_mode: 'redirect'``).
+    We verify the token, create/find the local user, issue a session, and
+    redirect back to the SPA with the access token in the URL fragment.
+    """
+    if g_csrf_token:
+        cookie_token = request.cookies.get("g_csrf_token")
+        if cookie_token != g_csrf_token:
+            raise HTTPException(status_code=403, detail="CSRF token mismatch")
+
+    result = await _verify_and_create_session(credential)
+    token = result["session"]["access_token"]
+
+    redirect_url = f"/?{urlencode({'auth_token': token})}"
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.get("/me", response_model=UserResponse)
