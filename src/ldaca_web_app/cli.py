@@ -128,7 +128,11 @@ def main(argv: list[str] | None = None):
     else:
         effective_port = 3000
 
-    _open_browser_after_delay(effective_port)
+    # Only auto-open the browser when the frontend is being served. In
+    # backend-only mode (e.g. launched by the Tauri desktop shell) the UI is
+    # provided by the native window, so popping a browser window is noisy.
+    if use_frontend:
+        _open_browser_after_delay(effective_port)
 
     from .main import start_server
 
