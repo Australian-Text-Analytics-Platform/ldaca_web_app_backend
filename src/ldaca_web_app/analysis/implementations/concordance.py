@@ -34,6 +34,9 @@ class ConcordanceRequest(BaseAnalysisRequest):
     whole_word: bool = False
     case_sensitive: bool = False
     combined: bool = False
+    # node_id -> parquet path holding flattened occurrence rows.
+    # Populated when a materialize background task completes for that node.
+    materialized_paths: Optional[Dict[str, str]] = None
 
 
 class ConcordanceResult(BaseAnalysisResult):

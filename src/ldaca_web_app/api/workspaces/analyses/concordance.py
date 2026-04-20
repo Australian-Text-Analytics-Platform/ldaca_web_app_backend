@@ -27,6 +27,7 @@ from ....models import (
     ConcordanceDetachNodeOption,
     ConcordanceDetachOptionsResponse,
     ConcordanceDetachRequest,
+    ConcordanceMaterializeRequest,
 )
 from ..utils import update_workspace
 from .concordance_core import (
@@ -169,7 +170,6 @@ async def run_concordance(
             normalize_saved_request(analysis_request.model_dump()) or {}
         )
         normalized_request.setdefault("page", DEFAULT_CONCORDANCE_PAGE)
-        normalized_request.setdefault("page_size", DEFAULT_CONCORDANCE_PAGE_SIZE)
         if request.sort_by:
             normalized_request["sort_by"] = request.sort_by
         normalized_request["descending"] = request.descending
@@ -383,6 +383,7 @@ async def detach_concordance(
                 "extra_columns_data": extra_columns_data
                 if extra_columns_data
                 else None,
+                "materialized_path": request.materialized_path,
             },
         )
 
@@ -396,6 +397,82 @@ async def detach_concordance(
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Error submitting detach task: {exc}"
+        )
+
+
+@router.post("/nodes/{node_id}/concordance/materialize")
+async def materialize_concordance(
+    node_id: str,
+    request: ConcordanceMaterializeRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Submit a background task that writes the full flattened occurrence parquet.
+
+    Unlike detach, this does not add a node to the workspace. On completion the
+    parent concordance analysis task's `materialized_paths` is updated so
+    subsequent pagination and detach reuse the cached parquet.
+    """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+    tm = workspace_manager.get_task_manager(user_id)
+
+    if node_id not in ws.nodes:
+        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+    node_data = ws.nodes[node_id].data
+
+    corpus_df = (
+        node_data.select([pl.col(request.column)])
+        .filter(
+            pl.col(request.column)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0
+        )
+        .collect()
+    )
+    node_corpus = [
+        str(value) if value is not None else ""
+        for value in corpus_df.get_column(request.column).to_list()
+    ]
+
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    try:
+        task_info = await tm.submit_task(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            task_type="concordance_materialize",
+            task_args={
+                "workspace_dir": str(workspace_dir),
+                "node_corpus": node_corpus,
+                "parent_task_id": request.parent_task_id,
+                "parent_node_id": node_id,
+                "document_column": request.column,
+                "search_word": request.search_word,
+                "num_left_tokens": request.num_left_tokens,
+                "num_right_tokens": request.num_right_tokens,
+                "regex": request.regex,
+                "whole_word": request.whole_word,
+                "case_sensitive": request.case_sensitive,
+                "extra_columns_data": None,
+            },
+        )
+        return {
+            "state": "running",
+            "message": "Concordance materialize started",
+            "data": None,
+            "metadata": {"task_id": task_info.id},
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Error submitting materialize task: {exc}"
         )
 
 

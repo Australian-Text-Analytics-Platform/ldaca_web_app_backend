@@ -45,10 +45,11 @@ class QuotationRequest(BaseAnalysisRequest):
     column: str
     engine: Optional[QuotationEngineConfig] = None
     page: Optional[int] = 1
-    page_size: Optional[int] = 50
+    page_size: Optional[int] = None
     sort_by: Optional[str] = None
     descending: Optional[bool] = True
     context_length: Optional[int] = None
+    materialized_path: Optional[str] = None
 
 
 class QuotationResult(BaseAnalysisResult):

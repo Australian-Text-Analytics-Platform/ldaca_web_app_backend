@@ -25,6 +25,7 @@ from ....models import (
     QuotationDetachOptionsResponse,
     QuotationDetachRequest,
     QuotationEngineConfig,
+    QuotationMaterializeRequest,
     QuotationRequest,
     QuotationResultQuery,
 )
@@ -47,20 +48,12 @@ async def _compute_on_demand_page(
     engine: QuotationEngineConfig,
     *,
     page: int,
-    page_size: int,
+    page_size: Optional[int],
     sort_by: Optional[str],
     descending: bool,
+    materialized_path: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Compute paged quotation payloads via shared quotation-core helper.
-
-    Used by:
-    - `quotation_task_result`
-    - `update_quotation_task_result`
-    - `get_quotation`
-
-    Why:
-    - Centralizes paging/sorting computation across read/update/run flows.
-    """
+    """Compute paged quotation payloads via shared quotation-core helper."""
     compute_quote_dataframe_fn = partial(
         qcore.compute_quote_dataframe,
         extract_remote_fn=extract_remote_quotations,
@@ -77,6 +70,7 @@ async def _compute_on_demand_page(
         sort_by=sort_by,
         descending=descending,
         compute_quote_dataframe_fn=compute_quote_dataframe_fn,
+        materialized_path=materialized_path,
     )
 
 
@@ -162,19 +156,17 @@ async def quotation_task_result(
 
         node = ws.nodes[node_id]
 
-        normalized_page, normalized_size = qcore.normalize_pagination(
-            page if page is not None else 1,
-            page_size if page_size is not None else DEFAULT_PAGE_SIZE,
-        )
+        normalized_page = max(1, int(page)) if isinstance(page, int) and page else 1
 
         return await _compute_on_demand_page(
             node,
             column,
             engine,
             page=normalized_page,
-            page_size=normalized_size,
+            page_size=page_size,
             sort_by=sort_by or None,
             descending=descending if descending is not None else DEFAULT_DESCENDING,
+            materialized_path=req_dict.get("materialized_path"),
         )
 
     return base_result
@@ -267,9 +259,8 @@ async def update_quotation_task_result(
 
     node = ws.nodes[node_id]
 
-    normalized_page, normalized_size = qcore.normalize_pagination(
-        query.page if query.page is not None else 1,
-        query.page_size if query.page_size is not None else DEFAULT_PAGE_SIZE,
+    normalized_page = (
+        max(1, int(query.page)) if isinstance(query.page, int) and query.page else 1
     )
 
     page_payload = await _compute_on_demand_page(
@@ -277,11 +268,12 @@ async def update_quotation_task_result(
         column,
         engine,
         page=normalized_page,
-        page_size=normalized_size,
+        page_size=query.page_size,
         sort_by=query.sort_by or None,
         descending=(
             query.descending if query.descending is not None else DEFAULT_DESCENDING
         ),
+        materialized_path=base_request.get("materialized_path"),
     )
 
     updated_result = {**page_payload, "preferences": preferences}
@@ -290,7 +282,7 @@ async def update_quotation_task_result(
         task.complete(GenericAnalysisResult(updated_result))
         if hasattr(task.request, "page"):
             task.request.page = normalized_page
-            task.request.page_size = normalized_size
+            task.request.page_size = page_payload.get("pagination", {}).get("page_size")
             task.request.sort_by = query.sort_by or None
             task.request.descending = (
                 query.descending if query.descending is not None else DEFAULT_DESCENDING
@@ -342,16 +334,24 @@ async def get_quotation(
 
         engine = request.engine or QuotationEngineConfig()
 
-        page, page_size = qcore.normalize_pagination(request.page, request.page_size)
+        page = (
+            max(1, int(request.page))
+            if isinstance(request.page, int) and request.page
+            else 1
+        )
 
         page_payload = await _compute_on_demand_page(
             node,
             request.column,
             engine,
             page=page,
-            page_size=page_size,
+            page_size=request.page_size,
             sort_by=request.sort_by or None,
             descending=request.descending,
+            materialized_path=None,
+        )
+        resolved_page_size = page_payload.get("pagination", {}).get(
+            "page_size", DEFAULT_PAGE_SIZE
         )
 
         context_length_pref = DEFAULT_CONTEXT_LENGTH
@@ -376,7 +376,7 @@ async def get_quotation(
             column=request.column,
             engine=request.engine.model_dump(mode="json") if request.engine else None,
             page=page,
-            page_size=page_size,
+            page_size=resolved_page_size,
             sort_by=request.sort_by or None,
             descending=request.descending,
             context_length=context_length_pref,
@@ -549,6 +549,7 @@ async def detach_quotation(
                 "new_node_name": request.new_node_name,
                 "include_document_column": include_document_column,
                 "extra_columns_data": extra_columns_data or None,
+                "materialized_path": request.materialized_path,
             },
             task_name="Detach Quotation",
         )
@@ -564,4 +565,77 @@ async def detach_quotation(
         logger.exception("Error submitting detach quotation task")
         raise HTTPException(
             status_code=500, detail=f"Error submitting detach task: {exc}"
+        )
+
+
+@router.post("/nodes/{node_id}/quotation/materialize")
+async def materialize_quotation(
+    node_id: str,
+    request: QuotationMaterializeRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Submit a background task that writes the full flattened quotation parquet.
+
+    Unlike detach, this does not add a node to the workspace. On completion the
+    parent quotation analysis task's `materialized_path` is updated so subsequent
+    pagination and detach reuse the cached parquet.
+    """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+    tm = workspace_manager.get_task_manager(user_id)
+
+    if node_id not in ws.nodes:
+        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+    node_data = ws.nodes[node_id].data
+
+    corpus_df = (
+        node_data.select([pl.col(request.column)])
+        .filter(
+            pl.col(request.column)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0
+        )
+        .collect()
+    )
+    node_corpus = [
+        str(value) if value is not None else ""
+        for value in corpus_df.get_column(request.column).to_list()
+    ]
+
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    try:
+        task_info = await tm.submit_task(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            task_type="quotation_materialize",
+            task_args={
+                "workspace_dir": str(workspace_dir),
+                "node_corpus": node_corpus,
+                "parent_task_id": request.parent_task_id,
+                "parent_node_id": node_id,
+                "document_column": request.column,
+                "engine_config": request.engine.model_dump() if request.engine else {},
+                "extra_columns_data": None,
+            },
+            task_name="Materialize Quotation",
+        )
+        return {
+            "state": "running",
+            "message": "Quotation materialize started",
+            "data": None,
+            "metadata": {"task_id": task_info.id},
+        }
+    except Exception as exc:
+        logger.exception("Error submitting materialize quotation task")
+        raise HTTPException(
+            status_code=500, detail=f"Error submitting materialize task: {exc}"
         )

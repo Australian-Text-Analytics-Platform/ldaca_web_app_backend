@@ -7,9 +7,16 @@ from ldaca_web_app.analysis.manager import get_task_manager
 from ldaca_web_app.api.workspaces.analyses.concordance import (
     DEFAULT_CONCORDANCE_PAGE_SIZE,
 )
+from ldaca_web_app.api.workspaces.analyses.page_size_estimation import (
+    DEFAULT_PAGE_SIZE_CANDIDATES,
+)
 from ldaca_web_app.core.workspace import workspace_manager
 
 from docworkspace import Node
+
+# When a client sends no page_size, the backend estimates a dense first-page size
+# by probing DEFAULT_PAGE_SIZE_CANDIDATES. For small fixtures the estimator falls
+# back to the largest candidate since the 10-occurrence target cannot be reached.
 
 
 def _assert_grouped_result_rows(node_result: dict, *, expected_page_size: int):
@@ -139,7 +146,7 @@ async def test_concordance_single_node_roundtrip(authenticated_client, workspace
     assert node_result["metadata"]["concordance_columns"]
     _assert_grouped_result_rows(
         node_result,
-        expected_page_size=DEFAULT_CONCORDANCE_PAGE_SIZE,
+        expected_page_size=max(DEFAULT_PAGE_SIZE_CANDIDATES),
     )
     assert result_payload["analysis_params"]["node_ids"] == [node.id]
     assert (
@@ -210,9 +217,8 @@ async def test_concordance_single_node_roundtrip(authenticated_client, workspace
     refreshed_payload = await _wait_for_concordance_result(
         authenticated_client, workspace_id, task_id
     )
-    assert (
-        refreshed_payload["data"][node.id]["pagination"]["page_size"]
-        == DEFAULT_CONCORDANCE_PAGE_SIZE
+    assert refreshed_payload["data"][node.id]["pagination"]["page_size"] == max(
+        DEFAULT_PAGE_SIZE_CANDIDATES
     )
 
 
@@ -272,7 +278,7 @@ async def test_concordance_multi_node_combined(authenticated_client, workspace_i
     combined_result = result_payload["data"]["__COMBINED__"]
     _assert_grouped_result_rows(
         combined_result,
-        expected_page_size=DEFAULT_CONCORDANCE_PAGE_SIZE,
+        expected_page_size=max(DEFAULT_PAGE_SIZE_CANDIDATES),
     )
     assert all(
         isinstance(group, list) and group and "__source_node" in group[0]

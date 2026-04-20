@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from functools import partial
 from typing import Any, Optional, cast
 
 import polars as pl
@@ -17,8 +18,10 @@ from .generated_columns import (
     CONC_MATCHED_TEXT_COLUMN,
     CONC_RIGHT_CONTEXT_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
+    MATERIALIZED_CONCORDANCE_COLUMNS,
     concordance_struct_projection,
 )
+from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, estimate_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -278,7 +281,7 @@ def compute_concordance_page(
     request: dict[str, Any],
     *,
     page: int,
-    page_size: int,
+    page_size: Optional[int],
     sort_by: Optional[str],
     descending: bool,
     node_label: Optional[str] = None,
@@ -291,10 +294,13 @@ def compute_concordance_page(
 
     Why:
     - Produces a stable page payload shape shared by single-node and combined
-      result views.
+      result views. When `page_size` is None the size is estimated from the
+      configured candidate ladder so the first page yields dense results.
     """
     total_rows_df = cast(pl.DataFrame, base_lf.select(pl.len()).collect())
     total_source_rows = total_rows_df.item()
+
+    resolved_page_size = _resolve_page_size(base_lf, column, request, page_size)
 
     effective_sort_by: Optional[str] = None
     if sort_by:
@@ -310,8 +316,8 @@ def compute_concordance_page(
                 exc,
             )
 
-    start = max(page - 1, 0) * page_size
-    page_lf = base_lf.slice(start, page_size)
+    start = max(page - 1, 0) * resolved_page_size
+    page_lf = base_lf.slice(start, resolved_page_size)
 
     concordance_lf = build_concordance_lazyframe(page_lf, column, request)
     result_df = cast(pl.DataFrame, concordance_lf.collect())
@@ -320,7 +326,7 @@ def compute_concordance_page(
         node_label=node_label,
     )
 
-    total_source_pages = max(1, math.ceil(total_source_rows / page_size))
+    total_source_pages = max(1, math.ceil(total_source_rows / resolved_page_size))
 
     metadata = {
         "concordance_columns": [c for c in columns if c in CORE_CONCORDANCE_COLUMNS],
@@ -334,7 +340,7 @@ def compute_concordance_page(
         "metadata": metadata,
         "pagination": {
             "page": page,
-            "page_size": page_size,
+            "page_size": resolved_page_size,
             "total_source_rows": total_source_rows,
             "total_source_pages": total_source_pages,
             "result_count": len(page_rows),
@@ -345,6 +351,134 @@ def compute_concordance_page(
             "sort_by": effective_sort_by,
             "descending": descending,
         },
+    }
+
+
+def _count_concordance_hits(
+    base_lf: pl.LazyFrame,
+    column: str,
+    request: dict[str, Any],
+    size: int,
+) -> int:
+    """Return occurrence count when running concordance on the first `size` rows."""
+    try:
+        slice_lf = build_concordance_lazyframe(base_lf.slice(0, size), column, request)
+        count_df = cast(
+            pl.DataFrame,
+            slice_lf.select(
+                pl.col("concordance").list.len().fill_null(0).sum().alias("total")
+            ).collect(),
+        )
+        value = count_df.item()
+    except Exception as exc:
+        logger.debug("Concordance hit probe failed at size=%d: %s", size, exc)
+        return 0
+    return int(value or 0)
+
+
+def _resolve_page_size(
+    base_lf: pl.LazyFrame,
+    column: str,
+    request: dict[str, Any],
+    requested: Optional[int],
+) -> int:
+    """Return an effective page size, estimating when the client omitted one."""
+    if requested is not None and int(requested) > 0:
+        return int(requested)
+    probe = partial(_count_concordance_hits, base_lf, column, request)
+    return estimate_page_size(probe, candidates=DEFAULT_PAGE_SIZE_CANDIDATES)
+
+
+def _serialize_materialized_rows(
+    df: pl.DataFrame,
+    *,
+    node_label: Optional[str] = None,
+) -> tuple[list[list[dict[str, Any]]], list[str]]:
+    """Wrap each flat occurrence row as a single-hit group for UI compatibility."""
+    if df.height == 0:
+        return [], list(df.columns)
+
+    columns = list(df.columns)
+    grouped_rows: list[list[dict[str, Any]]] = []
+    for row in df.to_dicts():
+        hit = dict(row)
+        if node_label:
+            hit["__source_node"] = node_label
+        grouped_rows.append([hit])
+
+    if node_label and "__source_node" not in columns:
+        columns.append("__source_node")
+    return grouped_rows, columns
+
+
+def compute_materialized_page(
+    materialized_path: str,
+    *,
+    page: int,
+    page_size: Optional[int],
+    sort_by: Optional[str],
+    descending: bool,
+    node_label: Optional[str] = None,
+) -> dict[str, Any]:
+    """Paginate a materialized concordance parquet as occurrence rows."""
+    effective_page_size = (
+        int(page_size)
+        if page_size is not None and int(page_size) > 0
+        else DEFAULT_CONCORDANCE_PAGE_SIZE
+    )
+    lazy = pl.scan_parquet(materialized_path)
+    total_rows = cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0
+
+    effective_sort_by: Optional[str] = None
+    if sort_by:
+        try:
+            schema = lazy.collect_schema()
+            if sort_by in schema:
+                lazy = lazy.sort(sort_by, descending=descending)
+                effective_sort_by = sort_by
+        except Exception as exc:
+            logger.debug(
+                "Ignoring unsupported sort_by '%s' for materialized page: %s",
+                sort_by,
+                exc,
+            )
+
+    start = max(page - 1, 0) * effective_page_size
+    slice_df = cast(pl.DataFrame, lazy.slice(start, effective_page_size).collect())
+    rows, columns = _serialize_materialized_rows(slice_df, node_label=node_label)
+
+    total_source_pages = (
+        max(1, math.ceil(total_rows / effective_page_size)) if total_rows else 0
+    )
+
+    metadata = {
+        "concordance_columns": [
+            c for c in columns if c in MATERIALIZED_CONCORDANCE_COLUMNS
+        ],
+        "metadata_columns": [
+            c for c in columns if c not in MATERIALIZED_CONCORDANCE_COLUMNS
+        ],
+        "all_columns": columns,
+    }
+
+    return {
+        "data": stringify_unsafe_integers(rows),
+        "columns": columns,
+        "metadata": metadata,
+        "pagination": {
+            "page": page,
+            "page_size": effective_page_size,
+            "total_source_rows": total_rows,
+            "total_source_pages": total_source_pages,
+            "result_count": len(rows),
+            "has_next": page < total_source_pages,
+            "has_prev": page > 1,
+        },
+        "sorting": {
+            "sort_by": effective_sort_by,
+            "descending": descending,
+        },
+        "materialized": True,
     }
 
 
@@ -386,7 +520,7 @@ def collect_interleaved_combined(
     request: dict[str, Any],
     *,
     page: int,
-    page_size: int,
+    page_size: Optional[int],
     sort_by: Optional[str],
     descending: bool,
     left_label: Optional[str] = None,
@@ -476,6 +610,11 @@ def collect_interleaved_combined(
         left_pag.get("total_source_pages", 0),
         right_pag.get("total_source_pages", 0),
     )
+    resolved_page_size = (
+        left_pag.get("page_size")
+        or right_pag.get("page_size")
+        or (int(page_size) if page_size is not None else DEFAULT_CONCORDANCE_PAGE_SIZE)
+    )
 
     return {
         "data": all_interleaved,
@@ -483,7 +622,7 @@ def collect_interleaved_combined(
         "metadata": metadata,
         "pagination": {
             "page": page,
-            "page_size": page_size,
+            "page_size": resolved_page_size,
             "total_source_rows": total_source_rows,
             "total_source_pages": total_source_pages,
             "result_count": len(all_interleaved),
@@ -514,10 +653,21 @@ def build_concordance_response(
       avoiding payload drift across routes.
     """
     page = int(request.get("page") or DEFAULT_CONCORDANCE_PAGE)
-    page_size = int(request.get("page_size") or DEFAULT_CONCORDANCE_PAGE_SIZE)
+    raw_page_size = request.get("page_size")
+    page_size: Optional[int] = (
+        int(raw_page_size)
+        if raw_page_size is not None and int(raw_page_size) > 0
+        else None
+    )
     sort_by = request.get("sort_by")
     descending = bool(request.get("descending", DEFAULT_CONCORDANCE_DESCENDING))
     combined = bool(request.get("combined"))
+    materialized_paths_raw = request.get("materialized_paths") or {}
+    materialized_paths: dict[str, str] = {
+        str(node_id): str(path)
+        for node_id, path in materialized_paths_raw.items()
+        if isinstance(path, str) and path
+    }
 
     node_ids = request.get("node_ids") or []
 
@@ -525,6 +675,37 @@ def build_concordance_response(
         user_id, workspace_id, request
     )
     data: dict[str, Any] = {}
+
+    # Pre-resolve page_size for non-materialized nodes so combined/separated views
+    # stay consistent. For materialized nodes we rely on the client's choice and
+    # default to DEFAULT_CONCORDANCE_PAGE_SIZE inside compute_materialized_page.
+    if page_size is None and combined is False:
+        estimates: list[int] = []
+        for node_id in node_ids:
+            if node_id in materialized_paths:
+                continue
+            src = node_sources.get(node_id)
+            if not src:
+                continue
+            estimates.append(
+                _resolve_page_size(src["lf"], src["column"], request, None)
+            )
+        if estimates:
+            page_size = max(estimates)
+    if page_size is None and combined and len(node_ids) == 2:
+        left_src = node_sources.get(node_ids[0])
+        right_src = node_sources.get(node_ids[1])
+        estimates_combined: list[int] = []
+        if left_src and node_ids[0] not in materialized_paths:
+            estimates_combined.append(
+                _resolve_page_size(left_src["lf"], left_src["column"], request, None)
+            )
+        if right_src and node_ids[1] not in materialized_paths:
+            estimates_combined.append(
+                _resolve_page_size(right_src["lf"], right_src["column"], request, None)
+            )
+        if estimates_combined:
+            page_size = max(estimates_combined)
 
     if combined and node_ids:
         if len(node_ids) == 2:
@@ -546,12 +727,15 @@ def build_concordance_response(
                     right_label=right_src.get("label"),
                 )
             else:
-                data["__COMBINED__"] = empty_concordance_page(page, page_size)
+                data["__COMBINED__"] = empty_concordance_page(
+                    page, page_size or DEFAULT_CONCORDANCE_PAGE_SIZE
+                )
         else:
             all_rows: list[dict[str, Any]] = []
             columns: list[str] = []
             max_total_source_rows = 0
             max_total_source_pages = 0
+            combined_page_size = page_size or DEFAULT_CONCORDANCE_PAGE_SIZE
             for node_id in node_ids:
                 src = node_sources.get(node_id)
                 if not src:
@@ -561,7 +745,7 @@ def build_concordance_response(
                     src["column"],
                     request,
                     page=page,
-                    page_size=page_size,
+                    page_size=combined_page_size,
                     sort_by=sort_by,
                     descending=descending,
                     node_label=src.get("label"),
@@ -592,7 +776,7 @@ def build_concordance_response(
                 "metadata": metadata,
                 "pagination": {
                     "page": page,
-                    "page_size": page_size,
+                    "page_size": combined_page_size,
                     "total_source_rows": max_total_source_rows,
                     "total_source_pages": max_total_source_pages,
                     "result_count": len(all_rows),
@@ -606,6 +790,16 @@ def build_concordance_response(
         for node_id in node_ids:
             src = node_sources.get(node_id)
             if not src:
+                continue
+            if node_id in materialized_paths:
+                data[node_id] = compute_materialized_page(
+                    materialized_paths[node_id],
+                    page=page,
+                    page_size=page_size,
+                    sort_by=sort_by,
+                    descending=descending,
+                    node_label=src.get("label"),
+                )
                 continue
             data[node_id] = compute_concordance_page(
                 src["lf"],

@@ -3,9 +3,7 @@ from typing import cast
 
 import polars as pl
 from ldaca_web_app.core import worker
-from ldaca_web_app.core.worker_tasks_concordance import (
-    run_concordance_detach_task,
-)
+from ldaca_web_app.core.worker_tasks_concordance import run_concordance_detach_task
 
 
 def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
@@ -26,6 +24,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         new_node_name,
         include_document_column=False,
         extra_columns_data=None,
+        materialized_path=None,
         progress_callback=None,
     ):
         captured["include_document_column"] = include_document_column

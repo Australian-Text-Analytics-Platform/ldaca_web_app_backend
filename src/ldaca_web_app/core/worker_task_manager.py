@@ -476,6 +476,86 @@ class WorkerTaskManager:
                             },
                         )
 
+                # Handle MATERIALIZE tasks (update parent analysis task request)
+                elif task_type in [
+                    "concordance_materialize",
+                    "quotation_materialize",
+                ]:
+                    try:
+                        from ..analysis.manager import get_task_manager
+
+                        if not isinstance(result, dict):
+                            raise ValueError(
+                                "Materialize task result must be a dictionary payload"
+                            )
+                        data = result.get("result")
+                        if not isinstance(data, dict):
+                            raise ValueError(
+                                "Materialize task result missing structured result payload"
+                            )
+                        parent_task_id = data.get("parent_task_id")
+                        parent_node_id = data.get("parent_node_id")
+                        materialized_path = data.get("materialized_path")
+                        if not (
+                            parent_task_id and parent_node_id and materialized_path
+                        ):
+                            raise ValueError(
+                                "Materialize result missing parent_task_id, parent_node_id, or materialized_path"
+                            )
+
+                        task_manager = get_task_manager(user_id)
+                        parent_task = task_manager.get_task(parent_task_id)
+                        if parent_task is None:
+                            raise RuntimeError(
+                                f"Parent analysis task {parent_task_id} not found"
+                            )
+
+                        if task_type == "concordance_materialize":
+                            existing = (
+                                getattr(parent_task.request, "materialized_paths", None)
+                                or {}
+                            )
+                            updated = dict(existing)
+                            updated[str(parent_node_id)] = str(materialized_path)
+                            parent_task.request.materialized_paths = updated
+                        else:
+                            parent_task.request.materialized_path = str(
+                                materialized_path
+                            )
+
+                        parent_task.updated_at = datetime.now()
+                        task_manager.save_task(parent_task)
+                        result_persisted = True
+
+                        await self.emit(
+                            user_id,
+                            workspace_id,
+                            {
+                                "type": "analysis_materialized",
+                                "task_type": task_type,
+                                "task_id": task_info.id,
+                                "parent_task_id": parent_task_id,
+                                "parent_node_id": parent_node_id,
+                                "materialized_path": materialized_path,
+                                "timestamp": time.time(),
+                            },
+                        )
+                    except Exception as mat_err:
+                        logger.error(
+                            f"Failed to finalize materialize task {task_info.id}: {mat_err}"
+                        )
+                        task_info.status = TaskStatus.FAILED
+                        task_info.error = str(mat_err)
+                        await self.emit(
+                            user_id,
+                            workspace_id,
+                            {
+                                "type": "task_changed",
+                                "task": self._serialize_task(task_info),
+                                "timestamp": time.time(),
+                            },
+                        )
+
                 # Handle ANALYSIS tasks (save to TaskManager)
                 elif task_type in ANALYSIS_TASK_TYPES:
                     try:
@@ -878,6 +958,7 @@ class WorkerTaskManager:
                 self._progress_store.pop(task_id, None)
                 self._cleanup_progress_queue(task_id)
                 self._progress_store.pop(task_id, None)
+                self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)

@@ -10,10 +10,16 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor
 from typing import Any, Callable, Dict, Optional
 
-from .worker_tasks_concordance import run_concordance_detach_task
+from .worker_tasks_concordance import (
+    run_concordance_detach_task,
+    run_concordance_materialize_task,
+)
 from .worker_tasks_download import run_workspace_download_task
 from .worker_tasks_import import run_ldaca_import_task
-from .worker_tasks_quotation import run_quotation_detach_task
+from .worker_tasks_quotation import (
+    run_quotation_detach_task,
+    run_quotation_materialize_task,
+)
 from .worker_tasks_token import run_token_frequencies_task
 from .worker_tasks_topic import run_topic_modeling_task
 
@@ -140,6 +146,7 @@ def concordance_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -157,9 +164,47 @@ def concordance_detach_task(
         whole_word,
         case_sensitive,
         new_node_name,
-        include_document_column,
-        extra_columns_data,
-        cb,
+        include_document_column=include_document_column,
+        extra_columns_data=extra_columns_data,
+        materialized_path=materialized_path,
+        progress_callback=cb,
+    )
+
+
+def concordance_materialize_task(
+    user_id: str,
+    workspace_id: str,
+    workspace_dir: str,
+    node_corpus: list[str],
+    parent_task_id: str,
+    parent_node_id: str,
+    document_column: str,
+    search_word: str,
+    num_left_tokens: int,
+    num_right_tokens: int,
+    regex: bool,
+    whole_word: bool,
+    case_sensitive: bool,
+    extra_columns_data: Optional[Dict[str, list]] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_queue: Optional[Any] = None,
+) -> Dict[str, Any]:
+    cb = _build_progress_callback(progress_queue, progress_callback)
+    return run_concordance_materialize_task(
+        _configure_worker_environment,
+        workspace_dir,
+        node_corpus,
+        parent_task_id,
+        parent_node_id,
+        document_column,
+        search_word,
+        num_left_tokens,
+        num_right_tokens,
+        regex,
+        whole_word,
+        case_sensitive,
+        extra_columns_data=extra_columns_data,
+        progress_callback=cb,
     )
 
 
@@ -174,6 +219,7 @@ def quotation_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -186,9 +232,37 @@ def quotation_detach_task(
         document_column,
         engine_config,
         new_node_name,
-        include_document_column,
-        extra_columns_data,
-        cb,
+        include_document_column=include_document_column,
+        extra_columns_data=extra_columns_data,
+        materialized_path=materialized_path,
+        progress_callback=cb,
+    )
+
+
+def quotation_materialize_task(
+    user_id: str,
+    workspace_id: str,
+    workspace_dir: str,
+    node_corpus: list[str],
+    parent_task_id: str,
+    parent_node_id: str,
+    document_column: str,
+    engine_config: Dict[str, Any],
+    extra_columns_data: Optional[Dict[str, list]] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_queue: Optional[Any] = None,
+) -> Dict[str, Any]:
+    cb = _build_progress_callback(progress_queue, progress_callback)
+    return run_quotation_materialize_task(
+        _configure_worker_environment,
+        workspace_dir,
+        node_corpus,
+        parent_task_id,
+        parent_node_id,
+        document_column,
+        engine_config,
+        extra_columns_data=extra_columns_data,
+        progress_callback=cb,
     )
 
 
@@ -252,7 +326,9 @@ TASK_REGISTRY: Dict[str, Any] = {
     "ldaca_import": ldaca_import_task,
     "workspace_download": workspace_download_task,
     "concordance_detach": concordance_detach_task,
+    "concordance_materialize": concordance_materialize_task,
     "quotation_detach": quotation_detach_task,
+    "quotation_materialize": quotation_materialize_task,
     "topic_modeling": topic_modeling_task,
     "token_frequencies": token_frequencies_task,
 }

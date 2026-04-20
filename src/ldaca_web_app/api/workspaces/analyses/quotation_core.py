@@ -494,20 +494,31 @@ async def compute_on_demand_page(
     engine: QuotationEngineConfig,
     *,
     page: int,
-    page_size: int,
+    page_size: Optional[int],
     sort_by: Optional[str],
     descending: bool,
     compute_quote_dataframe_fn,
+    materialized_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Compute one on-demand quotation page from source node data.
 
-    Used by:
-    - quotation result endpoints with pagination/sorting
+    - When `materialized_path` is set, paginate the flat parquet directly
+      (each row becomes a single-hit group for UI compatibility).
+    - When `page_size` is None, estimate via `page_size_estimation.estimate_page_size`.
 
     Why:
     - Delays expensive quotation extraction to requested slices for responsive
-      UI paging.
+      UI paging while keeping a dense first page via estimation.
     """
+    if materialized_path:
+        return await _compute_materialized_quotation_page(
+            materialized_path,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            descending=descending,
+        )
+
     lazy_df = node.data
     try:
         schema = lazy_df.collect_schema()
@@ -524,15 +535,19 @@ async def compute_on_demand_page(
             descending=descending,
         )
 
+    effective_page_size = await _resolve_quotation_page_size(
+        lazy_df, node, column, engine, page_size, compute_quote_dataframe_fn
+    )
+
     total_source_rows = lazy_df.select(pl.len()).collect().item()
     total_source_pages = (
         0
         if total_source_rows == 0
-        else max(1, math.ceil(total_source_rows / page_size))
+        else max(1, math.ceil(total_source_rows / effective_page_size))
     )
 
-    start_doc = (page - 1) * page_size
-    slice_df = lazy_df.slice(start_doc, page_size).collect()
+    start_doc = (page - 1) * effective_page_size
+    slice_df = lazy_df.slice(start_doc, effective_page_size).collect()
 
     quote_df = await compute_quote_dataframe_fn(
         node, slice_df, column, engine, use_base_only=True
@@ -550,7 +565,7 @@ async def compute_on_demand_page(
         "metadata": metadata,
         "pagination": {
             "page": page,
-            "page_size": page_size,
+            "page_size": effective_page_size,
             "total_source_rows": total_source_rows,
             "total_source_pages": total_source_pages,
             "result_count": len(page_rows),
@@ -561,4 +576,117 @@ async def compute_on_demand_page(
             "sort_by": effective_sort_by,
             "descending": descending,
         },
+    }
+
+
+async def _resolve_quotation_page_size(
+    lazy_df: pl.LazyFrame,
+    node: Any,
+    column: str,
+    engine: QuotationEngineConfig,
+    requested: Optional[int],
+    compute_quote_dataframe_fn,
+) -> int:
+    """Return an effective page size, estimating from candidate ladder if needed."""
+    if requested is not None and int(requested) > 0:
+        return int(requested)
+
+    from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, TARGET_OCCURRENCES
+
+    async def _probe(size: int) -> int:
+        try:
+            slice_df = lazy_df.slice(0, size).collect()
+            quote_df = await compute_quote_dataframe_fn(
+                node, slice_df, column, engine, use_base_only=True
+            )
+            if quote_df.height == 0:
+                return 0
+            if QUOTATION_GROUP_COLUMN not in quote_df.columns:
+                return 0
+            counts = quote_df.select(
+                pl.col(QUOTATION_GROUP_COLUMN).list.len().fill_null(0).sum().alias("t")
+            ).item()
+            return int(counts or 0)
+        except Exception as exc:
+            logger.debug("Quotation hit probe failed at size=%d: %s", size, exc)
+            return 0
+
+    for candidate in DEFAULT_PAGE_SIZE_CANDIDATES:
+        hits = await _probe(candidate)
+        if hits >= TARGET_OCCURRENCES:
+            return candidate
+    return DEFAULT_PAGE_SIZE_CANDIDATES[-1]
+
+
+async def _compute_materialized_quotation_page(
+    materialized_path: str,
+    *,
+    page: int,
+    page_size: Optional[int],
+    sort_by: Optional[str],
+    descending: bool,
+) -> Dict[str, Any]:
+    """Paginate a materialized quotation parquet as one-hit-per-group rows."""
+    effective_page_size = (
+        int(page_size)
+        if page_size is not None and int(page_size) > 0
+        else DEFAULT_PAGE_SIZE
+    )
+    lazy = pl.scan_parquet(materialized_path)
+    total_rows = int(lazy.select(pl.len()).collect().item() or 0)
+
+    effective_sort_by: Optional[str] = None
+    if sort_by:
+        try:
+            schema = lazy.collect_schema()
+            if sort_by in schema:
+                lazy = lazy.sort(pl.col(sort_by), descending=descending)
+                effective_sort_by = sort_by
+        except Exception as exc:
+            logger.debug(
+                "Ignoring unsupported sort_by '%s' for materialized quotation page: %s",
+                sort_by,
+                exc,
+            )
+
+    start = max(page - 1, 0) * effective_page_size
+    slice_df = lazy.slice(start, effective_page_size).collect()
+
+    columns = list(slice_df.columns)
+    grouped_rows: list[list[dict[str, Any]]] = []
+    for row in slice_df.to_dicts():
+        projected = _project_quotation_hit(row)
+        if _quotation_hit_has_content(projected):
+            merged = {
+                **{k: v for k, v in row.items() if k not in projected},
+                **projected,
+            }
+            grouped_rows.append([merged])
+
+    total_source_pages = (
+        0 if total_rows == 0 else max(1, math.ceil(total_rows / effective_page_size))
+    )
+    metadata = {
+        "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
+        "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
+        "all_columns": columns,
+    }
+    return {
+        "data": stringify_unsafe_integers(grouped_rows),
+        "columns": columns,
+        "metadata": metadata,
+        "pagination": {
+            "page": page,
+            "page_size": effective_page_size,
+            "total_source_rows": total_rows,
+            "total_source_pages": total_source_pages,
+            "result_count": len(grouped_rows),
+            "has_next": page < total_source_pages,
+            "has_prev": page > 1,
+        },
+        "sorting": {
+            "sort_by": effective_sort_by,
+            "descending": descending,
+        },
+        "materialized": True,
     }

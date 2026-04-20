@@ -429,6 +429,18 @@ class ConcordanceDetachRequest(BaseModel):
     case_sensitive: bool = False
     new_node_name: Optional[str] = None  # If not provided, will be auto-generated
     selected_columns: Optional[list[str]] = None
+    materialized_path: Optional[str] = None  # Reuse existing flattened parquet
+
+
+class ConcordanceMaterializeRequest(BaseModel):
+    column: str
+    search_word: str
+    num_left_tokens: int = 10
+    num_right_tokens: int = 10
+    regex: bool = False
+    whole_word: bool = False
+    case_sensitive: bool = False
+    parent_task_id: str
 
 
 class ConcordanceDetachNodeOption(BaseModel):
@@ -472,7 +484,7 @@ class QuotationRequest(BaseModel):
     column: str
     # Pagination parameters
     page: int = 1
-    page_size: int = 50
+    page_size: Optional[int] = None
     # Sorting parameters
     sort_by: Optional[str] = None  # column name to sort by
     descending: bool = True
@@ -487,6 +499,15 @@ class QuotationDetachRequest(BaseModel):
     new_node_name: Optional[str] = None  # If not provided, will be auto-generated
     engine: Optional[QuotationEngineConfig] = None
     selected_columns: Optional[list[str]] = None
+    materialized_path: Optional[str] = None  # Reuse existing flattened parquet
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class QuotationMaterializeRequest(BaseModel):
+    column: str
+    engine: Optional[QuotationEngineConfig] = None
+    parent_task_id: str
 
     model_config = ConfigDict(extra="forbid")
 
