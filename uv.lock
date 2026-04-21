@@ -598,14 +598,14 @@ wheels = [
 
 [[package]]
 name = "docworkspace"
-version = "0.2.3"
+version = "0.2.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "polars-text" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/02/64/38db3b501004e2c6e8ce542b4395d0007cdf01da9d3332069adf004c47f2/docworkspace-0.2.3.tar.gz", hash = "sha256:73d7301cdba18bc43c3fb93caa574a62fc38d27c0472fb503c6cddbb56880070", size = 30337, upload-time = "2026-04-21T14:26:15.228Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4b/cd/79c6b08bc5b45be12acc9e9a558337eb19da1fc891db4acb03f997749ef3/docworkspace-0.2.4.tar.gz", hash = "sha256:7aa91fcdb53d306c50c58fa298fad4faf69d3c76e5f55ec4f9e33331e3c760e7", size = 30991, upload-time = "2026-04-21T14:52:24.239Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/c6/ac5417731f1c00e9812f8ee7008a33f5f96d4e9bea414f26bc68ed1f885d/docworkspace-0.2.3-py3-none-any.whl", hash = "sha256:00f0a8e0b75e6dedb6021d986efff54279839dc77f1e9309c102af1da15d0be3", size = 16898, upload-time = "2026-04-21T14:26:13.607Z" },
+    { url = "https://files.pythonhosted.org/packages/62/1e/7986e3d55f535533d71a7af325b4a8ef3f48793d6cebac7344330a0b7e9c/docworkspace-0.2.4-py3-none-any.whl", hash = "sha256:a9ced4d5367d58508cc3887945178326a5badfe4a7b3182abaf767a16a54d64c", size = 17108, upload-time = "2026-04-21T14:52:22.96Z" },
 ]
 
 [[package]]
@@ -1417,7 +1417,7 @@ dependencies = [
 
 [[package]]
 name = "ldaca-web-app"
-version = "0.1.22"
+version = "0.1.23"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -1455,7 +1455,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21.0" },
     { name = "bertopic", specifier = ">=0.17.3" },
-    { name = "docworkspace", specifier = ">=0.2.3" },
+    { name = "docworkspace", specifier = ">=0.2.4" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.0" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14.0.1" },
     { name = "fastexcel", specifier = ">=0.18.0" },
@@ -2042,7 +2042,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [

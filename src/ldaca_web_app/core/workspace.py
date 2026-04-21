@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from docworkspace import Workspace
-from docworkspace.workspace.io import read_workspace_metadata
+from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 from ldaca_web_app.models import WorkspaceSummary
 
 from .utils import (
@@ -157,8 +157,22 @@ class WorkspaceManager:
             )
             return False
         try:
-            new_ws = Workspace.load(target_dir)
-            updated_dir = ensure_display_folder_name(target_dir, new_ws.name)
+            # 1. Read metadata to get workspace name (no node deserialization).
+            meta = read_workspace_metadata(target_dir)
+            ws_name = meta.get("workspace_metadata", {}).get("name", "")
+
+            # 2. Finalize the on-disk folder name so the path is stable.
+            updated_dir = (
+                ensure_display_folder_name(target_dir, ws_name)
+                if ws_name
+                else target_dir
+            )
+
+            # 3. Rebase plbin source paths to the finalized folder.
+            rebase_workspace_sources(updated_dir)
+
+            # 4. Full load (deserialize nodes — paths are now correct).
+            new_ws = Workspace.load(updated_dir)
             self._attach_workspace_dir(new_ws, updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover
@@ -390,4 +404,5 @@ class WorkspaceManager:
             logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
 
 
+workspace_manager = WorkspaceManager()
 workspace_manager = WorkspaceManager()

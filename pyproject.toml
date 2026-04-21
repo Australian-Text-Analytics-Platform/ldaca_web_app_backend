@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.1.22"
+version = "0.1.23"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -32,7 +32,7 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
     "psutil>=6.1.0",                            # Process management for proper cleanup of child processes
-    "docworkspace>=0.2.3",
+    "docworkspace>=0.2.4",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
@@ -101,4 +101,5 @@ include = [
 "src" = ""
 
 [tool.uv.sources]
+# docworkspace = { path = "../docworkspace", editable = true }
 ldaca-loader = { git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator", branch = "ldaca_web_app_integration" }
