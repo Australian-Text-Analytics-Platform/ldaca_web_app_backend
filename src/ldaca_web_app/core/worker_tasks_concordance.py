@@ -130,7 +130,21 @@ def run_concordance_detach_task(
         if materialized_path and os.path.exists(materialized_path):
             if progress_callback:
                 progress_callback(0.4, "Reusing materialized occurrences...")
-            lazy = pl.scan_parquet(materialized_path)
+            # Copy the materialized parquet into a detach-owned file so the
+            # parent analysis task's materialized artifact can be cleaned up
+            # independently (e.g. when the user clears results) without
+            # breaking this detached node's serialized query plan.
+            import shutil
+            import uuid
+
+            detach_data_dir = os.path.join(workspace_dir, "data")
+            os.makedirs(detach_data_dir, exist_ok=True)
+            detach_parquet_path = os.path.join(
+                detach_data_dir,
+                f"concordance_detach_{uuid.uuid4().hex}.parquet",
+            )
+            shutil.copy2(materialized_path, detach_parquet_path)
+            lazy = pl.scan_parquet(detach_parquet_path)
             schema_names = list(lazy.collect_schema().names())
             record_count = int(
                 cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0
@@ -276,9 +290,12 @@ def run_concordance_materialize_task(
         if progress_callback:
             progress_callback(0.85, "Writing materialized parquet...")
 
-        materialized_dir = os.path.join(workspace_dir, "materialized", parent_task_id)
+        materialized_dir = os.path.join(workspace_dir, "data")
         os.makedirs(materialized_dir, exist_ok=True)
-        materialized_path = os.path.join(materialized_dir, f"{parent_node_id}.parquet")
+        materialized_path = os.path.join(
+            materialized_dir,
+            f".materialized_concordance_{parent_task_id}_{parent_node_id}.parquet",
+        )
         result.write_parquet(materialized_path)
 
         if progress_callback:

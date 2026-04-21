@@ -364,8 +364,40 @@ class WorkspaceManager:
             cws.save(target_dir)
             self._set_cached_path(user_id, cid, target_dir)
         self.clear_workspace_artifacts_dir(user_id, cid)
+        self._clear_workspace_tasks(user_id, cid)
         self._current.pop(user_id, None)
         return True
+
+    def _clear_workspace_tasks(self, user_id: str, workspace_id: str) -> None:
+        """Drop analysis + worker task records belonging to a workspace.
+
+        Without this, per-user task stores (current_task_ids in the analysis
+        manager, TaskInfo records in the worker manager) leak across workspace
+        switches and cause UI state from the previous workspace to hydrate on
+        the next one.
+        """
+        try:
+            from ..analysis.manager import get_task_manager as _get_analysis_tm
+
+            _get_analysis_tm(user_id).clear_workspace(workspace_id)
+        except Exception as exc:
+            logger.debug("Failed to clear analysis tasks on unload: %s", exc)
+
+        worker_tm = self._task_managers.get(user_id)
+        if worker_tm is None:
+            return
+        try:
+            import asyncio
+
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        try:
+            loop.create_task(
+                worker_tm.clear_tasks(user_id=user_id, workspace_id=workspace_id)
+            )
+        except Exception as exc:
+            logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
 
 
 workspace_manager = WorkspaceManager()
