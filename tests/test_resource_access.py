@@ -5,6 +5,7 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
+import pytest
 from ldaca_web_app.core.utils import get_user_data_folder, import_sample_data_for_user
 from ldaca_web_app.settings import settings
 
@@ -67,3 +68,14 @@ def test_import_sample_data_uses_packaged_resources(tmp_path, monkeypatch):
     assert summary["file_count"] > 0
     assert summary["bytes_copied"] > 0
     assert summary["bytes_copied"] > 0
+
+
+def test_import_sample_data_raises_when_source_missing(tmp_path, monkeypatch):
+    """If the configured sample_data override does not exist, import raises."""
+    monkeypatch.setattr(settings, "data_root", tmp_path)
+    monkeypatch.setattr(settings, "user_data_folder", "users")
+    monkeypatch.setattr(settings, "sample_data", tmp_path / "does_not_exist")
+
+    with pytest.raises(FileNotFoundError):
+        import_sample_data_for_user("test")
+        import_sample_data_for_user("test")

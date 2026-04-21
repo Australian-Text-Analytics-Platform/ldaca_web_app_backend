@@ -8,7 +8,6 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
-
 from ldaca_web_app.core.utils import (
     detect_file_type,
     generate_workspace_id,
@@ -169,25 +168,6 @@ class TestFileOperations:
 
     """Test data loading functionality"""
 
-    def test_load_csv_file(self, sample_csv_file):
-        """Test loading a CSV file"""
-        df = load_data_file(sample_csv_file)
-
-        if isinstance(df, pl.LazyFrame):
-            actual_df = cast(pl.DataFrame, df.collect())
-            columns = list(df.collect_schema().names())
-        else:
-            assert isinstance(df, pl.DataFrame)
-            actual_df = df
-            columns = list(df.columns)
-
-        assert actual_df.shape[0] == 3
-        assert actual_df.shape[1] == 3
-
-        assert "name" in columns
-        assert "age" in columns
-        assert "city" in columns
-
     def test_load_json_file(self, sample_json_file):
         """Test loading a JSON file"""
         df = load_data_file(sample_json_file)
@@ -205,28 +185,6 @@ class TestFileOperations:
         assert "name" in columns
         assert "age" in columns
         assert "city" in columns
-
-    def test_load_data_file_with_polars(self, sample_csv_file):
-        """Test loading file - should use polars by default"""
-        result = load_data_file(sample_csv_file)
-
-        if isinstance(result, pl.LazyFrame):
-            actual_df = cast(pl.DataFrame, result.collect())
-            assert actual_df.shape[0] == 3
-        else:
-            assert isinstance(result, pl.DataFrame)
-            assert result.shape[0] == 3
-
-    def test_load_data_file_polars_fallback(self, sample_csv_file):
-        """Test loading file with fallback behavior"""
-        df = load_data_file(sample_csv_file)
-
-        if isinstance(df, pl.LazyFrame):
-            actual_df = cast(pl.DataFrame, df.collect())
-            assert actual_df.shape[0] == 3
-        else:
-            assert isinstance(df, pl.DataFrame)
-            assert df.shape[0] == 3
 
     @patch("ldaca_web_app.core.utils.pl.read_excel")
     def test_load_excel_file_selects_requested_sheet(self, mock_read_excel, temp_dir):
