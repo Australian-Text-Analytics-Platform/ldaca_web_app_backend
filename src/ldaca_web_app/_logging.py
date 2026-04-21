@@ -167,8 +167,10 @@ def setup_file_logging(prefix: str) -> IO[str] | None:
         log_file_path = log_dir / f"{prefix}_startup_{timestamp}.log"
         log_file = open(log_file_path, "w", encoding="utf-8", buffering=1)
 
-        sys.stdout = TeeOutput(log_file, sys.__stdout__)  # type: ignore[assignment]
-        sys.stderr = TeeOutput(log_file, sys.__stderr__)  # type: ignore[assignment]
+        original_stdout = sys.__stdout__ or sys.stdout
+        original_stderr = sys.__stderr__ or sys.stderr
+        sys.stdout = TeeOutput(log_file, original_stdout)  # type: ignore[assignment]
+        sys.stderr = TeeOutput(log_file, original_stderr)  # type: ignore[assignment]
 
         # Attach a structured JSON file handler for the package logger
         json_log_path = log_dir / f"{prefix}_{timestamp}.jsonl"

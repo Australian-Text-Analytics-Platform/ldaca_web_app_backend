@@ -539,7 +539,7 @@ async def compute_on_demand_page(
         lazy_df, node, column, engine, page_size, compute_quote_dataframe_fn
     )
 
-    total_source_rows = lazy_df.select(pl.len()).collect().item()
+    total_source_rows = cast(pl.DataFrame, lazy_df.select(pl.len()).collect()).item()
     total_source_pages = (
         0
         if total_source_rows == 0
@@ -633,7 +633,7 @@ async def _compute_materialized_quotation_page(
         else DEFAULT_PAGE_SIZE
     )
     lazy = pl.scan_parquet(materialized_path)
-    total_rows = int(lazy.select(pl.len()).collect().item() or 0)
+    total_rows = int(cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0)
 
     effective_sort_by: Optional[str] = None
     if sort_by:
@@ -650,7 +650,7 @@ async def _compute_materialized_quotation_page(
             )
 
     start = max(page - 1, 0) * effective_page_size
-    slice_df = lazy.slice(start, effective_page_size).collect()
+    slice_df = cast(pl.DataFrame, lazy.slice(start, effective_page_size).collect())
 
     columns = list(slice_df.columns)
     grouped_rows: list[list[dict[str, Any]]] = []

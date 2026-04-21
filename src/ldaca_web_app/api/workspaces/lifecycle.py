@@ -110,25 +110,16 @@ async def create_workspace(
     is_valid, reason = validate_workspace_name(request.name)
     if not is_valid:
         raise HTTPException(status_code=400, detail=f"Invalid workspace name: {reason}")
-    try:
-        workspace = Workspace(name=request.name)
-        workspace_id = workspace.id
-        workspace.description = request.description or ""
+    workspace = Workspace(name=request.name)
+    workspace_id = workspace.id
+    workspace.description = request.description or ""
 
-        update_workspace(user_id, workspace_id, workspace)
-        workspace_manager.set_current_workspace(user_id, workspace_id)
+    update_workspace(user_id, workspace_id, workspace)
+    workspace_manager.set_current_workspace(user_id, workspace_id)
 
-        workspace_info = workspace.info_json()
-        workspace_info["id"] = workspace_id
-        return WorkspaceInfo(**workspace_info)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Workspace creation error: %s", e, exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Internal server error during workspace creation: {e}",
-        )
+    workspace_info = workspace.info_json()
+    workspace_info["id"] = workspace_id
+    return WorkspaceInfo(**workspace_info)
 
 
 @router.delete("/delete")
@@ -174,19 +165,12 @@ async def rename_workspace(
     user_id = current_user["id"]
     workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
-    try:
-        is_valid, reason = validate_workspace_name(new_name)
-        if not is_valid:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid workspace name: {reason}"
-            )
-        workspace.name = new_name
-        update_workspace(user_id, workspace_id, workspace)
-        return workspace.info_json()
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to rename workspace: {e}")
+    is_valid, reason = validate_workspace_name(new_name)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=f"Invalid workspace name: {reason}")
+    workspace.name = new_name
+    update_workspace(user_id, workspace_id, workspace)
+    return workspace.info_json()
 
 
 @router.put("/description")
@@ -197,14 +181,9 @@ async def update_workspace_description(
     user_id = current_user["id"]
     workspace_id = _require_current_workspace_id(user_id)
     workspace = _require_current_workspace(user_id)
-    try:
-        workspace.description = description.strip()
-        update_workspace(user_id, workspace_id, workspace)
-        return workspace.info_json()
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to update workspace description: {e}"
-        )
+    workspace.description = description.strip()
+    update_workspace(user_id, workspace_id, workspace)
+    return workspace.info_json()
 
 
 @router.post("/save")
@@ -214,11 +193,8 @@ async def save_workspace(
     user_id = current_user["id"]
     workspace_id = _require_current_workspace_id(user_id)
     ws = _require_current_workspace(user_id)
-    try:
-        update_workspace(user_id, workspace_id, ws)
-        return {"state": "successful", "message": "Workspace saved"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save workspace: {e}")
+    update_workspace(user_id, workspace_id, ws)
+    return {"state": "successful", "message": "Workspace saved"}
 
 
 @router.post("/download")
@@ -478,12 +454,6 @@ async def upload_workspace_zip(
         return {"state": "successful", "workspace": summary}
     except zipfile.BadZipFile as exc:
         raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {exc}")
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=500, detail=f"Failed to upload workspace: {exc}"
-        )
 
 
 @router.get("/info")
@@ -520,4 +490,5 @@ async def get_workspace_nodes(
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     graph_data = workspace.graph_json()
+    return {"nodes": graph_data.get("nodes", [])}
     return {"nodes": graph_data.get("nodes", [])}

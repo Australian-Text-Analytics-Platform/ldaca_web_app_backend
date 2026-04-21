@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
 from ..api.workspaces.analyses.generated_columns import (
@@ -132,7 +132,9 @@ def run_concordance_detach_task(
                 progress_callback(0.4, "Reusing materialized occurrences...")
             lazy = pl.scan_parquet(materialized_path)
             schema_names = list(lazy.collect_schema().names())
-            record_count = int(lazy.select(pl.len()).collect().item() or 0)
+            record_count = int(
+                cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0
+            )
             output_columns = schema_names
             detached_node = Node(
                 data=lazy,

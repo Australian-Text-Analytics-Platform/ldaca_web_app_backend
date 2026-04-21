@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
 import polars as pl
@@ -135,7 +135,7 @@ async def _build_response(
 
         column_name = request.node_columns[node_id]
 
-        total_rows = node_data.select(pl.len()).collect().item()
+        total_rows = cast(pl.DataFrame, node_data.select(pl.len()).collect()).item()
 
         sel_df = node_data.select(pl.col(column_name)).slice(start, page_size).collect()
         texts = [

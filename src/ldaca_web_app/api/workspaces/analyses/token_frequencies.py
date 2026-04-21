@@ -97,7 +97,7 @@ def _coerce_limit_value(value) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
         candidate = int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return DEFAULT_TOKEN_LIMIT
     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
 
@@ -150,7 +150,7 @@ def _safe_float(value) -> float | str | None:
         return None
     try:
         numeric = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if math.isnan(numeric):
         return None

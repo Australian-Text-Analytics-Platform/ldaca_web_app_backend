@@ -151,22 +151,9 @@ async def delete_node_column(
 
     node = ws.nodes[node_id]
 
-    try:
-        dropped_node = node.drop(column_name)
-        try:
-            update_workspace(user_id, workspace_id, best_effort=True)
-        except Exception as exc:
-            logger.debug(
-                "Best-effort workspace update failed after drop on node %s: %s",
-                node_id,
-                exc,
-            )
-        return dropped_node.info()
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to delete column '{column_name}': {exc}",
-        ) from exc
+    dropped_node = node.drop(column_name)
+    update_workspace(user_id, workspace_id, best_effort=True)
+    return dropped_node.info()
 
 
 @router.put("/nodes/{node_id}/columns/{column_name}")
@@ -195,22 +182,9 @@ async def rename_node_column(
 
     trimmed_name = new_name.strip()
 
-    try:
-        node.rename({column_name: trimmed_name})
-        try:
-            update_workspace(user_id, workspace_id, best_effort=True)
-        except Exception as exc:
-            logger.debug(
-                "Best-effort workspace update failed after rename on node %s: %s",
-                node_id,
-                exc,
-            )
-        return node.info()
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to rename column '{column_name}': {exc}",
-        ) from exc
+    node.rename({column_name: trimmed_name})
+    update_workspace(user_id, workspace_id, best_effort=True)
+    return node.info()
 
 
 @router.post("/nodes/{node_id}/undo")
@@ -232,21 +206,8 @@ async def undo_node_operation(
         node.undo()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to undo node '{node_id}': {exc}",
-        ) from exc
 
-    try:
-        update_workspace(user_id, workspace_id, best_effort=True)
-    except Exception as exc:
-        logger.debug(
-            "Best-effort workspace update failed after undo on node %s: %s",
-            node_id,
-            exc,
-        )
-
+    update_workspace(user_id, workspace_id, best_effort=True)
     return node.info()
 
 
@@ -269,21 +230,8 @@ async def redo_node_operation(
         node.redo()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to redo node '{node_id}': {exc}",
-        ) from exc
 
-    try:
-        update_workspace(user_id, workspace_id, best_effort=True)
-    except Exception as exc:
-        logger.debug(
-            "Best-effort workspace update failed after redo on node %s: %s",
-            node_id,
-            exc,
-        )
-
+    update_workspace(user_id, workspace_id, best_effort=True)
     return node.info()
 
 
@@ -393,100 +341,80 @@ async def add_node_to_workspace(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    try:
-        # Load data file
-        user_data_folder = get_user_data_folder(user_id)
-        file_path = user_data_folder / filename
+    # Load data file
+    user_data_folder = get_user_data_folder(user_id)
+    file_path = user_data_folder / filename
 
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=400, detail=f"Data file not found: {filename}"
-            )
+    if not file_path.exists():
+        raise HTTPException(status_code=400, detail=f"Data file not found: {filename}")
 
-        # Load the data
-        data = load_data_file(file_path, sheet_name=sheet_name)
+    # Load the data
+    data = load_data_file(file_path, sheet_name=sheet_name)
 
-        # Validate requested mode (lazy-only workflow)
-        valid_modes = {"LazyFrame"}
-        if mode not in valid_modes:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid mode '{mode}'. Expected one of {sorted(list(valid_modes))}",
-            )
-
-        # Normalize to an eager Polars DataFrame
-        try:
-            eager_data: pl.DataFrame
-            if isinstance(data, pl.LazyFrame):
-                eager_data = cast(pl.DataFrame, data.collect())
-            elif isinstance(data, pl.DataFrame):
-                eager_data = data
-            else:
-                raise TypeError(
-                    f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}"
-                )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Failed to coerce data to Polars DataFrame: {exc}",
-            )
-
-        # Resolve workspace folder and stage parquet copy
-        workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
-        if workspace_dir is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Workspace folder not found for workspace {workspace_id}",
-            )
-
-        node_name = filename
-        for ext in [
-            ".csv",
-            ".tsv",
-            ".xlsx",
-            ".json",
-            ".jsonl",
-            ".parquet",
-        ]:
-            if node_name.endswith(ext):
-                node_name = node_name[: -len(ext)]
-                break
-
-        lazy_data = stage_dataframe_as_lazy(
-            eager_data,
-            workspace_dir,
-            node_name=node_name,
-            document_column=None,
-        )
-
-        if workspace_manager.get_current_workspace_id(user_id) != workspace_id:
-            if not workspace_manager.set_current_workspace(user_id, workspace_id):
-                raise HTTPException(status_code=404, detail="Workspace not found")
-        workspace = workspace_manager.get_current_workspace(user_id)
-        if workspace is None:
-            raise HTTPException(status_code=404, detail="Workspace not found")
-
-        node = Node(
-            data=lazy_data,
-            name=node_name,
-            workspace=workspace,
-            operation="manual_add",
-        )
-        workspace.add_node(node)
-        update_workspace(user_id, workspace_id, workspace)
-
-        # Return node info
-        return node.info()
-
-    except HTTPException:
-        # Re-raise HTTPExceptions as-is
-        raise
-    except Exception as e:
-        # Log and convert unexpected errors to 500
-        logger.error("Add node error: %s", e, exc_info=True)
+    # Validate requested mode (lazy-only workflow)
+    valid_modes = {"LazyFrame"}
+    if mode not in valid_modes:
         raise HTTPException(
-            status_code=500, detail=f"Internal server error adding node: {str(e)}"
+            status_code=400,
+            detail=f"Invalid mode '{mode}'. Expected one of {sorted(list(valid_modes))}",
         )
+
+    # Normalize to an eager Polars DataFrame
+    if isinstance(data, pl.LazyFrame):
+        eager_data: pl.DataFrame = cast(pl.DataFrame, data.collect())
+    elif isinstance(data, pl.DataFrame):
+        eager_data = data
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}",
+        )
+
+    # Resolve workspace folder and stage parquet copy
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Workspace folder not found for workspace {workspace_id}",
+        )
+
+    node_name = filename
+    for ext in [
+        ".csv",
+        ".tsv",
+        ".xlsx",
+        ".json",
+        ".jsonl",
+        ".parquet",
+    ]:
+        if node_name.endswith(ext):
+            node_name = node_name[: -len(ext)]
+            break
+
+    lazy_data = stage_dataframe_as_lazy(
+        eager_data,
+        workspace_dir,
+        node_name=node_name,
+        document_column=None,
+    )
+
+    if workspace_manager.get_current_workspace_id(user_id) != workspace_id:
+        if not workspace_manager.set_current_workspace(user_id, workspace_id):
+            raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace = workspace_manager.get_current_workspace(user_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    node = Node(
+        data=lazy_data,
+        name=node_name,
+        workspace=workspace,
+        operation="manual_add",
+    )
+    workspace.add_node(node)
+    update_workspace(user_id, workspace_id, workspace)
+
+    return node.info()
 
 
 @router.post("/nodes/{node_id}/cast")
@@ -510,196 +438,178 @@ async def cast_node(
     Returns:
         Dictionary with the updated node information after casting
     """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    # Validate cast_data structure
+    if not isinstance(cast_data, dict):
+        raise HTTPException(status_code=400, detail="cast_data must be a dictionary")
+
+    if "column" not in cast_data or "target_type" not in cast_data:
+        raise HTTPException(
+            status_code=400,
+            detail="cast_data must contain 'column' and 'target_type' keys",
+        )
+    column_name = cast_data["column"]
+    target_type = cast_data["target_type"]
+    datetime_format = cast_data.get("format")  # Optional datetime format
+    # Optional strict flag (Polars defaults to strict=True). We default to False to avoid
+    # hard failures on a few malformed rows (frontend previously succeeded with strict=False).
+    strict_flag = (
+        cast_data.get("strict") if "strict" in cast_data else False
+    )  # default lenient
+
+    if not isinstance(column_name, str) or not isinstance(target_type, str):
+        raise HTTPException(
+            status_code=400, detail="'column' and 'target_type' must be strings"
+        )
+
+    node = ws.nodes[node_id]
+    lazyframe = node.data
+
+    schema = lazyframe.collect_schema()
+    original_dtype = schema[column_name]
+    original_type = str(original_dtype)
+
+    # Determine operation based on target type
+    target_lower = target_type.lower()
+    orig_lower = (original_type or "").lower()
+
+    # Perform the casting using .with_columns() and expressions
     try:
-        user_id = current_user["id"]
-        workspace_id = workspace_manager.get_current_workspace_id(user_id)
-        ws = workspace_manager.get_current_workspace(user_id)
-        if not workspace_id or ws is None:
-            raise HTTPException(status_code=404, detail="No active workspace selected")
-
-        # Validate cast_data structure
-        if not isinstance(cast_data, dict):
-            raise HTTPException(
-                status_code=400, detail="cast_data must be a dictionary"
-            )
-
-        if "column" not in cast_data or "target_type" not in cast_data:
-            raise HTTPException(
-                status_code=400,
-                detail="cast_data must contain 'column' and 'target_type' keys",
-            )
-        column_name = cast_data["column"]
-        target_type = cast_data["target_type"]
-        datetime_format = cast_data.get("format")  # Optional datetime format
-        # Optional strict flag (Polars defaults to strict=True). We default to False to avoid
-        # hard failures on a few malformed rows (frontend previously succeeded with strict=False).
-        strict_flag = (
-            cast_data.get("strict") if "strict" in cast_data else False
-        )  # default lenient
-
-        if not isinstance(column_name, str) or not isinstance(target_type, str):
-            raise HTTPException(
-                status_code=400, detail="'column' and 'target_type' must be strings"
-            )
-
-        node = ws.nodes[node_id]
-        lazyframe = node.data
-
-        schema = lazyframe.collect_schema()
-        original_dtype = schema[column_name]
-        original_type = str(original_dtype)
-
-        # Determine operation based on target type
-        target_lower = target_type.lower()
-        orig_lower = (original_type or "").lower()
-
-        # Perform the casting using .with_columns() and expressions
-        try:
-            if target_lower == "datetime":
-                # Simplified: single to_datetime call mirroring notebook usage
-                # Default strict=False so rows that don't match become null instead of failing entire cast
-                try:
-                    if datetime_format:
-                        parsed = pl.col(column_name).str.to_datetime(
-                            format=datetime_format, strict=bool(strict_flag)
-                        )
-                    else:
-                        parsed = pl.col(column_name).str.to_datetime(
-                            strict=bool(strict_flag)
-                        )
-
-                    # Ensure timezone-aware UTC.
-                    # If the format includes a timezone specifier (%z, %:z, %#z),
-                    # str.to_datetime already returns a tz-aware Datetime and
-                    # replace_time_zone would fail.  In that case we only need
-                    # convert_time_zone.  For naive results we set the timezone.
-                    _tz_tokens = ("%z", "%:z", "%#z")
-                    _format_has_tz = datetime_format and any(
-                        tok in datetime_format for tok in _tz_tokens
-                    )
-                    if _format_has_tz:
-                        cast_expr = parsed.dt.convert_time_zone("UTC").alias(
-                            column_name
-                        )
-                    else:
-                        cast_expr = parsed.dt.replace_time_zone("UTC").alias(
-                            column_name
-                        )
-                except Exception as e:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Error casting column '{column_name}' to {target_type}: {e}. "
-                            "This often occurs when some rows don't match the supplied format. "
-                            "Note your notebook example used .head() (sampling) which may hide later malformed rows. "
-                            "Either clean inconsistent rows or keep strict=False (default) to set them null."
-                        ),
-                    )
-            elif target_lower in ("string", "utf8", "str", "text"):
-                # Datetime -> string (optionally with format) or no-op if already string
-                # Detect current dtype (best effort)
-                col_dtype = original_type
-
-                if str(col_dtype).startswith("Datetime"):
-                    if datetime_format:
-                        # Use chrono-compatible formatting tokens
-                        cast_expr = (
-                            pl.col(column_name)
-                            .dt.strftime(datetime_format)
-                            .alias(column_name)
-                        )
-                    else:
-                        # Fallback: cast to Utf8 (ISO rendering)
-                        cast_expr = pl.col(column_name).cast(pl.Utf8).alias(column_name)
-                else:
-                    # Already string or unknown -> ensure Utf8
-                    cast_expr = pl.col(column_name).cast(pl.Utf8).alias(column_name)
-                # For string target we treat provided format as format_used if any
-            elif target_lower == "integer":
-                col_expr = pl.col(column_name)
-                cast_expr = col_expr.cast(pl.Int64, strict=False).alias(column_name)
-            elif target_lower == "float":
-                # String -> number (float) conversion
-                cast_expr = pl.col(column_name).cast(pl.Float64).alias(column_name)
-            elif target_lower == "categorical":
-                col_expr = pl.col(column_name)
-                if any(
-                    tok in orig_lower
-                    for tok in ["utf8", "string", "str", "categorical"]
-                ):
-                    cast_expr = col_expr.cast(pl.Categorical, strict=False).alias(
-                        column_name
-                    )
-                else:
-                    cast_expr = (
-                        col_expr.cast(pl.Utf8, strict=False)
-                        .cast(pl.Categorical, strict=False)
-                        .alias(column_name)
-                    )
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Casting to '{target_type}' is not yet supported. Supported: string, integer, float, datetime, categorical.",
-                )
-
-            # Perform a small head() sample validation to surface conversion errors early
+        if target_lower == "datetime":
+            # Simplified: single to_datetime call mirroring notebook usage
+            # Default strict=False so rows that don't match become null instead of failing entire cast
             try:
-                sample_plan = lazyframe.head(50).with_columns(cast_expr)
-                sample_plan.collect()
-            except Exception as sample_err:
+                if datetime_format:
+                    parsed = pl.col(column_name).str.to_datetime(
+                        format=datetime_format, strict=bool(strict_flag)
+                    )
+                else:
+                    parsed = pl.col(column_name).str.to_datetime(
+                        strict=bool(strict_flag)
+                    )
+
+                # Ensure timezone-aware UTC.
+                # If the format includes a timezone specifier (%z, %:z, %#z),
+                # str.to_datetime already returns a tz-aware Datetime and
+                # replace_time_zone would fail.  In that case we only need
+                # convert_time_zone.  For naive results we set the timezone.
+                _tz_tokens = ("%z", "%:z", "%#z")
+                _format_has_tz = datetime_format and any(
+                    tok in datetime_format for tok in _tz_tokens
+                )
+                if _format_has_tz:
+                    cast_expr = parsed.dt.convert_time_zone("UTC").alias(column_name)
+                else:
+                    cast_expr = parsed.dt.replace_time_zone("UTC").alias(column_name)
+            except Exception as e:
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Sample validation failed when casting column '{column_name}' to {target_type}: {sample_err}"
+                        f"Error casting column '{column_name}' to {target_type}: {e}. "
+                        "This often occurs when some rows don't match the supplied format. "
+                        "Note your notebook example used .head() (sampling) which may hide later malformed rows. "
+                        "Either clean inconsistent rows or keep strict=False (default) to set them null."
                     ),
                 )
+        elif target_lower in ("string", "utf8", "str", "text"):
+            # Datetime -> string (optionally with format) or no-op if already string
+            # Detect current dtype (best effort)
+            col_dtype = original_type
 
-            # Apply the casting with .with_columns(); preserve original frame type after validation
-            casted_lazy = lazyframe.with_columns(cast_expr)
-            node.data = casted_lazy
-
-            # Save workspace to disk
-            # Ensure current workspace is persisted after casting
-            update_workspace(user_id, workspace_id)
-            # Get new data type for response
-            new_schema = casted_lazy.collect_schema()
-            new_type = str(new_schema[column_name])
-            return {
-                "state": "successful",
-                "node_id": node_id,
-                "cast_info": {
-                    "column": column_name,
-                    "original_type": original_type,
-                    "new_type": new_type,
-                    "target_type": target_type,
-                    "format_used": datetime_format if datetime_format else None,
-                    "strict_used": bool(strict_flag)
-                    if target_lower == "datetime"
-                    else None,
-                },
-                "message": (
-                    f"Successfully cast column '{column_name}' from {original_type} to {new_type}"
-                    + (" (UTC timezone applied)" if target_lower == "datetime" else "")
-                ),
-            }
-
-        except Exception as cast_error:
+            if str(col_dtype).startswith("Datetime"):
+                if datetime_format:
+                    # Use chrono-compatible formatting tokens
+                    cast_expr = (
+                        pl.col(column_name)
+                        .dt.strftime(datetime_format)
+                        .alias(column_name)
+                    )
+                else:
+                    # Fallback: cast to Utf8 (ISO rendering)
+                    cast_expr = pl.col(column_name).cast(pl.Utf8).alias(column_name)
+            else:
+                # Already string or unknown -> ensure Utf8
+                cast_expr = pl.col(column_name).cast(pl.Utf8).alias(column_name)
+            # For string target we treat provided format as format_used if any
+        elif target_lower == "integer":
+            col_expr = pl.col(column_name)
+            cast_expr = col_expr.cast(pl.Int64, strict=False).alias(column_name)
+        elif target_lower == "float":
+            # String -> number (float) conversion
+            cast_expr = pl.col(column_name).cast(pl.Float64).alias(column_name)
+        elif target_lower == "categorical":
+            col_expr = pl.col(column_name)
+            if any(
+                tok in orig_lower for tok in ["utf8", "string", "str", "categorical"]
+            ):
+                cast_expr = col_expr.cast(pl.Categorical, strict=False).alias(
+                    column_name
+                )
+            else:
+                cast_expr = (
+                    col_expr.cast(pl.Utf8, strict=False)
+                    .cast(pl.Categorical, strict=False)
+                    .alias(column_name)
+                )
+        else:
             raise HTTPException(
                 status_code=400,
-                detail=f"Error casting column '{column_name}' to {target_type}: {str(cast_error)}. "
-                f"Check that the target data type is valid and the data can be converted.",
+                detail=f"Casting to '{target_type}' is not yet supported. Supported: string, integer, float, datetime, categorical.",
             )
 
-    except KeyError:
-        raise
+        # Perform a small head() sample validation to surface conversion errors early
+        try:
+            sample_plan = lazyframe.head(50).with_columns(cast_expr)
+            sample_plan.collect()
+        except Exception as sample_err:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Sample validation failed when casting column '{column_name}' to {target_type}: {sample_err}"
+                ),
+            )
+
+        # Apply the casting with .with_columns(); preserve original frame type after validation
+        casted_lazy = lazyframe.with_columns(cast_expr)
+        node.data = casted_lazy
+
+        # Save workspace to disk
+        # Ensure current workspace is persisted after casting
+        update_workspace(user_id, workspace_id)
+        # Get new data type for response
+        new_schema = casted_lazy.collect_schema()
+        new_type = str(new_schema[column_name])
+        return {
+            "state": "successful",
+            "node_id": node_id,
+            "cast_info": {
+                "column": column_name,
+                "original_type": original_type,
+                "new_type": new_type,
+                "target_type": target_type,
+                "format_used": datetime_format if datetime_format else None,
+                "strict_used": bool(strict_flag)
+                if target_lower == "datetime"
+                else None,
+            },
+            "message": (
+                f"Successfully cast column '{column_name}' from {original_type} to {new_type}"
+                + (" (UTC timezone applied)" if target_lower == "datetime" else "")
+            ),
+        }
+
     except HTTPException:
-        # Re-raise HTTP exceptions (they already have proper error messages)
         raise
-    except Exception as e:
-        # Handle unexpected errors
+    except Exception as cast_error:
         raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error during casting operation: {str(e)}",
+            status_code=400,
+            detail=f"Error casting column '{column_name}' to {target_type}: {str(cast_error)}. "
+            f"Check that the target data type is valid and the data can be converted.",
         )
 
 
@@ -787,25 +697,3 @@ async def export_nodes(
                 )
             },
         )
-
-
-# ============================================================================
-# ANALYSIS CURRENT REQUEST/RESULT (generic)
-# ============================================================================
-
-
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================
-# ============================================================================

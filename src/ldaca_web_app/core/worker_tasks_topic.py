@@ -423,10 +423,7 @@ def run_topic_modeling_task(
                 },
             }
 
-        try:
-            tv = _compute_topics()
-        except Exception as e:
-            raise RuntimeError(f"BERTopic topic modeling failed: {e}") from e
+        tv = _compute_topics()
 
         if progress_callback:
             progress_callback(0.9, "Writing topic-modeling results...")

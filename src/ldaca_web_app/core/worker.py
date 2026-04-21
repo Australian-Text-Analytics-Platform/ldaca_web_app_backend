@@ -68,26 +68,26 @@ def _configure_worker_environment() -> None:
     """Initialize worker process runtime environment."""
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
+    # Numba threading layer selection: prefer Intel TBB when installed (fastest
+    # on multi-core), otherwise fall back to the workqueue layer which is
+    # pure-Python and always available. The TBB import is wrapped because
+    # `find_spec` may succeed for a partially-installed distribution and the
+    # subsequent import can still fail.
+    tbb_available = False
     try:
-        tbb_available = False
-        try:
-            if importlib.util.find_spec("tbb"):
-                importlib.import_module("tbb")
-                tbb_available = True
-            elif importlib.util.find_spec("tbb4py"):
-                importlib.import_module("tbb4py")
-                tbb_available = True
-        except Exception:
-            tbb_available = False
-
-        if tbb_available:
-            os.environ.setdefault("NUMBA_THREADING_LAYER_PRIORITY", "tbb workqueue omp")
-            os.environ.setdefault("NUMBA_THREADING_LAYER", "tbb")
-        else:
-            os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
-            os.environ.setdefault("NUMBA_THREADING_LAYER_PRIORITY", "workqueue omp tbb")
-            os.environ.setdefault("NUMBA_NUM_THREADS", "1")
+        if importlib.util.find_spec("tbb"):
+            importlib.import_module("tbb")
+            tbb_available = True
+        elif importlib.util.find_spec("tbb4py"):
+            importlib.import_module("tbb4py")
+            tbb_available = True
     except Exception:
+        tbb_available = False
+
+    if tbb_available:
+        os.environ.setdefault("NUMBA_THREADING_LAYER_PRIORITY", "tbb workqueue omp")
+        os.environ.setdefault("NUMBA_THREADING_LAYER", "tbb")
+    else:
         os.environ.setdefault("NUMBA_THREADING_LAYER", "workqueue")
         os.environ.setdefault("NUMBA_THREADING_LAYER_PRIORITY", "workqueue omp tbb")
         os.environ.setdefault("NUMBA_NUM_THREADS", "1")
@@ -369,5 +369,4 @@ class WorkerTaskManager:
             return
         self.executor.shutdown(wait=wait)
         self.executor = None
-        self.is_running = False
         self.is_running = False

@@ -681,12 +681,7 @@ async def get_node_info(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    try:
-        return ws.nodes[node_id].info()
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ws.nodes[node_id].info()
 
 
 @router.get("/nodes/{node_id}/query-plan")
@@ -696,14 +691,9 @@ async def get_node_query_plan(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    try:
-        lazyframe = ws.nodes[node_id].data
-        plan = lazyframe.explain(format="tree")
-        return {"plan": plan}
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    lazyframe = ws.nodes[node_id].data
+    plan = lazyframe.explain(format="tree")
+    return {"plan": plan}
 
 
 @router.get("/nodes/{node_id}/data")
@@ -714,29 +704,24 @@ async def get_node_data(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    try:
-        lazyframe = _require_current_workspace(user_id).nodes[node_id].data
-        df = cast(pl.DataFrame, lazyframe.collect())
-        total_rows = len(df)
-        start_idx = (page - 1) * page_size
-        paginated_df = df.slice(start_idx, page_size)
-        return {
-            "data": stringify_unsafe_integers(paginated_df.to_dicts()),
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total_rows": total_rows,
-                "total_pages": (total_rows + page_size - 1) // page_size,
-                "has_next": start_idx + page_size < total_rows,
-                "has_prev": page > 1,
-            },
-            "columns": list(df.columns),
-            "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    lazyframe = _require_current_workspace(user_id).nodes[node_id].data
+    df = cast(pl.DataFrame, lazyframe.collect())
+    total_rows = len(df)
+    start_idx = (page - 1) * page_size
+    paginated_df = df.slice(start_idx, page_size)
+    return {
+        "data": stringify_unsafe_integers(paginated_df.to_dicts()),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_rows": total_rows,
+            "total_pages": (total_rows + page_size - 1) // page_size,
+            "has_next": start_idx + page_size < total_rows,
+            "has_prev": page > 1,
+        },
+        "columns": list(df.columns),
+        "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
+    }
 
 
 @router.get("/nodes/{node_id}/shape")
@@ -745,12 +730,7 @@ async def get_node_shape(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    try:
-        return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
 
 
 @router.get("/nodes/{node_id}/columns/{column_name}/unique")
@@ -847,11 +827,11 @@ async def describe_column(
 
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt.isoformat()
-                except ValueError, AttributeError:
+                except (ValueError, AttributeError):
                     return val
             try:
                 return float(val)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return val
 
         return ColumnDescribeResponse(

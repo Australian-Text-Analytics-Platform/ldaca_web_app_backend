@@ -100,86 +100,27 @@ async def get_auth_info(authorization: Optional[str] = Header(None)):
 async def google_auth(payload: GoogleIn):
     """Authenticate user via Google OAuth and create app session tokens.
 
-    Used by:
-    - frontend Google sign-in flow
-
-    Why:
-    - Bridges Google ID token verification with local user/session provisioning.
+    Used by the frontend Google sign-in flow (JSON body variant). Delegates
+    the verification + provisioning logic to :func:`_verify_and_create_session`
+    and shapes the response into ``GoogleOut``.
     """
-    if not settings.multi_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Google authentication not available in single-user mode",
-        )
+    result = await _verify_and_create_session(payload.id_token)
+    user = result["user"]
+    session = result["session"]
 
-    if not settings.google_client_id:
-        raise HTTPException(
-            status_code=500, detail="Google authentication not configured"
-        )
-
-    try:
-        # Verify Google ID token
-        info = id_token.verify_oauth2_token(
-            payload.id_token, grequests.Request(), audience=settings.google_client_id
-        )
-        logger.info(f"Google auth successful for: {info.get('email')}")
-    except ValueError as e:
-        logger.error(f"Google token verification failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid ID token: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error during Google token verification: {e}")
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
-
-    if not info.get("email_verified"):
-        logger.error(f"Email not verified for user: {info.get('email')}")
-        raise HTTPException(status_code=400, detail="Email not verified")
-
-    try:
-        # Get or create user in our database
-        user = await get_or_create_user(
-            email=info.get("email"),
-            name=info.get("name"),
-            picture=info.get("picture"),
-            google_id=info.get("sub"),
-        )
-        logger.info(f"User created/found: {user['id']} - {user['email']}")
-
-        # Create user folders and setup sample data
-        user_folders = setup_user_folders(user["id"])
-        logger.info(
-            f"User folders created for: {user['id']} at {user_folders['user_folder']}"
-        )
-
-        # Update user folder path in database
-        from ..db import update_user_folder_path
-
-        await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
-
-        # Create session token
-        session = await create_user_session(user["id"])
-        logger.info(
-            f"Session created for user: {user['id']}, token: {session['access_token'][:10]}..."
-        )
-
-        return GoogleOut(
-            access_token=session["access_token"],
-            refresh_token=session["refresh_token"],
-            expires_in=session["expires_in"],
-            scope="openid email profile",
-            token_type="Bearer",
-            user=User(
-                id=user["id"],
-                email=user["email"],
-                name=user["name"],
-                picture=user["picture"],
-            ),
-        )
-
-    except Exception as e:
-        logger.error(f"Error during user/session creation: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create user session: {str(e)}"
-        )
+    return GoogleOut(
+        access_token=session["access_token"],
+        refresh_token=session["refresh_token"],
+        expires_in=session["expires_in"],
+        scope="openid email profile",
+        token_type="Bearer",
+        user=User(
+            id=user["id"],
+            email=user["email"],
+            name=user["name"],
+            picture=user["picture"],
+        ),
+    )
 
 
 async def _verify_and_create_session(credential: str) -> dict:

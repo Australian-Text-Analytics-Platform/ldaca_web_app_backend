@@ -24,5 +24,3 @@ async def update_preferences(
     current = load_preferences(user["id"])
     merged = merge_preferences(current, body)
     return save_preferences(user["id"], merged)
-    return save_preferences(user["id"], merged)
-    return save_preferences(user["id"], merged)

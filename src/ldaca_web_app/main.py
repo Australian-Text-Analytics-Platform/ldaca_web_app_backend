@@ -51,84 +51,52 @@ async def lifespan(app: FastAPI):
     log_file: IO[str] | None = setup_file_logging("main")
     current_settings = reload_settings()
 
-    # Startup
-    logger.info("=" * 60)
-    logger.info("Starting LDaCA Web App...")
-    logger.info("Platform: %s", sys.platform)
-    logger.info("Python version: %s", sys.version)
-    logger.info("=" * 60)
+    logger.info(
+        "Starting LDaCA Web App (platform=%s, python=%s)",
+        sys.platform,
+        sys.version.split()[0],
+    )
 
-    logger.info("Step 1: Preparing runtime")
-    logger.info("Step 1 complete")
-
-    # Ensure DATA_ROOT and data folders exist before DB init
-    logger.info("Step 2: Creating data folders")
+    # Create data folders
     current_settings.get_data_root().mkdir(parents=True, exist_ok=True)
     current_settings.get_user_data_folder().mkdir(parents=True, exist_ok=True)
     sample_override = current_settings.get_sample_data_folder()
     if sample_override:
         sample_override.mkdir(parents=True, exist_ok=True)
-        logger.info("Sample data folder: %s", sample_override)
-    else:
-        logger.info("Sample data folder: packaged resources")
     current_settings.get_database_backup_folder().mkdir(parents=True, exist_ok=True)
-    logger.info("Step 2 complete")
 
-    # Initialize database
-    logger.info("Step 3: Initializing database")
     await init_db()
-    logger.info("Step 3a: Database initialized")
     await cleanup_expired_sessions()
-    logger.info("Step 3 complete")
 
-    # Worker pool will start lazily on first task submission
-    logger.info("Step 4: Configuring worker pool")
-    logger.info("Worker pool configured for lazy initialization")
-    logger.info("Step 4 complete")
-
-    # Prefetch heavy ML models in a background thread
-    logger.info("Step 5: Starting background model prefetch")
+    # Worker pool initializes lazily on first task; prefetch heavy ML models
+    # in the background so first-request latency is not dominated by downloads.
     from .core.model_prefetch import start_model_prefetch
 
     start_model_prefetch()
-    logger.info("Step 5 complete (downloads continue in background)")
-
-    logger.info("=" * 60)
-    logger.info("SUCCESS: Backend startup complete!")
 
     logger.info(
-        "API Documentation: http://%s:%s/api/docs",
+        "Backend ready: docs=http://%s:%s/api/docs health=http://%s:%s/health",
+        current_settings.server_host,
+        current_settings.backend_port,
         current_settings.server_host,
         current_settings.backend_port,
     )
-    logger.info(
-        "Health Check: http://%s:%s/health",
-        current_settings.server_host,
-        current_settings.backend_port,
-    )
-    logger.info("=" * 60)
 
     yield  # Application runs here
 
-    # Shutdown
-    logger.info("Shutting down Enhanced LDaCA Web App API...")
+    logger.info("Shutting down...")
 
-    # Close log file if it was opened
     if log_file:
-        try:
-            log_file.close()
-        except Exception:
-            pass
+        log_file.close()
 
-    # Shutdown worker pool with timeout to prevent hanging
+    # Worker pool shutdown must tolerate failures so the ASGI shutdown
+    # completes even if the pool is in a bad state.
     try:
         from .core.worker import get_worker_pool
 
         worker_pool = get_worker_pool()
         if worker_pool.is_running:
-            logger.info("Shutting down worker pool...")
             worker_pool.shutdown(wait=True, timeout=5.0)
-            logger.info("Worker pool shutdown complete")
     except Exception as e:
         logger.warning("Error during worker pool shutdown: %s", e)
 

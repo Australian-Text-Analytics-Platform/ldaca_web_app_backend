@@ -302,59 +302,38 @@ class WorkerTaskManager:
             self._cleanup_progress_queue(task_info.id)
 
     def _reconcile_task_progress(self, task_info: TaskInfo) -> None:
-        """Reconcile one task's status and progress with the progress store.
+        """Refresh task status and progress fields.
 
-        Used by:
-        - `list`
-        - `get_task`
-
-        Why:
-        - Centralizes shared status/progress normalization so both task queries
-          behave identically and avoid duplicated logic.
+        For terminal states, `TaskInfo.update_status()` already writes the
+        correct final progress values on the task; we mirror them into the
+        progress store so follow-up SSE clients see a consistent view.
+        For running tasks we read back the latest worker-reported progress.
         """
         task_info.update_status()
         task_id = task_info.id
 
-        # Handle progress based on terminal task status
-        if task_info.status in [
-            TaskStatus.SUCCESSFUL,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        ]:
-            # For completed tasks, ensure progress store reflects completion
-            if task_info.status == TaskStatus.SUCCESSFUL:
-                self._progress_store[task_id] = {
-                    "progress": 1.0,
-                    "message": "Completed successfully",
-                    "updated_at": time.time(),
-                }
-            elif task_info.status == TaskStatus.FAILED:
-                self._progress_store[task_id] = {
-                    "progress": -1.0,
-                    "message": f"Failed: {task_info.error or 'Unknown error'}",
-                    "updated_at": time.time(),
-                }
-            elif task_info.status == TaskStatus.CANCELLED:
-                self._progress_store[task_id] = {
-                    "progress": -1.0,
-                    "message": "Cancelled",
-                    "updated_at": time.time(),
-                }
-
-        # Use appropriate progress values based on task status
-        if task_info.status in [
-            TaskStatus.SUCCESSFUL,
-            TaskStatus.FAILED,
-            TaskStatus.CANCELLED,
-        ]:
-            # Use values from TaskInfo.update_status() for completed tasks
-            pass  # task_info.progress and progress_message are already set by update_status()
-        else:
-            # Use real progress store for running tasks
-            if task_id in self._progress_store:
-                progress_info = self._progress_store[task_id]
-                task_info.progress = progress_info["progress"]
-                task_info.progress_message = progress_info["message"]
+        if task_info.status == TaskStatus.SUCCESSFUL:
+            self._progress_store[task_id] = {
+                "progress": 1.0,
+                "message": "Completed successfully",
+                "updated_at": time.time(),
+            }
+        elif task_info.status == TaskStatus.FAILED:
+            self._progress_store[task_id] = {
+                "progress": -1.0,
+                "message": f"Failed: {task_info.error or 'Unknown error'}",
+                "updated_at": time.time(),
+            }
+        elif task_info.status == TaskStatus.CANCELLED:
+            self._progress_store[task_id] = {
+                "progress": -1.0,
+                "message": "Cancelled",
+                "updated_at": time.time(),
+            }
+        elif task_id in self._progress_store:
+            progress_info = self._progress_store[task_id]
+            task_info.progress = progress_info["progress"]
+            task_info.progress_message = progress_info["message"]
 
     async def _monitor_task_completion(
         self, task_info: TaskInfo, user_id: str, workspace_id: str
@@ -801,21 +780,7 @@ class WorkerTaskManager:
                     continue
 
                 self._reconcile_task_progress(task_info)
-
-                d = {
-                    "task_id": task_info.id,
-                    "task_type": task_info.task_type,
-                    "name": task_info.name,
-                    "user_id": task_info.user_id,
-                    "workspace_id": task_info.workspace_id,
-                    "state": task_info.status.value,
-                    "created_at": task_info.created_at,
-                    "started_at": task_info.started_at,
-                    "finished_at": task_info.finished_at,
-                    "progress": task_info.progress,
-                    "progress_message": task_info.progress_message,
-                }
-                out.append(d)
+                out.append(self._serialize_task(task_info))
             return out
 
     async def any_running(
@@ -956,9 +921,5 @@ class WorkerTaskManager:
             for task_id in task_ids_to_remove:
                 del self._tasks[task_id]
                 self._progress_store.pop(task_id, None)
-                self._cleanup_progress_queue(task_id)
-                self._progress_store.pop(task_id, None)
-                self._cleanup_progress_queue(task_id)
-                self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)
                 self._cleanup_progress_queue(task_id)

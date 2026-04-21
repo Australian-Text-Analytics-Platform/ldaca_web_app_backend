@@ -144,8 +144,12 @@ def main(argv: list[str] | None = None):
     setup_file_logging("cli")
     _setup_signal_handlers()
 
-    use_backend = not args.frontend if not args.backend else True
-    use_frontend = not args.backend if not args.frontend else False
+    # Mutually exclusive argparse group: at most one of these is True.
+    # No flag  -> both   (default: full app)
+    # --backend -> backend only
+    # --frontend -> frontend only
+    use_backend = not args.frontend
+    use_frontend = not args.backend
 
     # Resolve effective port for the browser-open helper
     if args.port:
@@ -172,22 +176,11 @@ def main(argv: list[str] | None = None):
 
 
 if __name__ == "__main__":
-    # Multiprocessing guard for PyInstaller frozen executables
+    # Multiprocessing guard for PyInstaller frozen executables: on Windows the
+    # module is re-imported in worker processes; freeze_support() returns only
+    # in the main process, so the call below is a no-op for children.
     import multiprocessing as mp
 
     mp.freeze_support()
-    main()
-
-    # Only run the server in the main process, not in worker children
-    # Worker processes will have names like 'Process-1', 'Process-2', etc.
-    # The main process has name 'MainProcess'
     if mp.current_process().name == "MainProcess":
-        logger.info("Running in MainProcess, starting server")
         main()
-    else:
-        logger.debug(
-            "Running in child process (%s), skipping server startup",
-            mp.current_process().name,
-        )
-    # Child processes will exit here without starting uvicorn
-    # Child processes will exit here without starting uvicorn
