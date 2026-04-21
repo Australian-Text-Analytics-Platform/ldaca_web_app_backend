@@ -415,7 +415,6 @@ class WorkerTaskManager:
                             workspace_name=workspace.name,
                         )
                         workspace_manager._attach_workspace_dir(workspace, target_dir)
-                        workspace_manager._set_working_dir(target_dir)
 
                         new_node = node_from_dict(node_payload, base_dir=target_dir)
                         workspace.add_node(new_node)

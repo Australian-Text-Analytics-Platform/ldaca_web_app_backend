@@ -1,7 +1,6 @@
 """Shared utility helpers for workspace API modules."""
 
 import logging
-import os
 import re
 import shutil
 from datetime import datetime
@@ -35,18 +34,10 @@ def _allocate_workspace_data_path(
     return candidate
 
 
-def _scan_workspace_parquet(parquet_path: Path, workspace_dir: Path):
+def _scan_workspace_parquet(parquet_path: Path):
+    absolute_path = Path(parquet_path).resolve()
     try:
-        relative_path = parquet_path.relative_to(workspace_dir)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to compute relative parquet path: {exc}",
-        )
-
-    try:
-        os.chdir(workspace_dir)
-        lazy_data: Any = pl.scan_parquet(relative_path)
+        lazy_data: Any = pl.scan_parquet(absolute_path)
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Failed to reload parquet as LazyFrame: {exc}"
@@ -226,7 +217,7 @@ def stage_dataframe_as_lazy(
             status_code=500, detail=f"Failed to persist parquet for workspace: {exc}"
         )
 
-    return _scan_workspace_parquet(parquet_path, workspace_dir)
+    return _scan_workspace_parquet(parquet_path)
 
 
 def stage_parquet_artifact_as_lazy(
@@ -262,7 +253,7 @@ def stage_parquet_artifact_as_lazy(
             detail=f"Failed to copy artifact parquet into workspace data: {exc}",
         )
 
-    return _scan_workspace_parquet(persisted_path, workspace_dir), persisted_path
+    return _scan_workspace_parquet(persisted_path), persisted_path
 
 
 __all__ = [

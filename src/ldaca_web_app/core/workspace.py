@@ -10,15 +10,13 @@ Design Goals:
 
 import json
 import logging
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from docworkspace.workspace.io import read_workspace_metadata
-
 from docworkspace import Workspace
+from docworkspace.workspace.io import read_workspace_metadata
 from ldaca_web_app.models import WorkspaceSummary
 
 from .utils import (
@@ -96,13 +94,6 @@ class WorkspaceManager:
                 "Failed to attach workspace_dir metadata to workspace object: %s", exc
             )
 
-    def _set_working_dir(self, path: Path) -> None:
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            os.chdir(path)
-        except Exception as exc:  # pragma: no cover
-            logger.warning("Failed to set working directory to %s: %s", path, exc)
-
     def _workspace_artifacts_dir_from_workspace_dir(self, workspace_dir: Path) -> Path:
         """Return workspace-scoped analysis artifact directory.
 
@@ -169,7 +160,6 @@ class WorkspaceManager:
             new_ws = Workspace.load(target_dir)
             updated_dir = ensure_display_folder_name(target_dir, new_ws.name)
             self._attach_workspace_dir(new_ws, updated_dir)
-            self._set_working_dir(updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover
             logger.error(
