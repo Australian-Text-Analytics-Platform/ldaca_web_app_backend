@@ -205,10 +205,15 @@ def _build_filter_expression(
                     expr = column_expr.is_null()
         elif op == "contains":
             pattern = str(raw_value)
+            case_sensitive = bool(getattr(condition, "case_sensitive", False))
             if getattr(condition, "regex", False):
                 expr = column_expr.str.contains(pattern)
-            else:
+            elif case_sensitive:
                 expr = column_expr.str.contains(pl.lit(pattern), literal=True)
+            else:
+                expr = column_expr.str.to_lowercase().str.contains(
+                    pl.lit(pattern.lower()), literal=True
+                )
         elif op == "startswith":
             expr = column_expr.str.starts_with(str(raw_value))
         elif op == "endswith":
@@ -827,11 +832,11 @@ async def describe_column(
 
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt.isoformat()
-                except (ValueError, AttributeError):
+                except ValueError, AttributeError:
                     return val
             try:
                 return float(val)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return val
 
         return ColumnDescribeResponse(

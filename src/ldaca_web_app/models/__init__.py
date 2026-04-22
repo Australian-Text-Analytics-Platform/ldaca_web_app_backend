@@ -651,6 +651,7 @@ class FilterCondition(BaseModel):
     # New flags from frontend Filter UI
     negate: Optional[bool] = False
     regex: Optional[bool] = False
+    case_sensitive: Optional[bool] = False
 
 
 class FilterRequest(BaseModel):
