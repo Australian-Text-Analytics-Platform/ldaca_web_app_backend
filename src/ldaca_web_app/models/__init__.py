@@ -740,14 +740,14 @@ class TokenStatisticsData(BaseModel):
     """
 
     token: str
-    freq_corpus_0: int  # O1 - observed frequency in corpus 1
-    freq_corpus_1: int  # O2 - observed frequency in corpus 2
-    expected_0: float | str | None  # Expected frequency in corpus 1
-    expected_1: float | str | None  # Expected frequency in corpus 2
-    corpus_0_total: int  # Total tokens in corpus 1
-    corpus_1_total: int  # Total tokens in corpus 2
-    percent_corpus_0: float | str | None  # %1 - percentage in corpus 1
-    percent_corpus_1: float | str | None  # %2 - percentage in corpus 2
+    freq_baseline: int  # OB - observed frequency in baseline corpus
+    freq_study: int  # OS - observed frequency in study corpus
+    expected_baseline: float | str | None  # Expected frequency in baseline corpus
+    expected_study: float | str | None  # Expected frequency in study corpus
+    baseline_total: int  # Total tokens in baseline corpus
+    study_total: int  # Total tokens in study corpus
+    percent_baseline: float | str | None  # %B - percentage in baseline corpus
+    percent_study: float | str | None  # %S - percentage in study corpus
     percent_diff: float | str | None  # %DIFF - percentage difference
     log_likelihood_llv: float | str | None  # LL - log likelihood G2 statistic
     bayes_factor_bic: float | str | None  # Bayes - Bayes factor (BIC)

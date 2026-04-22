@@ -97,7 +97,7 @@ def _coerce_limit_value(value) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
         candidate = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return DEFAULT_TOKEN_LIMIT
     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
 
@@ -150,7 +150,7 @@ def _safe_float(value) -> float | str | None:
         return None
     try:
         numeric = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if math.isnan(numeric):
         return None
@@ -221,14 +221,14 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         statistics_payload = [
             {
                 "token": str(row.get("token") or ""),
-                "freq_corpus_0": int(row.get("freq_corpus_0") or 0),
-                "freq_corpus_1": int(row.get("freq_corpus_1") or 0),
-                "expected_0": _safe_float(row.get("expected_0")),
-                "expected_1": _safe_float(row.get("expected_1")),
-                "corpus_0_total": int(row.get("corpus_0_total") or 0),
-                "corpus_1_total": int(row.get("corpus_1_total") or 0),
-                "percent_corpus_0": _safe_float(row.get("percent_corpus_0")),
-                "percent_corpus_1": _safe_float(row.get("percent_corpus_1")),
+                "freq_baseline": int(row.get("freq_corpus_0") or 0),
+                "freq_study": int(row.get("freq_corpus_1") or 0),
+                "expected_baseline": _safe_float(row.get("expected_0")),
+                "expected_study": _safe_float(row.get("expected_1")),
+                "baseline_total": int(row.get("corpus_0_total") or 0),
+                "study_total": int(row.get("corpus_1_total") or 0),
+                "percent_baseline": _safe_float(row.get("percent_corpus_0")),
+                "percent_study": _safe_float(row.get("percent_corpus_1")),
                 "percent_diff": _safe_float(row.get("percent_diff")),
                 "log_likelihood_llv": _safe_float(row.get("log_likelihood_llv")),
                 "bayes_factor_bic": _safe_float(row.get("bayes_factor_bic")),
