@@ -221,13 +221,13 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         statistics_payload = [
             {
                 "token": str(row.get("token") or ""),
-                "freq_baseline": int(row.get("freq_corpus_0") or 0),
+                "freq_reference": int(row.get("freq_corpus_0") or 0),
                 "freq_study": int(row.get("freq_corpus_1") or 0),
-                "expected_baseline": _safe_float(row.get("expected_0")),
+                "expected_reference": _safe_float(row.get("expected_0")),
                 "expected_study": _safe_float(row.get("expected_1")),
-                "baseline_total": int(row.get("corpus_0_total") or 0),
+                "reference_total": int(row.get("corpus_0_total") or 0),
                 "study_total": int(row.get("corpus_1_total") or 0),
-                "percent_baseline": _safe_float(row.get("percent_corpus_0")),
+                "percent_reference": _safe_float(row.get("percent_corpus_0")),
                 "percent_study": _safe_float(row.get("percent_corpus_1")),
                 "percent_diff": _safe_float(row.get("percent_diff")),
                 "log_likelihood_llv": _safe_float(row.get("log_likelihood_llv")),

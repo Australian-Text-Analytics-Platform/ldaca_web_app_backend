@@ -740,13 +740,13 @@ class TokenStatisticsData(BaseModel):
     """
 
     token: str
-    freq_baseline: int  # OB - observed frequency in baseline corpus
+    freq_reference: int  # OR - observed frequency in reference corpus
     freq_study: int  # OS - observed frequency in study corpus
-    expected_baseline: float | str | None  # Expected frequency in baseline corpus
+    expected_reference: float | str | None  # Expected frequency in reference corpus
     expected_study: float | str | None  # Expected frequency in study corpus
-    baseline_total: int  # Total tokens in baseline corpus
+    reference_total: int  # Total tokens in reference corpus
     study_total: int  # Total tokens in study corpus
-    percent_baseline: float | str | None  # %B - percentage in baseline corpus
+    percent_reference: float | str | None  # %R - percentage in reference corpus
     percent_study: float | str | None  # %S - percentage in study corpus
     percent_diff: float | str | None  # %DIFF - percentage difference
     log_likelihood_llv: float | str | None  # LL - log likelihood G2 statistic
