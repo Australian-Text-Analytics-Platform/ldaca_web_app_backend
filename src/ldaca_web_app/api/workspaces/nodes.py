@@ -12,10 +12,13 @@ from datetime import datetime
 from typing import Any, Literal, Optional, cast
 
 import polars as pl
-from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from docworkspace.workspace.core import Workspace
+
 logger = logging.getLogger(__name__)
+
+import json
 
 from docworkspace import Node
 
@@ -31,6 +34,9 @@ from ...models import (
     FilterPreviewResponse,
     FilterRequest,
     PaginationInfo,
+    PolarsExpressionApplyResponse,
+    PolarsExpressionContext,
+    PolarsExpressionRequest,
     ReplaceApplyResponse,
     ReplaceRequest,
     SliceRequest,
@@ -1416,3 +1422,118 @@ async def join_nodes(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# =============================================================================
+# UNIFIED POLARS EXPRESSION ENDPOINTS
+# =============================================================================
+
+
+def _deserialize_polars_expr(expr_json: object) -> pl.Expr:
+    """Deserialize a polars expression from its JSON IR (as produced by expr.meta.serialize(format='json'))."""
+    return pl.Expr.deserialize(json.dumps(expr_json).encode(), format="json")
+
+
+def _apply_expression_context(
+    lazy: pl.LazyFrame,
+    request: PolarsExpressionRequest,
+) -> pl.LazyFrame:
+    """Apply the requested polars context + expressions to a LazyFrame."""
+    context = request.context
+    items = request.expressions
+
+    if context == PolarsExpressionContext.filter:
+        expr = _deserialize_polars_expr(items[0].expr)
+        return lazy.filter(expr)
+
+    if context == PolarsExpressionContext.with_columns:
+        exprs = [_deserialize_polars_expr(item.expr) for item in items]
+        return lazy.with_columns(exprs)
+
+    if context == PolarsExpressionContext.select:
+        exprs = [_deserialize_polars_expr(item.expr) for item in items]
+        return lazy.select(exprs)
+
+    if context == PolarsExpressionContext.sort:
+        by = [_deserialize_polars_expr(item.expr) for item in items]
+        descending = [bool(item.descending) for item in items]
+        return lazy.sort(by, descending=descending)
+
+    if context == PolarsExpressionContext.group_by_agg:
+        keys = [_deserialize_polars_expr(k.expr) for k in (request.group_by_keys or [])]
+        aggs = [_deserialize_polars_expr(item.expr) for item in items]
+        return lazy.group_by(keys).agg(aggs)
+
+    raise HTTPException(status_code=400, detail=f"Unknown context: {context}")
+
+
+@router.post("/nodes/{node_id}/expression/preview")
+async def polars_expression_preview(
+    node_id: str,
+    request: PolarsExpressionRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=500),
+    current_user: dict = Depends(get_current_user),
+) -> FilterPreviewResponse:
+    user_id = current_user["id"]
+    workspace = _require_current_workspace(user_id)
+    lazy_data = workspace.nodes[node_id].data
+
+    result_lazy = _apply_expression_context(lazy_data, request)
+
+    total_rows_df = cast(
+        pl.DataFrame,
+        result_lazy.select(pl.len().alias("_len")).collect(),
+    )
+    total_rows = int(total_rows_df.to_series(0).item()) if total_rows_df.height else 0
+
+    total_pages = math.ceil(total_rows / page_size) if total_rows else 0
+    normalized_page = min(max(page, 1), total_pages or 1)
+    start_idx = (normalized_page - 1) * page_size if total_rows else 0
+
+    page_df = cast(
+        pl.DataFrame,
+        result_lazy.slice(start_idx, page_size).collect(),
+    )
+    columns, dtypes = _extract_lazy_schema(result_lazy)
+    data = stringify_unsafe_integers(page_df.to_dicts())
+
+    return FilterPreviewResponse(
+        data=data,
+        columns=columns,
+        dtypes=dtypes,
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=normalized_page < total_pages,
+            has_prev=normalized_page > 1,
+        ),
+    )
+
+
+@router.post("/nodes/{node_id}/expression/apply")
+async def polars_expression_apply(
+    node_id: str,
+    request: PolarsExpressionRequest,
+    current_user: dict = Depends(get_current_user),
+) -> PolarsExpressionApplyResponse:
+    user_id = current_user["id"]
+    workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
+    node = workspace.nodes[node_id]
+
+    result_lazy = _apply_expression_context(node.data, request)
+
+    new_node_name = request.new_node_name or f"{node.name}_{request.context}"
+    new_node = Node(
+        data=result_lazy,
+        name=new_node_name,
+        workspace=workspace,
+        operation=f"expression({request.context}, {node.name})",
+        parents=[node],
+    )
+    workspace.add_node(new_node)
+    update_workspace(user_id, workspace_id)
+    return PolarsExpressionApplyResponse(node_id=new_node.id, node_name=new_node.name)

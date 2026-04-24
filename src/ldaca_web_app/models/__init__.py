@@ -697,6 +697,39 @@ class FilterPreviewResponse(BaseModel):
 
 
 # =============================================================================
+# POLARS EXPRESSION MODELS
+# =============================================================================
+
+
+class PolarsExpressionContext(str, Enum):
+    filter = "filter"
+    with_columns = "with_columns"
+    select = "select"
+    sort = "sort"
+    group_by_agg = "group_by_agg"
+
+
+class PolarsExpressionItem(BaseModel):
+    """A single serialized polars expression, as produced by expr.meta.serialize(format='json')."""
+
+    expr: Any  # parsed JSON object from polars expression IR
+    descending: Optional[bool] = None  # used only in sort context
+
+
+class PolarsExpressionRequest(BaseModel):
+    context: PolarsExpressionContext
+    expressions: List[PolarsExpressionItem]
+    # For group_by_agg: these are the grouping key expressions
+    group_by_keys: Optional[List[PolarsExpressionItem]] = None
+    new_node_name: Optional[str] = None
+
+
+class PolarsExpressionApplyResponse(BaseModel):
+    node_id: str
+    node_name: str
+
+
+# =============================================================================
 # TOKEN FREQUENCY MODELS
 # =============================================================================
 
