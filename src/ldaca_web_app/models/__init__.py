@@ -710,9 +710,9 @@ class PolarsExpressionContext(str, Enum):
 
 
 class PolarsExpressionItem(BaseModel):
-    """A single serialized polars expression, as produced by expr.meta.serialize(format='json')."""
+    """A single polars expression supplied as a Python code string, e.g. ``pl.col('x') > 0``."""
 
-    expr: Any  # parsed JSON object from polars expression IR
+    code: str  # Python expression string evaluated with pl available
     descending: Optional[bool] = None  # used only in sort context
 
 

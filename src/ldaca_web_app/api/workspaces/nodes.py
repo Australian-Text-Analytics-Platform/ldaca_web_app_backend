@@ -12,9 +12,8 @@ from datetime import datetime
 from typing import Any, Literal, Optional, cast
 
 import polars as pl
-from fastapi import APIRouter, Depends, HTTPException, Query
-
 from docworkspace.workspace.core import Workspace
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +23,10 @@ from docworkspace import Node
 
 from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
+from ...core.polars_expr_validator import (
+    PolarsExprValidationError,
+    validate_polars_expr_code,
+)
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
@@ -1429,9 +1432,19 @@ async def join_nodes(
 # =============================================================================
 
 
-def _deserialize_polars_expr(expr_json: object) -> pl.Expr:
-    """Deserialize a polars expression from its JSON IR (as produced by expr.meta.serialize(format='json'))."""
-    return pl.Expr.deserialize(json.dumps(expr_json).encode(), format="json")
+def _exec_polars_expr(code: str) -> pl.Expr:
+    """Execute a polars expression code string and return the resulting pl.Expr.
+
+    Validates the code via AST analysis first, then runs in a restricted
+    namespace with only ``pl`` available.
+    """
+    validate_polars_expr_code(code)
+    ns: dict[str, object] = {"pl": pl}
+    exec(f"_result = {code}", {"__builtins__": {}}, ns)  # noqa: S102
+    result = ns["_result"]
+    if not isinstance(result, pl.Expr):
+        raise ValueError(f"Expected pl.Expr, got {type(result).__name__}")
+    return result
 
 
 def _apply_expression_context(
@@ -1443,25 +1456,25 @@ def _apply_expression_context(
     items = request.expressions
 
     if context == PolarsExpressionContext.filter:
-        expr = _deserialize_polars_expr(items[0].expr)
+        expr = _exec_polars_expr(items[0].code)
         return lazy.filter(expr)
 
     if context == PolarsExpressionContext.with_columns:
-        exprs = [_deserialize_polars_expr(item.expr) for item in items]
+        exprs = [_exec_polars_expr(item.code) for item in items]
         return lazy.with_columns(exprs)
 
     if context == PolarsExpressionContext.select:
-        exprs = [_deserialize_polars_expr(item.expr) for item in items]
+        exprs = [_exec_polars_expr(item.code) for item in items]
         return lazy.select(exprs)
 
     if context == PolarsExpressionContext.sort:
-        by = [_deserialize_polars_expr(item.expr) for item in items]
+        by = [_exec_polars_expr(item.code) for item in items]
         descending = [bool(item.descending) for item in items]
         return lazy.sort(by, descending=descending)
 
     if context == PolarsExpressionContext.group_by_agg:
-        keys = [_deserialize_polars_expr(k.expr) for k in (request.group_by_keys or [])]
-        aggs = [_deserialize_polars_expr(item.expr) for item in items]
+        keys = [_exec_polars_expr(k.code) for k in (request.group_by_keys or [])]
+        aggs = [_exec_polars_expr(item.code) for item in items]
         return lazy.group_by(keys).agg(aggs)
 
     raise HTTPException(status_code=400, detail=f"Unknown context: {context}")
@@ -1479,7 +1492,12 @@ async def polars_expression_preview(
     workspace = _require_current_workspace(user_id)
     lazy_data = workspace.nodes[node_id].data
 
-    result_lazy = _apply_expression_context(lazy_data, request)
+    try:
+        result_lazy = _apply_expression_context(lazy_data, request)
+    except PolarsExprValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     total_rows_df = cast(
         pl.DataFrame,
@@ -1524,7 +1542,12 @@ async def polars_expression_apply(
     workspace_id = workspace.id
     node = workspace.nodes[node_id]
 
-    result_lazy = _apply_expression_context(node.data, request)
+    try:
+        result_lazy = _apply_expression_context(node.data, request)
+    except PolarsExprValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     new_node_name = request.new_node_name or f"{node.name}_{request.context}"
     new_node = Node(
