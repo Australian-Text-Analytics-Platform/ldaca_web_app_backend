@@ -706,16 +706,48 @@ async def get_node_data(
     node_id: str,
     page: int = 1,
     page_size: int = 20,
+    sort_by: Optional[str] = None,
+    descending: bool = False,
+    filter_column: Optional[str] = None,
+    filter_value: Optional[str] = None,
+    filter_op: str = "contains",
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    lazyframe = _require_current_workspace(user_id).nodes[node_id].data
-    df = cast(pl.DataFrame, lazyframe.collect())
-    total_rows = len(df)
+    lf = _require_current_workspace(user_id).nodes[node_id].data
+    schema = {col: str(dtype) for col, dtype in lf.collect_schema().items()}
+    columns = list(schema.keys())
+
+    # Apply column filter on the lazy frame before materialising.
+    if filter_column and filter_value is not None and filter_column in columns:
+        dtype_str = schema.get(filter_column, "")
+        is_string_like = any(
+            t in dtype_str.lower() for t in ("utf8", "string", "categorical")
+        )
+        if is_string_like:
+            col_expr = pl.col(filter_column).cast(pl.Utf8)
+            val = filter_value
+            if filter_op == "eq":
+                lf = lf.filter(col_expr == val)
+            elif filter_op == "startswith":
+                lf = lf.filter(col_expr.str.starts_with(val))
+            elif filter_op == "endswith":
+                lf = lf.filter(col_expr.str.ends_with(val))
+            else:
+                lf = lf.filter(col_expr.str.contains(val, literal=True))
+
+    # Count total rows after filtering (cheap on LazyFrame).
+    total_rows: int = cast(pl.DataFrame, lf.select(pl.len()).collect()).item()
+
+    # Sort lazily before slicing.
+    if sort_by and sort_by in columns:
+        lf = lf.sort(sort_by, descending=descending, nulls_last=True)
+
     start_idx = (page - 1) * page_size
-    paginated_df = df.slice(start_idx, page_size)
+    page_df = cast(pl.DataFrame, lf.slice(start_idx, page_size).collect())
+
     return {
-        "data": stringify_unsafe_integers(paginated_df.to_dicts()),
+        "data": stringify_unsafe_integers(page_df.to_dicts()),
         "pagination": {
             "page": page,
             "page_size": page_size,
@@ -724,8 +756,19 @@ async def get_node_data(
             "has_next": start_idx + page_size < total_rows,
             "has_prev": page > 1,
         },
-        "columns": list(df.columns),
-        "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
+        "columns": columns,
+        "dtypes": schema,
+        "sorting": {
+            "sort_by": sort_by if sort_by and sort_by in columns else None,
+            "descending": descending,
+        },
+        "filtering": {
+            "column": filter_column
+            if filter_column and filter_column in columns
+            else None,
+            "value": filter_value,
+            "op": filter_op,
+        },
     }
 
 
