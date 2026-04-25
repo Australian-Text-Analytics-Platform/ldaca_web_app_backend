@@ -22,19 +22,17 @@ import json
 from docworkspace import Node
 
 from ...core.auth import get_current_user
-from ...core.expression_parser import ExpressionParseError, build_polars_expression
 from ...core.polars_expr_validator import (
     PolarsExprValidationError,
     ValidationResult,
     validate_polars_expr_code,
 )
+from ...core.polars_operations import get_operations_for_dtype
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
     ConcatPreviewRequest,
     ConcatRequest,
-    ExpressionApplyResponse,
-    ExpressionTransformRequest,
     FilterPreviewResponse,
     FilterRequest,
     PaginationInfo,
@@ -106,20 +104,6 @@ def _sanitize_column_alias(label: str) -> str:
     if not sanitized:
         return "computed_column"
     return sanitized[:120]
-
-
-def _resolve_expression_column_name(request: ExpressionTransformRequest) -> str:
-    """Resolve final computed-column name from request expression metadata.
-
-    Used by:
-    - `compute_column_preview`
-    - `compute_column_apply`
-
-    Why:
-    - Keeps naming rules consistent between preview and apply endpoints.
-    """
-    candidate = (request.new_column_name or request.expression or "").strip()
-    return _sanitize_column_alias(candidate)
 
 
 def _resolve_replace_column_name(request: ReplaceRequest) -> str:
@@ -471,123 +455,6 @@ def _derive_concat_node_name(nodes: list[Node], desired_name: Optional[str]) -> 
     else:
         label_str = ", ".join(labels[:3]) + ", ..."
     return f"Stack({label_str})"
-
-
-@router.post(
-    "/nodes/{node_id}/compute-column/preview",
-    response_model=FilterPreviewResponse,
-)
-async def compute_column_preview(
-    node_id: str,
-    request: ExpressionTransformRequest,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=500),
-    current_user: dict = Depends(get_current_user),
-):
-    user_id = current_user["id"]
-    workspace = _require_current_workspace(user_id)
-    lazy_data = workspace.nodes[node_id].data
-
-    try:
-        columns, _ = _extract_lazy_schema(lazy_data)
-        expr = build_polars_expression(request.expression, columns=columns)
-        column_name = _resolve_expression_column_name(request)
-        computed_lazy = lazy_data.with_columns(
-            expr.cast(pl.Utf8, strict=False).alias(column_name)
-        )
-
-        total_rows_df = cast(
-            pl.DataFrame,
-            computed_lazy.select(pl.len().alias("_len")).collect(),
-        )
-        total_rows = (
-            int(total_rows_df.to_series(0).item())
-            if total_rows_df.to_series(0).len()
-            else 0
-        )
-
-        normalized_page_size = page_size
-        total_pages = math.ceil(total_rows / normalized_page_size) if total_rows else 0
-        normalized_page = min(max(page, 1), total_pages or 1)
-        start_idx = (normalized_page - 1) * normalized_page_size if total_rows else 0
-
-        preview_df = cast(
-            pl.DataFrame,
-            computed_lazy.slice(start_idx, normalized_page_size).collect(),
-        )
-    except ExpressionParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return FilterPreviewResponse(
-        data=preview_df.to_dicts(),
-        columns=list(preview_df.columns),
-        dtypes={col: str(dtype) for col, dtype in preview_df.schema.items()},
-        pagination=PaginationInfo(
-            page=normalized_page,
-            page_size=normalized_page_size,
-            total_rows=total_rows,
-            total_pages=total_pages,
-            has_next=normalized_page < total_pages,
-            has_prev=normalized_page > 1 and total_rows > 0,
-        ),
-    )
-
-
-@router.post(
-    "/nodes/{node_id}/compute-column",
-    response_model=ExpressionApplyResponse,
-)
-async def compute_column_apply(
-    node_id: str,
-    request: ExpressionTransformRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    workspace_id = ws.id
-    node = ws.nodes[node_id]
-    try:
-        lazy_data = node.data
-        columns, _ = _extract_lazy_schema(lazy_data)
-        column_name = _resolve_expression_column_name(request)
-        updated_data = lazy_data.with_columns(
-            build_polars_expression(request.expression, columns=columns)
-            .cast(pl.Utf8, strict=False)
-            .alias(column_name)
-        )
-    except HTTPException:
-        raise
-    except ExpressionParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    dtype_str: Optional[str] = None
-    try:
-        schema_dict = dict(updated_data.collect_schema().items())
-        dtype = schema_dict.get(column_name)
-        if dtype is not None:
-            dtype_str = str(dtype)
-    except Exception:  # pragma: no cover - best effort only
-        logger.debug("Could not resolve dtype for column %s", column_name)
-        dtype_str = None
-
-    try:
-        node.data = updated_data
-        update_workspace(user_id, workspace_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return ExpressionApplyResponse(
-        state="successful",
-        node_id=node_id,
-        column_name=column_name,
-        expression=request.expression.strip(),
-        dtype=dtype_str,
-        message=f"Added column '{column_name}' to node",
-    )
 
 
 @router.post(
@@ -1426,6 +1293,28 @@ async def join_nodes(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# =============================================================================
+# COLUMN OPERATIONS REGISTRY ENDPOINT
+# =============================================================================
+
+
+@router.get("/nodes/{node_id}/columns/{column_name}/operations")
+async def column_operations(
+    node_id: str,
+    column_name: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return available no-arg Polars operations for a column, filtered by dtype."""
+    user_id = current_user["id"]
+    ws = _require_current_workspace(user_id)
+    node = ws.nodes[node_id]
+    schema = dict(node.data.collect_schema().items())
+    dtype = schema.get(column_name)
+    if dtype is None:
+        raise HTTPException(status_code=404, detail=f"Column '{column_name}' not found")
+    return {"operations": get_operations_for_dtype(dtype)}
 
 
 # =============================================================================

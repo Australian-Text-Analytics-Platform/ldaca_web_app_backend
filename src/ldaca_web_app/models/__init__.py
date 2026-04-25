@@ -306,27 +306,6 @@ class AggregateOperation(BaseModel):
     aggregations: Dict[str, str]  # column -> function
 
 
-class ExpressionTransformRequest(BaseModel):
-    expression: str = Field(..., min_length=1)
-    new_column_name: Optional[str] = Field(default=None, max_length=200)
-    preview_limit: Optional[int] = Field(default=50, ge=1, le=500)
-
-
-class ExpressionPreviewResponse(BaseModel):
-    columns: List[str]
-    dtypes: Dict[str, str]
-    data: List[Dict[str, Any]]
-
-
-class ExpressionApplyResponse(BaseModel):
-    state: Literal["successful"]
-    node_id: str
-    column_name: str
-    expression: str
-    dtype: Optional[str] = None
-    message: str
-
-
 class ReplaceRequest(BaseModel):
     source_column: str = Field(..., min_length=1, max_length=200)
     pattern: str = Field(..., min_length=1)
