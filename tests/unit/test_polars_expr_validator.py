@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-
 from ldaca_web_app.core.polars_expr_validator import (
     PolarsExprValidationError,
+    ValidationResult,
     validate_polars_expr_code,
 )
 
@@ -40,7 +40,9 @@ class TestValidExpressions:
         ],
     )
     def test_valid_expression_passes(self, code: str) -> None:
-        validate_polars_expr_code(code)  # should not raise
+        result = validate_polars_expr_code(code)
+        assert result.mode == "eval"
+        assert result.alias is None
 
 
 # ── Blocked expressions ─────────────────────────────────────────────
@@ -63,9 +65,7 @@ class TestBlockedExpressions:
 
     def test_blocks_dunder_builtins(self) -> None:
         with pytest.raises(PolarsExprValidationError, match="private attribute"):
-            validate_polars_expr_code(
-                "().__class__.__bases__[0].__subclasses__()"
-            )
+            validate_polars_expr_code("().__class__.__bases__[0].__subclasses__()")
 
     def test_blocks_arbitrary_names(self) -> None:
         with pytest.raises(PolarsExprValidationError, match="Disallowed name"):
@@ -97,19 +97,53 @@ class TestBlockedExpressions:
 
     def test_blocks_mro_traversal(self) -> None:
         with pytest.raises(PolarsExprValidationError, match="private attribute"):
-            validate_polars_expr_code(
-                "''.__class__.__mro__[1].__subclasses__()"
-            )
+            validate_polars_expr_code("''.__class__.__mro__[1].__subclasses__()")
 
-    def test_blocks_statement_code(self) -> None:
-        # ast.parse("x = 1", mode="eval") raises SyntaxError
-        with pytest.raises(PolarsExprValidationError, match="Invalid Python syntax"):
-            validate_polars_expr_code("x = pl.col('a')")
+    def test_allows_single_assignment(self) -> None:
+        result = validate_polars_expr_code("x = pl.col('a')")
+        assert result.mode == "assign"
+        assert result.alias == "x"
 
     def test_blocks_generator_expression(self) -> None:
         with pytest.raises(PolarsExprValidationError, match="Disallowed"):
             validate_polars_expr_code("next(x for x in range(10))")
 
     def test_blocks_walrus_operator(self) -> None:
-        with pytest.raises(PolarsExprValidationError, match="Disallowed construct|Invalid Python syntax"):
+        with pytest.raises(
+            PolarsExprValidationError,
+            match="Disallowed construct|Invalid Python syntax",
+        ):
             validate_polars_expr_code("(x := pl.col('a'))")
+
+
+# ── Assignment syntax ────────────────────────────────────────────────
+class TestAssignmentSyntax:
+    """Tests for ``name = expr`` assignment form."""
+
+    def test_simple_assignment(self) -> None:
+        result = validate_polars_expr_code('discounted = pl.col("price").mul(0.9)')
+        assert result == ValidationResult(mode="assign", alias="discounted")
+
+    def test_assignment_with_method_chain(self) -> None:
+        result = validate_polars_expr_code('year = pl.col("date").dt.year()')
+        assert result == ValidationResult(mode="assign", alias="year")
+
+    def test_blocks_dunder_assignment_target(self) -> None:
+        with pytest.raises(PolarsExprValidationError, match="underscore"):
+            validate_polars_expr_code('__x = pl.col("a")')
+
+    def test_blocks_multi_statement(self) -> None:
+        with pytest.raises(
+            PolarsExprValidationError, match="single assignment|Invalid Python syntax"
+        ):
+            validate_polars_expr_code('x = pl.col("a")\ny = pl.col("b")')
+
+    def test_blocks_multi_target(self) -> None:
+        with pytest.raises(
+            PolarsExprValidationError, match="single assignment|Invalid Python syntax"
+        ):
+            validate_polars_expr_code('x = y = pl.col("a")')
+
+    def test_blocks_assignment_with_dangerous_rhs(self) -> None:
+        with pytest.raises(PolarsExprValidationError, match="Disallowed name"):
+            validate_polars_expr_code("x = os.system('id')")

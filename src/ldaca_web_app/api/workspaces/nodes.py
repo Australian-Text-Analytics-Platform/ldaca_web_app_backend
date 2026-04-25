@@ -25,6 +25,7 @@ from ...core.auth import get_current_user
 from ...core.expression_parser import ExpressionParseError, build_polars_expression
 from ...core.polars_expr_validator import (
     PolarsExprValidationError,
+    ValidationResult,
     validate_polars_expr_code,
 )
 from ...core.utils import stringify_unsafe_integers
@@ -1432,19 +1433,84 @@ async def join_nodes(
 # =============================================================================
 
 
-def _exec_polars_expr(code: str) -> pl.Expr:
-    """Execute a polars expression code string and return the resulting pl.Expr.
+def _split_top_level_commas(code: str) -> list[str]:
+    """Split *code* at commas that are not inside parentheses, brackets, braces, or strings."""
+    segments: list[str] = []
+    depth = 0
+    current: list[str] = []
+    in_string: str | None = None
+    escape = False
 
-    Validates the code via AST analysis first, then runs in a restricted
-    namespace with only ``pl`` available.
+    for char in code:
+        if escape:
+            current.append(char)
+            escape = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escape = True
+            continue
+        if in_string:
+            current.append(char)
+            if char == in_string:
+                in_string = None
+            continue
+        if char in ('"', "'"):
+            in_string = char
+            current.append(char)
+            continue
+        if char in ("(", "[", "{"):
+            depth += 1
+        elif char in (")", "]", "}"):
+            depth = max(0, depth - 1)
+        if char == "," and depth == 0:
+            segments.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+
+    remainder = "".join(current).strip()
+    if remainder:
+        segments.append(remainder)
+    return segments
+
+
+def _exec_polars_expr(code: str) -> list[pl.Expr]:
+    """Execute polars expression code string(s) and return resulting pl.Expr(s).
+
+    A single textarea may contain comma-separated segments.  Each segment is
+    validated and executed individually, supporting:
+
+    * Plain expression: ``pl.col("a")``
+    * Assignment: ``name = pl.col("a")`` → ``pl.col("a").alias(name)``
+    * Mixed: ``pl.col("a"), b = pl.col("x")``
     """
-    validate_polars_expr_code(code)
-    ns: dict[str, object] = {"pl": pl}
-    exec(f"_result = {code}", {"__builtins__": {}}, ns)  # noqa: S102
-    result = ns["_result"]
-    if not isinstance(result, pl.Expr):
-        raise ValueError(f"Expected pl.Expr, got {type(result).__name__}")
-    return result
+    segments = _split_top_level_commas(code.strip())
+    if not segments:
+        raise ValueError("Expression code cannot be empty")
+
+    exprs: list[pl.Expr] = []
+    for segment in segments:
+        vr: ValidationResult = validate_polars_expr_code(segment)
+
+        if vr.mode == "assign":
+            expr_source = segment.split("=", 1)[1].strip()
+        else:
+            expr_source = segment
+
+        ns: dict[str, object] = {"pl": pl}
+        exec(f"_result = {expr_source}", {"__builtins__": {}}, ns)  # noqa: S102
+        result = ns["_result"]
+
+        if not isinstance(result, pl.Expr):
+            raise ValueError(f"Expected pl.Expr, got {type(result).__name__}")
+
+        if vr.mode == "assign" and vr.alias:
+            result = result.alias(vr.alias)
+
+        exprs.append(result)
+
+    return exprs
 
 
 def _apply_expression_context(
@@ -1456,25 +1522,32 @@ def _apply_expression_context(
     items = request.expressions
 
     if context == PolarsExpressionContext.filter:
-        expr = _exec_polars_expr(items[0].code)
-        return lazy.filter(expr)
+        exprs = _exec_polars_expr(items[0].code)
+        return lazy.filter(exprs[0])
 
     if context == PolarsExpressionContext.with_columns:
-        exprs = [_exec_polars_expr(item.code) for item in items]
+        exprs = [e for item in items for e in _exec_polars_expr(item.code)]
         return lazy.with_columns(exprs)
 
     if context == PolarsExpressionContext.select:
-        exprs = [_exec_polars_expr(item.code) for item in items]
+        exprs = [e for item in items for e in _exec_polars_expr(item.code)]
         return lazy.select(exprs)
 
     if context == PolarsExpressionContext.sort:
-        by = [_exec_polars_expr(item.code) for item in items]
-        descending = [bool(item.descending) for item in items]
+        pairs = [
+            (e, bool(item.descending))
+            for item in items
+            for e in _exec_polars_expr(item.code)
+        ]
+        by = [p[0] for p in pairs]
+        descending = [p[1] for p in pairs]
         return lazy.sort(by, descending=descending)
 
     if context == PolarsExpressionContext.group_by_agg:
-        keys = [_exec_polars_expr(k.code) for k in (request.group_by_keys or [])]
-        aggs = [_exec_polars_expr(item.code) for item in items]
+        keys = [
+            e for k in (request.group_by_keys or []) for e in _exec_polars_expr(k.code)
+        ]
+        aggs = [e for item in items for e in _exec_polars_expr(item.code)]
         return lazy.group_by(keys).agg(aggs)
 
     raise HTTPException(status_code=400, detail=f"Unknown context: {context}")
