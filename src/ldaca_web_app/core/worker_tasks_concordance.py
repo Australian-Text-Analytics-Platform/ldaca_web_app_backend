@@ -204,6 +204,24 @@ def run_concordance_detach_task(
             extra_columns_data=extra_columns_data,
         )
 
+        # Compute frequency columns (same as materialize) so detach always
+        # includes CONC_l1_freq and CONC_r1_freq regardless of prior
+        # materialization.
+        l1_freq = (
+            result.group_by(CONC_L1_COLUMN)
+            .len()
+            .rename({"len": CONC_L1_FREQ_COLUMN})
+        )
+        r1_freq = (
+            result.group_by(CONC_R1_COLUMN)
+            .len()
+            .rename({"len": CONC_R1_FREQ_COLUMN})
+        )
+        result = result.join(l1_freq, on=CONC_L1_COLUMN, how="left").join(
+            r1_freq, on=CONC_R1_COLUMN, how="left"
+        )
+        output_columns = output_columns + [CONC_L1_FREQ_COLUMN, CONC_R1_FREQ_COLUMN]
+
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")
 
