@@ -130,12 +130,28 @@ def run_concordance_detach_task(
         if materialized_path and os.path.exists(materialized_path):
             if progress_callback:
                 progress_callback(0.4, "Reusing materialized occurrences...")
-            # Copy the materialized parquet into a detach-owned file so the
-            # parent analysis task's materialized artifact can be cleaned up
-            # independently (e.g. when the user clears results) without
-            # breaking this detached node's serialized query plan.
-            import shutil
             import uuid
+
+            # Read the materialized parquet and select only the columns the
+            # user requested.  The materialized parquet contains all source
+            # metadata columns so the detach fast path can respect the user's
+            # column selection.
+            mat_df = pl.read_parquet(materialized_path)
+
+            # Determine which columns to keep.
+            keep_cols: list[str] = []
+            if include_document_column and document_column in mat_df.columns:
+                keep_cols.append(document_column)
+            if extra_columns_data:
+                for col_name in extra_columns_data:
+                    if col_name in mat_df.columns and col_name not in keep_cols:
+                        keep_cols.append(col_name)
+            # Always keep concordance-generated columns.
+            for col in mat_df.columns:
+                if col not in keep_cols:
+                    if col.startswith("CONC_"):
+                        keep_cols.append(col)
+            mat_df = mat_df.select(keep_cols) if keep_cols else mat_df
 
             detach_data_dir = os.path.join(workspace_dir, "data")
             os.makedirs(detach_data_dir, exist_ok=True)
@@ -143,12 +159,10 @@ def run_concordance_detach_task(
                 detach_data_dir,
                 f"concordance_detach_{uuid.uuid4().hex}.parquet",
             )
-            shutil.copy2(materialized_path, detach_parquet_path)
+            mat_df.write_parquet(detach_parquet_path)
             lazy = pl.scan_parquet(detach_parquet_path)
             schema_names = list(lazy.collect_schema().names())
-            record_count = int(
-                cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0
-            )
+            record_count = len(mat_df)
             output_columns = schema_names
             detached_node = Node(
                 data=lazy,
