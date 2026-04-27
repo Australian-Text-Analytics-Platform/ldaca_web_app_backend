@@ -655,13 +655,10 @@ async def _compute_materialized_quotation_page(
     columns = list(slice_df.columns)
     grouped_rows: list[list[dict[str, Any]]] = []
     for row in slice_df.to_dicts():
-        projected = _project_quotation_hit(row)
-        if _quotation_hit_has_content(projected):
-            merged = {
-                **{k: v for k, v in row.items() if k not in projected},
-                **projected,
-            }
-            grouped_rows.append([merged])
+        # The materialized parquet already uses canonical QUOTE_* column names,
+        # so skip _project_quotation_hit (which expects unprefixed raw keys).
+        if _quotation_hit_has_content(row):
+            grouped_rows.append([row])
 
     total_source_pages = (
         0 if total_rows == 0 else max(1, math.ceil(total_rows / effective_page_size))
