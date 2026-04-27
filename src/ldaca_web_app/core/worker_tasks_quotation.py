@@ -235,6 +235,15 @@ def run_quotation_materialize_task(
         )
         quote_df.write_parquet(materialized_path)
 
+        import polars as pl
+
+        total_source_documents = len(node_corpus)
+        unique_documents_with_hits = (
+            int(quote_df.select(pl.col(document_column).n_unique()).item())
+            if document_column in quote_df.columns
+            else 0
+        )
+
         if progress_callback:
             progress_callback(1.0, "Quotation materialize completed")
 
@@ -246,6 +255,8 @@ def run_quotation_materialize_task(
                 "parent_node_id": parent_node_id,
                 "output_columns": output_columns,
                 "record_count": int(quote_df.height),
+                "unique_documents_with_hits": unique_documents_with_hits,
+                "total_source_documents": total_source_documents,
                 "engine_config": engine_config,
             },
             "message": "Quotation materialize completed successfully",

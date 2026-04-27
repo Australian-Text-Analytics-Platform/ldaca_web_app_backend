@@ -330,6 +330,13 @@ def run_concordance_materialize_task(
         )
         result.write_parquet(materialized_path)
 
+        total_source_documents = len(node_corpus)
+        unique_documents_with_hits = (
+            int(result.select(pl.col(document_column).n_unique()).item())
+            if document_column in result.columns
+            else 0
+        )
+
         if progress_callback:
             progress_callback(1.0, "Concordance materialize completed")
 
@@ -341,6 +348,8 @@ def run_concordance_materialize_task(
                 "parent_node_id": parent_node_id,
                 "output_columns": output_columns,
                 "record_count": int(len(result)),
+                "unique_documents_with_hits": unique_documents_with_hits,
+                "total_source_documents": total_source_documents,
             },
             "message": "Concordance materialize completed successfully",
         }

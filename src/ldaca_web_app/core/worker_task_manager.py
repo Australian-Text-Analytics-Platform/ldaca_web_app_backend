@@ -488,6 +488,16 @@ class WorkerTaskManager:
                                 f"Parent analysis task {parent_task_id} not found"
                             )
 
+                        materialize_summary = {
+                            "record_count": data.get("record_count"),
+                            "unique_documents_with_hits": data.get(
+                                "unique_documents_with_hits"
+                            ),
+                            "total_source_documents": data.get(
+                                "total_source_documents"
+                            ),
+                        }
+
                         if task_type == "concordance_materialize":
                             existing = (
                                 getattr(parent_task.request, "materialized_paths", None)
@@ -496,9 +506,28 @@ class WorkerTaskManager:
                             updated = dict(existing)
                             updated[str(parent_node_id)] = str(materialized_path)
                             parent_task.request.materialized_paths = updated
+
+                            existing_summaries = (
+                                getattr(
+                                    parent_task.request,
+                                    "materialize_summaries",
+                                    None,
+                                )
+                                or {}
+                            )
+                            updated_summaries = dict(existing_summaries)
+                            updated_summaries[str(parent_node_id)] = (
+                                materialize_summary
+                            )
+                            parent_task.request.materialize_summaries = (
+                                updated_summaries
+                            )
                         else:
                             parent_task.request.materialized_path = str(
                                 materialized_path
+                            )
+                            parent_task.request.materialize_summary = (
+                                materialize_summary
                             )
 
                         parent_task.updated_at = datetime.now()
