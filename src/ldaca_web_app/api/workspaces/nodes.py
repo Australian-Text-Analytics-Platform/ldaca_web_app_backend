@@ -1511,6 +1511,13 @@ async def polars_expression_apply(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # with_columns without an explicit new node name mutates the existing node
+    # in place (adds/replaces columns), matching the behaviour of replace_apply.
+    if request.context == PolarsExpressionContext.with_columns and not request.new_node_name:
+        node.data = result_lazy
+        update_workspace(user_id, workspace_id)
+        return PolarsExpressionApplyResponse(node_id=node_id, node_name=node.name)
+
     new_node_name = request.new_node_name or f"{node.name}_{request.context}"
     new_node = Node(
         data=result_lazy,
