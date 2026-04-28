@@ -527,6 +527,7 @@ class SequentialAnalysisRequest(BaseModel):
     column_type: Literal["datetime", "numeric"] = "datetime"
     numeric_origin: Optional[float] = None
     numeric_interval: Optional[float] = None
+    case_sensitive: bool = True
 
     @model_validator(mode="after")
     def validate_numeric_params(self) -> "SequentialAnalysisRequest":

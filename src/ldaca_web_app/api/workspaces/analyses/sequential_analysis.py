@@ -50,6 +50,7 @@ def _run_sequential_analysis(
     column_type: str = "datetime",
     numeric_origin: float | None = None,
     numeric_interval: float | None = None,
+    case_sensitive: bool = True,
 ) -> pl.DataFrame:
     """Pure-Polars implementation of sequential analysis.
 
@@ -150,6 +151,12 @@ def _run_sequential_analysis(
 
     # Determine grouping columns
     group_cols = ["time_period"] + (group_by_columns or [])
+
+    # Lowercase group-by column values for case-insensitive grouping
+    if not case_sensitive and group_by_columns:
+        for col_name in group_by_columns:
+            if df.schema.get(col_name) == pl.String or df.schema.get(col_name) == pl.Utf8:
+                df = df.with_columns(pl.col(col_name).str.to_lowercase())
 
     # Perform aggregation
     result_df = df.group_by(group_cols).agg(
@@ -381,6 +388,7 @@ async def run_sequential_analysis(
             column_type=request.column_type,
             numeric_origin=request.numeric_origin,
             numeric_interval=request.numeric_interval,
+            case_sensitive=request.case_sensitive,
         )
 
         inherited_chart_type = DEFAULT_CHART_TYPE
