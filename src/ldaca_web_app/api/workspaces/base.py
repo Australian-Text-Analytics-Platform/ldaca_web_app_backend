@@ -391,6 +391,16 @@ async def add_node_to_workspace(
             node_name = node_name[: -len(ext)]
             break
 
+    # Use only the immediate parent folder + file stem as the data block name.
+    # Example: "sample_data/Hansard/housing_agenda" -> "Hansard/housing_agenda".
+    # Files at the root of the data folder keep just the stem.
+    normalized = node_name.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) >= 2:
+        node_name = "/".join(parts[-2:])
+    elif parts:
+        node_name = parts[-1]
+
     lazy_data = stage_dataframe_as_lazy(
         eager_data,
         workspace_dir,
