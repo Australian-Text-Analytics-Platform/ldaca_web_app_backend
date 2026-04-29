@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.1.30"
+version = "0.1.31"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -32,16 +32,18 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
     "psutil>=6.1.0",                            # Process management for proper cleanup of child processes
-    "docworkspace>=0.2.5",
+    "docworkspace>=0.2.6",
     # Polars 1.40 splits the Rust runtime into feature tiers; the default
     # `polars-runtime-32` lacks Categorical/Decimal/etc. support, which
     # breaks LazyFrame.deserialize() for plans containing those dtypes.
     # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
     "polars[rtcompat]>=1.40.0",
-    # polars-text 0.1.5 ships a wheel built with the full polars-plan
-    # feature set; older 0.1.4 wheels lacked dtype-categorical and other
-    # expression namespaces, causing DslPlan deserialization to fail.
-    "polars-text>=0.1.5",
+    # polars-text 0.1.6 enables polars-plan's `nightly` Cargo feature, which
+    # gates extra DslPlan variants (e.g. `StringFunction::Titlecase`) that
+    # Python polars wheels emit. Older wheels (<=0.1.5) fail to deserialize
+    # plans containing `.str.to_titlecase()` with
+    # `unknown variant 'Titlecase'`.
+    "polars-text>=0.1.6",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
