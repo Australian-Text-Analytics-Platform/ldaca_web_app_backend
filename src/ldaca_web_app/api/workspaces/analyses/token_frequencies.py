@@ -28,6 +28,7 @@ from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
 from ..utils import ensure_task_synced, update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces")
@@ -486,6 +487,12 @@ async def calculate_token_frequencies(
                 workspace_id,
                 exc_info=True,
             )
+
+        # Drop any prior completed/failed token-frequency task before submitting
+        # a new one to keep per-user analysis state and artifacts bounded.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["token_frequencies", "token-frequencies"]
+        )
 
         artifact_dir, artifact_prefix = _prepare_token_artifact_target(
             user_id, workspace_id

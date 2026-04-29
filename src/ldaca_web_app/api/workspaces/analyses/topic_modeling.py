@@ -29,6 +29,7 @@ from ....models import (
     TopicModelingResponse,
 )
 from ..utils import ensure_task_synced, update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN
 
@@ -206,6 +207,13 @@ async def run_topic_modeling(
         except Exception:
             # Non-fatal: proceed to submit a new task.
             pass
+
+        # Drop any prior completed/failed topic-modeling task before submitting
+        # a new one. Prevents unbounded accumulation of in-memory task records
+        # and on-disk parquet artifacts as the user iterates on parameters.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["topic_modeling", "topic-modeling"]
+        )
 
         artifact_dir, artifact_prefix = _prepare_topic_artifact_target(
             user_id, workspace_id

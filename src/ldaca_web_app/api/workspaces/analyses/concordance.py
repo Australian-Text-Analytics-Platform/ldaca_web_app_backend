@@ -30,6 +30,7 @@ from ....models import (
     ConcordanceMaterializeRequest,
 )
 from ..utils import update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     DEFAULT_CONCORDANCE_PAGE,
@@ -154,6 +155,11 @@ async def run_concordance(
         )
 
         task_id = str(uuid4())
+        # Drop any prior completed/failed concordance task before recording the
+        # new one to keep the per-user analysis store bounded.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["concordance", "concordance_analysis"]
+        )
         task_manager.save_task(
             AnalysisTask(
                 task_id=task_id,
