@@ -484,7 +484,12 @@ async def cast_node(
             # Simplified: single to_datetime call mirroring notebook usage
             # Default strict=False so rows that don't match become null instead of failing entire cast
             try:
-                if datetime_format:
+                # If the source is already Datetime, skip parsing and only
+                # adjust timezone (the previous unconditional `.str.to_datetime`
+                # call raised "expected `String`, got `datetime[...]`").
+                if orig_lower.startswith("datetime"):
+                    parsed = pl.col(column_name)
+                elif datetime_format:
                     parsed = pl.col(column_name).str.to_datetime(
                         format=datetime_format, strict=bool(strict_flag)
                     )
@@ -502,7 +507,11 @@ async def cast_node(
                 _format_has_tz = datetime_format and any(
                     tok in datetime_format for tok in _tz_tokens
                 )
-                if _format_has_tz:
+                # An existing Datetime column may already carry a timezone
+                # (e.g. "datetime[μs, UTC]"); replace_time_zone would fail on
+                # those, so use convert_time_zone instead.
+                _source_has_tz = orig_lower.startswith("datetime") and "," in orig_lower
+                if _format_has_tz or _source_has_tz:
                     cast_expr = parsed.dt.convert_time_zone("UTC").alias(column_name)
                 else:
                     cast_expr = parsed.dt.replace_time_zone("UTC").alias(column_name)
