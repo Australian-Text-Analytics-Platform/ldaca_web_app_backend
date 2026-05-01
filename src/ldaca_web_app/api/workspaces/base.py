@@ -56,6 +56,16 @@ EXPORT_FORMAT_SPECS: dict[str, dict[str, str | None]] = {
         "media_type": "application/x-ndjson",
         "sink_method": "sink_ndjson",
     },
+    "xlsx": {
+        # Polars writes Excel via DataFrame.write_excel (no LazyFrame sink).
+        # Native dtypes (Int*, Float*, Date, Datetime, Boolean, etc.) are
+        # preserved as their Excel-native equivalents — see _export_node_artifact.
+        "extension": "xlsx",
+        "media_type": (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        "sink_method": None,
+    },
 }
 
 
@@ -73,6 +83,19 @@ def _stringify_lazyframe_for_csv(data: pl.LazyFrame) -> pl.LazyFrame:
         .alias(column_name)
         for column_name in data.collect_schema().names()
     )
+
+
+def _prepare_dataframe_for_excel(data: pl.DataFrame) -> pl.DataFrame:
+    """Drop timezone metadata from datetime columns because Excel cannot store it."""
+    timezone_aware_datetime_columns = [
+        pl.col(column_name).dt.replace_time_zone(None).alias(column_name)
+        for column_name, dtype in data.schema.items()
+        if dtype.base_type() == pl.Datetime
+        and getattr(dtype, "time_zone", None) is not None
+    ]
+    if not timezone_aware_datetime_columns:
+        return data
+    return data.with_columns(timezone_aware_datetime_columns)
 
 
 def _sanitize_export_label(value: str | None, fallback: str) -> str:
@@ -119,6 +142,32 @@ def _export_node_artifact(
                     ),
                 )
             sink_method(output_path)
+        elif fmt == "xlsx":
+            # Polars has no LazyFrame.sink_excel; collect once at the boundary.
+            # write_excel (via xlsxwriter) preserves Polars dtypes as native
+            # Excel types: integers stay numeric, Date/Datetime are written
+            # with appropriate Excel date/time formats, booleans round-trip,
+            # etc. Setting reasonable defaults for date/datetime so cells are
+            # recognised as dates rather than displayed as numbers.
+            collected_data = _prepare_dataframe_for_excel(
+                cast(pl.DataFrame, export_data.collect())
+            )
+            # Excel sheet names: max 31 chars, must not contain []:*?/\\.
+            # _sanitize_export_label already strips most of these, but it
+            # permits [] which Excel forbids — strip them here too.
+            sheet_name = (
+                "".join("_" if ch in "[]" else ch for ch in stem)[:31] or "Sheet1"
+            )
+            collected_data.write_excel(
+                output_path,
+                worksheet=sheet_name,
+                dtype_formats={
+                    pl.Date: "yyyy-mm-dd",
+                    pl.Datetime: "yyyy-mm-dd hh:mm:ss",
+                    pl.Time: "hh:mm:ss",
+                },
+                autofit=True,
+            )
         else:
             # Polars does not currently expose LazyFrame.sink_json, so JSON
             # remains the single explicit eager export path.

@@ -572,6 +572,68 @@ class TestWorkspaceAPI:
             {"document": "beta", "tags": "['three']", "meta": "{'rank': 2}"},
         ]
 
+    async def test_export_single_node_as_xlsx_preserves_dtypes(
+        self,
+        authenticated_client,
+        tiny_node_id,
+    ):
+        """XLSX export should preserve native dtypes (int/float/date/datetime/bool)."""
+        from datetime import date, datetime
+        from zoneinfo import ZoneInfo
+
+        from ldaca_web_app.core.workspace import workspace_manager
+
+        workspace = workspace_manager.get_current_workspace("test")
+        assert workspace is not None
+        node = workspace.nodes[tiny_node_id]
+        node.data = pl.DataFrame(
+            {
+                "i": [1, 2, 3],
+                "f": [1.5, 2.5, 3.5],
+                "s": ["a", "b", "c"],
+                "d": [date(2024, 1, 1), date(2024, 6, 15), date(2025, 3, 1)],
+                "dt": [
+                    datetime(2024, 1, 1, 12, 30),
+                    datetime(2024, 6, 15, 8, 0),
+                    datetime(2025, 3, 1, 18, 45),
+                ],
+                "dt_tz": [
+                    datetime(2024, 1, 1, 23, 30, tzinfo=ZoneInfo("Australia/Sydney")),
+                    datetime(2024, 6, 15, 8, 0, tzinfo=ZoneInfo("Australia/Sydney")),
+                    datetime(2025, 3, 1, 18, 45, tzinfo=ZoneInfo("Australia/Sydney")),
+                ],
+                "b": [True, False, True],
+            }
+        ).lazy()
+
+        response = await authenticated_client.get(
+            "/api/workspaces/export",
+            params={"node_ids": tiny_node_id, "format": "xlsx"},
+        )
+
+        assert response.status_code == 200, response.text
+        assert (
+            response.headers["content-type"]
+            == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert response.headers["content-disposition"].endswith(".xlsx")
+
+        exported = pl.read_excel(io.BytesIO(response.content))
+        assert exported.shape == (3, 7)
+        assert exported.schema["i"] == pl.Int64
+        assert exported.schema["f"] == pl.Float64
+        assert exported.schema["s"] == pl.String
+        assert exported.schema["d"] == pl.Date
+        # Datetime time-unit may differ between writer/reader; just assert kind.
+        assert exported.schema["dt"].base_type() == pl.Datetime
+        assert exported.schema["dt_tz"].base_type() == pl.Datetime
+        assert exported.schema["b"] == pl.Boolean
+        assert exported["dt_tz"].to_list() == [
+            datetime(2024, 1, 1, 23, 30),
+            datetime(2024, 6, 15, 8, 0),
+            datetime(2025, 3, 1, 18, 45),
+        ]
+
     async def test_export_multiple_nodes_as_parquet_zip(
         self,
         authenticated_client,
