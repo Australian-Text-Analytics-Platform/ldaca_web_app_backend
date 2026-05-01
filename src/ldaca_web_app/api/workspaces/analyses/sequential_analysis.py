@@ -34,6 +34,16 @@ VALID_CHART_TYPES = {"line", "bar", "area"}
 DEFAULT_CHART_TYPE = "line"
 SEQUENTIAL_TASK = "sequential_analysis"
 
+# Polars duration suffix and strftime format for each custom-interval unit.
+# Keys must match the Literal in `SequentialAnalysisRequest.custom_interval_unit`.
+_CUSTOM_UNIT_SPEC: dict[str, tuple[str, str]] = {
+    "seconds": ("s", "%Y-%m-%d %H:%M:%S"),
+    "minutes": ("m", "%Y-%m-%d %H:%M"),
+    "hours": ("h", "%Y-%m-%d %H:00"),
+    "days": ("d", "%Y-%m-%d"),
+    "weeks": ("w", "%Y-%m-%d"),
+}
+
 
 # ---------------------------------------------------------------------------
 # Standalone sequential-analysis logic (ported from docframe)
@@ -50,6 +60,8 @@ def _run_sequential_analysis(
     column_type: str = "datetime",
     numeric_origin: float | None = None,
     numeric_interval: float | None = None,
+    custom_interval_value: int | None = None,
+    custom_interval_unit: str | None = None,
     case_sensitive: bool = True,
 ) -> pl.DataFrame:
     """Pure-Polars implementation of sequential analysis.
@@ -105,6 +117,20 @@ def _run_sequential_analysis(
                 pl.col(time_column).dt.truncate("1y").dt.date().alias("time_period")
             )
             time_format = "%Y"
+        elif frequency == "custom":
+            if custom_interval_value is None or custom_interval_value <= 0:
+                raise ValueError(
+                    "custom_interval_value must be a positive integer when frequency='custom'"
+                )
+            unit_spec = _CUSTOM_UNIT_SPEC.get(custom_interval_unit or "")
+            if unit_spec is None:
+                raise ValueError(
+                    f"Unsupported custom_interval_unit '{custom_interval_unit}'. "
+                    f"Use one of: {sorted(_CUSTOM_UNIT_SPEC)}"
+                )
+            duration_suffix, time_format = unit_spec
+            duration = f"{int(custom_interval_value)}{duration_suffix}"
+            time_expr = pl.col(time_column).dt.truncate(duration).alias("time_period")
         else:
             time_expr = pl.col(time_column).dt.date().alias("time_period")
             time_format = "%Y-%m-%d"
@@ -369,6 +395,7 @@ async def run_sequential_analysis(
             "monthly",
             "quarterly",
             "yearly",
+            "custom",
         ]
         if (
             request.column_type == "datetime"
@@ -388,6 +415,8 @@ async def run_sequential_analysis(
             column_type=request.column_type,
             numeric_origin=request.numeric_origin,
             numeric_interval=request.numeric_interval,
+            custom_interval_value=request.custom_interval_value,
+            custom_interval_unit=request.custom_interval_unit,
             case_sensitive=request.case_sensitive,
         )
 

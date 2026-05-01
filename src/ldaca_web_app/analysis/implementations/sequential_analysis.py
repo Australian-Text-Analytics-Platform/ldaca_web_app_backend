@@ -47,6 +47,14 @@ class SequentialAnalysisRequest(BaseAnalysisRequest):
     numeric_interval: Optional[float] = Field(
         None, description="Interval for numeric binning"
     )
+    custom_interval_value: Optional[int] = Field(
+        None,
+        description="Custom datetime interval count (used when frequency='custom')",
+    )
+    custom_interval_unit: Optional[str] = Field(
+        None,
+        description="Custom datetime interval unit (seconds|minutes|hours|days|weeks)",
+    )
     case_sensitive: bool = Field(
         True, description="Whether group-by values are compared case-sensitively"
     )

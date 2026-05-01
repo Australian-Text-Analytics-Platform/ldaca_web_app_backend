@@ -521,12 +521,16 @@ class SequentialAnalysisRequest(BaseModel):
     time_column: str
     group_by_columns: Optional[List[str]] = None
     frequency: Literal[
-        "hourly", "daily", "weekly", "monthly", "quarterly", "yearly"
+        "hourly", "daily", "weekly", "monthly", "quarterly", "yearly", "custom"
     ] = "monthly"
     sort_by_time: bool = True
     column_type: Literal["datetime", "numeric"] = "datetime"
     numeric_origin: Optional[float] = None
     numeric_interval: Optional[float] = None
+    custom_interval_value: Optional[int] = None
+    custom_interval_unit: Optional[
+        Literal["seconds", "minutes", "hours", "days", "weeks"]
+    ] = None
     case_sensitive: bool = True
 
     @model_validator(mode="after")
@@ -535,6 +539,15 @@ class SequentialAnalysisRequest(BaseModel):
             if self.numeric_interval is None or self.numeric_interval <= 0:
                 raise ValueError(
                     "numeric_interval must be a positive number when column_type='numeric'"
+                )
+        if self.column_type == "datetime" and self.frequency == "custom":
+            if self.custom_interval_value is None or self.custom_interval_value <= 0:
+                raise ValueError(
+                    "custom_interval_value must be a positive integer when frequency='custom'"
+                )
+            if self.custom_interval_unit is None:
+                raise ValueError(
+                    "custom_interval_unit is required when frequency='custom'"
                 )
         return self
 
@@ -549,6 +562,8 @@ class SequentialAnalysisRequest(BaseModel):
                 "column_type": "datetime",
                 "numeric_origin": None,
                 "numeric_interval": None,
+                "custom_interval_value": None,
+                "custom_interval_unit": None,
             }
         }
     )
