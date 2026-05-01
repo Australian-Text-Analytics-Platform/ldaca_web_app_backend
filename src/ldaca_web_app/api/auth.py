@@ -4,10 +4,12 @@ Unified authentication endpoints following Single Source of Truth principle
 
 import logging
 from typing import Optional
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Request
 from google.auth.transport import requests as grequests
 from google.oauth2 import id_token
+from starlette.responses import RedirectResponse
 
 from ..core.auth import (
     get_available_auth_methods,
@@ -98,27 +100,48 @@ async def get_auth_info(authorization: Optional[str] = Header(None)):
 async def google_auth(payload: GoogleIn):
     """Authenticate user via Google OAuth and create app session tokens.
 
-    Used by:
-    - frontend Google sign-in flow
+    Used by the frontend Google sign-in flow (JSON body variant). Delegates
+    the verification + provisioning logic to :func:`_verify_and_create_session`
+    and shapes the response into ``GoogleOut``.
+    """
+    result = await _verify_and_create_session(payload.id_token)
+    user = result["user"]
+    session = result["session"]
 
-    Why:
-    - Bridges Google ID token verification with local user/session provisioning.
+    return GoogleOut(
+        access_token=session["access_token"],
+        refresh_token=session["refresh_token"],
+        expires_in=session["expires_in"],
+        scope="openid email profile",
+        token_type="Bearer",
+        user=User(
+            id=user["id"],
+            email=user["email"],
+            name=user["name"],
+            picture=user["picture"],
+        ),
+    )
+
+
+async def _verify_and_create_session(credential: str) -> dict:
+    """Verify a Google ID token and provision a local user session.
+
+    Shared by both the JSON API (``google_auth``) and the redirect callback
+    (``google_auth_callback``).
     """
     if not settings.multi_user:
         raise HTTPException(
             status_code=400,
             detail="Google authentication not available in single-user mode",
         )
-
     if not settings.google_client_id:
         raise HTTPException(
             status_code=500, detail="Google authentication not configured"
         )
 
     try:
-        # Verify Google ID token
         info = id_token.verify_oauth2_token(
-            payload.id_token, grequests.Request(), audience=settings.google_client_id
+            credential, grequests.Request(), audience=settings.google_client_id
         )
         logger.info(f"Google auth successful for: {info.get('email')}")
     except ValueError as e:
@@ -129,55 +152,46 @@ async def google_auth(payload: GoogleIn):
         raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
 
     if not info.get("email_verified"):
-        logger.error(f"Email not verified for user: {info.get('email')}")
         raise HTTPException(status_code=400, detail="Email not verified")
 
-    try:
-        # Get or create user in our database
-        user = await get_or_create_user(
-            email=info.get("email"),
-            name=info.get("name"),
-            picture=info.get("picture"),
-            google_id=info.get("sub"),
-        )
-        logger.info(f"User created/found: {user['id']} - {user['email']}")
+    user = await get_or_create_user(
+        email=info.get("email"),
+        name=info.get("name"),
+        picture=info.get("picture"),
+        google_id=info.get("sub"),
+    )
+    user_folders = setup_user_folders(user["id"])
+    from ..db import update_user_folder_path
 
-        # Create user folders and setup sample data
-        user_folders = setup_user_folders(user["id"])
-        logger.info(
-            f"User folders created for: {user['id']} at {user_folders['user_folder']}"
-        )
+    await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
 
-        # Update user folder path in database
-        from ..db import update_user_folder_path
+    session = await create_user_session(user["id"])
+    return {"user": user, "session": session}
 
-        await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
 
-        # Create session token
-        session = await create_user_session(user["id"])
-        logger.info(
-            f"Session created for user: {user['id']}, token: {session['access_token'][:10]}..."
-        )
+@router.post("/google/callback")
+async def google_auth_callback(
+    request: Request,
+    credential: str = Form(...),
+    g_csrf_token: str = Form(None),
+):
+    """Handle the Google Identity Services redirect callback.
 
-        return GoogleOut(
-            access_token=session["access_token"],
-            refresh_token=session["refresh_token"],
-            expires_in=session["expires_in"],
-            scope="openid email profile",
-            token_type="Bearer",
-            user=User(
-                id=user["id"],
-                email=user["email"],
-                name=user["name"],
-                picture=user["picture"],
-            ),
-        )
+    Google POSTs the ID-token ``credential`` and a CSRF token here after the
+    user authenticates on Google's consent page (``ux_mode: 'redirect'``).
+    We verify the token, create/find the local user, issue a session, and
+    redirect back to the SPA with the access token in the URL fragment.
+    """
+    if g_csrf_token:
+        cookie_token = request.cookies.get("g_csrf_token")
+        if cookie_token != g_csrf_token:
+            raise HTTPException(status_code=403, detail="CSRF token mismatch")
 
-    except Exception as e:
-        logger.error(f"Error during user/session creation: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create user session: {str(e)}"
-        )
+    result = await _verify_and_create_session(credential)
+    token = result["session"]["access_token"]
+
+    redirect_url = f"/?{urlencode({'auth_token': token})}"
+    return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.get("/me", response_model=UserResponse)

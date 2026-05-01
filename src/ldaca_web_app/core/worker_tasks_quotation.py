@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
@@ -101,9 +101,25 @@ def run_quotation_detach_task(
         if materialized_path and os.path.exists(materialized_path):
             if progress_callback:
                 progress_callback(0.4, "Reusing materialized quotations...")
-            lazy = pl.scan_parquet(materialized_path)
+            # Copy the materialized parquet into a detach-owned file so the
+            # parent analysis task's materialized artifact can be cleaned up
+            # independently (e.g. when the user clears results) without
+            # breaking this detached node's serialized query plan.
+            import shutil
+            import uuid
+
+            detach_data_dir = os.path.join(workspace_dir, "data")
+            os.makedirs(detach_data_dir, exist_ok=True)
+            detach_parquet_path = os.path.join(
+                detach_data_dir,
+                f"quotation_detach_{uuid.uuid4().hex}.parquet",
+            )
+            shutil.copy2(materialized_path, detach_parquet_path)
+            lazy = pl.scan_parquet(detach_parquet_path)
             schema_names = list(lazy.collect_schema().names())
-            record_count = int(lazy.select(pl.len()).collect().item() or 0)
+            record_count = int(
+                cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0
+            )
             detached_node = Node(
                 data=lazy,
                 name=new_node_name,
@@ -211,10 +227,22 @@ def run_quotation_materialize_task(
         if progress_callback:
             progress_callback(0.85, "Writing materialized parquet...")
 
-        materialized_dir = os.path.join(workspace_dir, "materialized", parent_task_id)
+        materialized_dir = os.path.join(workspace_dir, "data")
         os.makedirs(materialized_dir, exist_ok=True)
-        materialized_path = os.path.join(materialized_dir, f"{parent_node_id}.parquet")
+        materialized_path = os.path.join(
+            materialized_dir,
+            f".materialized_quotation_{parent_task_id}_{parent_node_id}.parquet",
+        )
         quote_df.write_parquet(materialized_path)
+
+        import polars as pl
+
+        total_source_documents = len(node_corpus)
+        unique_documents_with_hits = (
+            int(quote_df.select(pl.col(document_column).n_unique()).item())
+            if document_column in quote_df.columns
+            else 0
+        )
 
         if progress_callback:
             progress_callback(1.0, "Quotation materialize completed")
@@ -227,6 +255,8 @@ def run_quotation_materialize_task(
                 "parent_node_id": parent_node_id,
                 "output_columns": output_columns,
                 "record_count": int(quote_df.height),
+                "unique_documents_with_hits": unique_documents_with_hits,
+                "total_source_documents": total_source_documents,
                 "engine_config": engine_config,
             },
             "message": "Quotation materialize completed successfully",

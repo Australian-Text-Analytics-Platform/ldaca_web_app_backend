@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
 import polars as pl
@@ -39,6 +39,7 @@ from ....models import (
 )
 from ..utils import update_workspace
 from .ai_annotation_core import classify_texts, list_models
+from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces", tags=["ai-annotation"])
@@ -135,7 +136,7 @@ async def _build_response(
 
         column_name = request.node_columns[node_id]
 
-        total_rows = node_data.select(pl.len()).collect().item()
+        total_rows = cast(pl.DataFrame, node_data.select(pl.len()).collect()).item()
 
         sel_df = node_data.select(pl.col(column_name)).slice(start, page_size).collect()
         texts = [
@@ -243,6 +244,12 @@ async def run_ai_annotation(
     for node_id in request.node_ids:
         node = ws.nodes[node_id]
         node.data
+
+    # Drop any prior completed/failed AI annotation task to keep the analysis
+    # store and any referenced parquet artifacts bounded across reruns.
+    await clear_previous_completed_analysis_task(
+        user_id, workspace_id, ["ai_annotation", "ai-annotation"]
+    )
 
     task_id = str(uuid4())
     task_manager = get_task_manager(user_id)

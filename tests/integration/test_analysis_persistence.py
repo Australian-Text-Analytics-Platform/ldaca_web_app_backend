@@ -759,6 +759,223 @@ class TestSequentialAnalysisPersistence:
             detail_text = str(detail)
         assert "interval" in detail_text.lower()
 
+    async def test_sequential_analysis_detach_creates_filtered_node(
+        self,
+        authenticated_client,
+        workspace_id,
+        timeline_node_id,
+        monkeypatch,
+        tmp_path,
+    ):
+        """Selected sequential periods should detach into a filtered child node."""
+        from ldaca_web_app.api.workspaces.analyses import (
+            sequential_analysis as sequential_module,
+        )
+
+        source_df = pl.DataFrame(
+            {
+                "published_at": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                ],
+                "category": ["alpha", "alpha", "beta"],
+                "value": [1, 2, 3],
+            }
+        )
+        source_node = SimpleNamespace(
+            data=source_df.lazy(),
+            name="timeline",
+            id=timeline_node_id,
+        )
+
+        class DummyWorkspace:
+            def __init__(self):
+                self.nodes = {timeline_node_id: source_node}
+                self.added_nodes = []
+
+            def add_node(self, node):
+                self.added_nodes.append(node)
+                self.nodes[node.id] = node
+
+        dummy_workspace = DummyWorkspace()
+
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace_id",
+            lambda *_args, **_kwargs: workspace_id,
+        )
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace",
+            lambda *_args, **_kwargs: dummy_workspace,
+        )
+        monkeypatch.setattr(sequential_module, "update_workspace", lambda *_args, **_kwargs: None)
+
+        class DummyDetachedNode:
+            def __init__(self, **kwargs):
+                self.id = "detached-node"
+                self.data = kwargs["data"]
+                self.name = kwargs["name"]
+                self.workspace = kwargs.get("workspace")
+                self.operation = kwargs.get("operation")
+                self.parents = kwargs.get("parents", [])
+
+        monkeypatch.setattr(sequential_module, "Node", DummyDetachedNode)
+
+        result_data = await self._run_sequential_analysis(
+            authenticated_client,
+            workspace_id,
+            timeline_node_id,
+            monkeypatch,
+        )
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace_id",
+            lambda *_args, **_kwargs: workspace_id,
+        )
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace",
+            lambda *_args, **_kwargs: dummy_workspace,
+        )
+        task_id = await get_current_task_id(
+            authenticated_client, workspace_id, "sequential_analysis"
+        )
+        assert task_id
+
+        selected_period = result_data["data"][0]
+        response = await post_json(
+            authenticated_client,
+            f"/api/workspaces/sequential-analysis/tasks/{task_id}/detach",
+            {
+                "selected_periods": [
+                    {
+                        "period_start": selected_period["period_start"],
+                        "period_end": selected_period["period_end"],
+                    }
+                ],
+                "new_node_name": "timeline_trend",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "new_node_id": "detached-node",
+            "new_node_name": "timeline_trend",
+        }
+        assert len(dummy_workspace.added_nodes) == 1
+
+        detached_df = dummy_workspace.added_nodes[0].data.collect().sort("value")
+        assert detached_df["value"].to_list() == [1, 2]
+
+    async def test_sequential_analysis_detach_respects_visible_groups(
+        self,
+        authenticated_client,
+        workspace_id,
+        timeline_node_id,
+        monkeypatch,
+    ):
+        """Hidden legend groups should be excluded from detached sequential rows."""
+        from ldaca_web_app.api.workspaces.analyses import (
+            sequential_analysis as sequential_module,
+        )
+
+        source_df = pl.DataFrame(
+            {
+                "published_at": [
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 1),
+                    datetime(2024, 1, 2),
+                ],
+                "category": ["alpha", "beta", "alpha"],
+                "value": [1, 2, 3],
+            }
+        )
+        source_node = SimpleNamespace(
+            data=source_df.lazy(),
+            name="timeline",
+            id=timeline_node_id,
+        )
+
+        class DummyWorkspace:
+            def __init__(self):
+                self.nodes = {timeline_node_id: source_node}
+                self.added_nodes = []
+
+            def add_node(self, node):
+                self.added_nodes.append(node)
+                self.nodes[node.id] = node
+
+        dummy_workspace = DummyWorkspace()
+
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace_id",
+            lambda *_args, **_kwargs: workspace_id,
+        )
+        monkeypatch.setattr(
+            sequential_module.workspace_manager,
+            "get_current_workspace",
+            lambda *_args, **_kwargs: dummy_workspace,
+        )
+        monkeypatch.setattr(sequential_module, "update_workspace", lambda *_args, **_kwargs: None)
+
+        class DummyDetachedNode:
+            def __init__(self, **kwargs):
+                self.id = "detached-node-groups"
+                self.data = kwargs["data"]
+                self.name = kwargs["name"]
+                self.workspace = kwargs.get("workspace")
+                self.operation = kwargs.get("operation")
+                self.parents = kwargs.get("parents", [])
+
+        monkeypatch.setattr(sequential_module, "Node", DummyDetachedNode)
+
+        response = await post_json(
+            authenticated_client,
+            f"/api/workspaces/nodes/{timeline_node_id}/sequential-analysis",
+            {
+                "time_column": "published_at",
+                "group_by_columns": ["category"],
+                "frequency": "daily",
+                "sort_by_time": True,
+            },
+        )
+        assert response.status_code == 200
+
+        task_id = await get_current_task_id(
+            authenticated_client, workspace_id, "sequential_analysis"
+        )
+        assert task_id
+
+        detach_response = await post_json(
+            authenticated_client,
+            f"/api/workspaces/sequential-analysis/tasks/{task_id}/detach",
+            {
+                "selected_periods": [
+                    {
+                        "period_start": "2024-01-01T00:00:00",
+                        "period_end": "2024-01-01T00:00:00",
+                    }
+                ],
+                "visible_groups": [
+                    {
+                        "values": {
+                            "category": "alpha",
+                        }
+                    }
+                ],
+                "new_node_name": "timeline_trend",
+            },
+        )
+
+        assert detach_response.status_code == 200
+        assert len(dummy_workspace.added_nodes) == 1
+
+        detached_df = dummy_workspace.added_nodes[0].data.collect().sort("value")
+        assert detached_df["value"].to_list() == [1]
+
 
 @pytest.mark.anyio
 class TestWorkspaceGraphEnrichment:

@@ -10,15 +10,13 @@ Design Goals:
 
 import json
 import logging
-import os
 import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from docworkspace.workspace.io import read_workspace_metadata
-
 from docworkspace import Workspace
+from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 from ldaca_web_app.models import WorkspaceSummary
 
 from .utils import (
@@ -96,13 +94,6 @@ class WorkspaceManager:
                 "Failed to attach workspace_dir metadata to workspace object: %s", exc
             )
 
-    def _set_working_dir(self, path: Path) -> None:
-        try:
-            path.mkdir(parents=True, exist_ok=True)
-            os.chdir(path)
-        except Exception as exc:  # pragma: no cover
-            logger.warning("Failed to set working directory to %s: %s", path, exc)
-
     def _workspace_artifacts_dir_from_workspace_dir(self, workspace_dir: Path) -> Path:
         """Return workspace-scoped analysis artifact directory.
 
@@ -166,10 +157,23 @@ class WorkspaceManager:
             )
             return False
         try:
-            new_ws = Workspace.load(target_dir)
-            updated_dir = ensure_display_folder_name(target_dir, new_ws.name)
+            # 1. Read metadata to get workspace name (no node deserialization).
+            meta = read_workspace_metadata(target_dir)
+            ws_name = meta.get("workspace_metadata", {}).get("name", "")
+
+            # 2. Finalize the on-disk folder name so the path is stable.
+            updated_dir = (
+                ensure_display_folder_name(target_dir, ws_name)
+                if ws_name
+                else target_dir
+            )
+
+            # 3. Rebase plbin source paths to the finalized folder.
+            rebase_workspace_sources(updated_dir)
+
+            # 4. Full load (deserialize nodes — paths are now correct).
+            new_ws = Workspace.load(updated_dir)
             self._attach_workspace_dir(new_ws, updated_dir)
-            self._set_working_dir(updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover
             logger.error(
@@ -364,8 +368,41 @@ class WorkspaceManager:
             cws.save(target_dir)
             self._set_cached_path(user_id, cid, target_dir)
         self.clear_workspace_artifacts_dir(user_id, cid)
+        self._clear_workspace_tasks(user_id, cid)
         self._current.pop(user_id, None)
         return True
 
+    def _clear_workspace_tasks(self, user_id: str, workspace_id: str) -> None:
+        """Drop analysis + worker task records belonging to a workspace.
 
+        Without this, per-user task stores (current_task_ids in the analysis
+        manager, TaskInfo records in the worker manager) leak across workspace
+        switches and cause UI state from the previous workspace to hydrate on
+        the next one.
+        """
+        try:
+            from ..analysis.manager import get_task_manager as _get_analysis_tm
+
+            _get_analysis_tm(user_id).clear_workspace(workspace_id)
+        except Exception as exc:
+            logger.debug("Failed to clear analysis tasks on unload: %s", exc)
+
+        worker_tm = self._task_managers.get(user_id)
+        if worker_tm is None:
+            return
+        try:
+            import asyncio
+
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        try:
+            loop.create_task(
+                worker_tm.clear_tasks(user_id=user_id, workspace_id=workspace_id)
+            )
+        except Exception as exc:
+            logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
+
+
+workspace_manager = WorkspaceManager()
 workspace_manager = WorkspaceManager()

@@ -30,6 +30,7 @@ from ....models import (
     ConcordanceMaterializeRequest,
 )
 from ..utils import update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     DEFAULT_CONCORDANCE_PAGE,
@@ -154,6 +155,11 @@ async def run_concordance(
         )
 
         task_id = str(uuid4())
+        # Drop any prior completed/failed concordance task before recording the
+        # new one to keep the per-user analysis store bounded.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["concordance", "concordance_analysis"]
+        )
         task_manager.save_task(
             AnalysisTask(
                 task_id=task_id,
@@ -423,8 +429,18 @@ async def materialize_concordance(
         raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
     node_data = ws.nodes[node_id].data
 
+    # Collect all source columns so the materialized parquet includes metadata.
+    # This allows the detach fast path to select only user-chosen columns later.
+    all_schema_columns = list(node_data.collect_schema().names())
+    extra_source_columns = [
+        c for c in all_schema_columns if c != request.column
+    ]
+    select_exprs = [pl.col(request.column)] + [
+        pl.col(c) for c in extra_source_columns
+    ]
+
     corpus_df = (
-        node_data.select([pl.col(request.column)])
+        node_data.select(select_exprs)
         .filter(
             pl.col(request.column)
             .cast(pl.Utf8, strict=False)
@@ -439,6 +455,13 @@ async def materialize_concordance(
         str(value) if value is not None else ""
         for value in corpus_df.get_column(request.column).to_list()
     ]
+
+    extra_columns_data: dict[str, list] | None = None
+    if extra_source_columns:
+        extra_columns_data = {
+            col: corpus_df.get_column(col).to_list()
+            for col in extra_source_columns
+        }
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -461,7 +484,7 @@ async def materialize_concordance(
                 "regex": request.regex,
                 "whole_word": request.whole_word,
                 "case_sensitive": request.case_sensitive,
-                "extra_columns_data": None,
+                "extra_columns_data": extra_columns_data,
             },
         )
         return {

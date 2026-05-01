@@ -200,7 +200,13 @@ settings = Settings()
 
 
 def reload_settings() -> Settings:
-    """Re-create the global settings singleton from current env vars."""
-    global settings
-    settings = Settings()
+    """Refresh the global settings singleton from current env vars.
+
+    Re-runs ``Settings.__init__`` on the existing instance so any module that
+    previously did ``from .settings import settings`` keeps the same reference
+    and transparently sees the updated values. This matters because the
+    package ``__init__`` imports ``main`` eagerly, which instantiates settings
+    before the CLI has a chance to set env vars like ``MULTI_USER``.
+    """
+    settings.__init__()  # type: ignore[misc]
     return settings

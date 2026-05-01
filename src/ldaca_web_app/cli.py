@@ -46,6 +46,14 @@ def _parse_args(argv: list[str] | None = None):
         default=None,
         help="Host to bind to (default: 0.0.0.0)",
     )
+    parser.add_argument(
+        "--multi-user",
+        action="store_true",
+        help=(
+            "Enable multi-user mode with Google OAuth login. "
+            "Requires the GOOGLE_CLIENT_ID environment variable to be set."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -111,14 +119,37 @@ def main(argv: list[str] | None = None):
     """CLI entry point dispatching to backend, frontend, or both."""
     args = _parse_args(argv)
 
+    # Set env vars BEFORE any imports that trigger settings initialization
+    if args.multi_user:
+        import os
+
+        os.environ["MULTI_USER"] = "true"
+        if not os.environ.get("GOOGLE_CLIENT_ID", "").strip():
+            logger.error(
+                "Multi-user mode requires the GOOGLE_CLIENT_ID environment variable. "
+                "Start with: GOOGLE_CLIENT_ID=<your-client-id> ldaca-web-app --multi-user"
+            )
+            sys.exit(2)
+
+        # The package __init__ eagerly imports .main, which constructs the
+        # Settings singleton before main() runs. Refresh it in place so every
+        # `from .settings import settings` binding sees MULTI_USER=true.
+        from .settings import reload_settings
+
+        reload_settings()
+
     from ._logging import setup_file_logging, setup_logging
 
     setup_logging()
     setup_file_logging("cli")
     _setup_signal_handlers()
 
-    use_backend = not args.frontend if not args.backend else True
-    use_frontend = not args.backend if not args.frontend else False
+    # Mutually exclusive argparse group: at most one of these is True.
+    # No flag  -> both   (default: full app)
+    # --backend -> backend only
+    # --frontend -> frontend only
+    use_backend = not args.frontend
+    use_frontend = not args.backend
 
     # Resolve effective port for the browser-open helper
     if args.port:
@@ -128,7 +159,11 @@ def main(argv: list[str] | None = None):
     else:
         effective_port = 3000
 
-    _open_browser_after_delay(effective_port)
+    # Only auto-open the browser when the frontend is being served. In
+    # backend-only mode (e.g. launched by the Tauri desktop shell) the UI is
+    # provided by the native window, so popping a browser window is noisy.
+    if use_frontend:
+        _open_browser_after_delay(effective_port)
 
     from .main import start_server
 
@@ -141,22 +176,11 @@ def main(argv: list[str] | None = None):
 
 
 if __name__ == "__main__":
-    # Multiprocessing guard for PyInstaller frozen executables
+    # Multiprocessing guard for PyInstaller frozen executables: on Windows the
+    # module is re-imported in worker processes; freeze_support() returns only
+    # in the main process, so the call below is a no-op for children.
     import multiprocessing as mp
 
     mp.freeze_support()
-    main()
-
-    # Only run the server in the main process, not in worker children
-    # Worker processes will have names like 'Process-1', 'Process-2', etc.
-    # The main process has name 'MainProcess'
     if mp.current_process().name == "MainProcess":
-        logger.info("Running in MainProcess, starting server")
         main()
-    else:
-        logger.debug(
-            "Running in child process (%s), skipping server startup",
-            mp.current_process().name,
-        )
-    # Child processes will exit here without starting uvicorn
-    # Child processes will exit here without starting uvicorn

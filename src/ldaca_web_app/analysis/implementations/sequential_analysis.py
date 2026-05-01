@@ -47,12 +47,14 @@ class SequentialAnalysisRequest(BaseAnalysisRequest):
     numeric_interval: Optional[float] = Field(
         None, description="Interval for numeric binning"
     )
-    column_type: str = Field(
-        "datetime", description="Column type (datetime or numeric)"
+    custom_interval_value: Optional[int] = Field(
+        None,
+        description="Custom datetime interval count (used when frequency='custom')",
     )
-    numeric_origin: Optional[float] = Field(
-        None, description="Origin for numeric binning"
+    custom_interval_unit: Optional[str] = Field(
+        None,
+        description="Custom datetime interval unit (seconds|minutes|hours|days|weeks)",
     )
-    numeric_interval: Optional[float] = Field(
-        None, description="Interval for numeric binning"
+    case_sensitive: bool = Field(
+        True, description="Whether group-by values are compared case-sensitively"
     )

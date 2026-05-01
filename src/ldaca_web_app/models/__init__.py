@@ -306,27 +306,6 @@ class AggregateOperation(BaseModel):
     aggregations: Dict[str, str]  # column -> function
 
 
-class ExpressionTransformRequest(BaseModel):
-    expression: str = Field(..., min_length=1)
-    new_column_name: Optional[str] = Field(default=None, max_length=200)
-    preview_limit: Optional[int] = Field(default=50, ge=1, le=500)
-
-
-class ExpressionPreviewResponse(BaseModel):
-    columns: List[str]
-    dtypes: Dict[str, str]
-    data: List[Dict[str, Any]]
-
-
-class ExpressionApplyResponse(BaseModel):
-    state: Literal["successful"]
-    node_id: str
-    column_name: str
-    expression: str
-    dtype: Optional[str] = None
-    message: str
-
-
 class ReplaceRequest(BaseModel):
     source_column: str = Field(..., min_length=1, max_length=200)
     pattern: str = Field(..., min_length=1)
@@ -542,12 +521,17 @@ class SequentialAnalysisRequest(BaseModel):
     time_column: str
     group_by_columns: Optional[List[str]] = None
     frequency: Literal[
-        "hourly", "daily", "weekly", "monthly", "quarterly", "yearly"
+        "hourly", "daily", "weekly", "monthly", "quarterly", "yearly", "custom"
     ] = "monthly"
     sort_by_time: bool = True
     column_type: Literal["datetime", "numeric"] = "datetime"
     numeric_origin: Optional[float] = None
     numeric_interval: Optional[float] = None
+    custom_interval_value: Optional[int] = None
+    custom_interval_unit: Optional[
+        Literal["seconds", "minutes", "hours", "days", "weeks"]
+    ] = None
+    case_sensitive: bool = True
 
     @model_validator(mode="after")
     def validate_numeric_params(self) -> "SequentialAnalysisRequest":
@@ -555,6 +539,15 @@ class SequentialAnalysisRequest(BaseModel):
             if self.numeric_interval is None or self.numeric_interval <= 0:
                 raise ValueError(
                     "numeric_interval must be a positive number when column_type='numeric'"
+                )
+        if self.column_type == "datetime" and self.frequency == "custom":
+            if self.custom_interval_value is None or self.custom_interval_value <= 0:
+                raise ValueError(
+                    "custom_interval_value must be a positive integer when frequency='custom'"
+                )
+            if self.custom_interval_unit is None:
+                raise ValueError(
+                    "custom_interval_unit is required when frequency='custom'"
                 )
         return self
 
@@ -569,6 +562,8 @@ class SequentialAnalysisRequest(BaseModel):
                 "column_type": "datetime",
                 "numeric_origin": None,
                 "numeric_interval": None,
+                "custom_interval_value": None,
+                "custom_interval_unit": None,
             }
         }
     )
@@ -651,6 +646,7 @@ class FilterCondition(BaseModel):
     # New flags from frontend Filter UI
     negate: Optional[bool] = False
     regex: Optional[bool] = False
+    case_sensitive: Optional[bool] = False
 
 
 class FilterRequest(BaseModel):
@@ -693,6 +689,39 @@ class FilterPreviewResponse(BaseModel):
     columns: List[str]
     dtypes: Dict[str, str]
     pagination: PaginationInfo
+
+
+# =============================================================================
+# POLARS EXPRESSION MODELS
+# =============================================================================
+
+
+class PolarsExpressionContext(str, Enum):
+    filter = "filter"
+    with_columns = "with_columns"
+    select = "select"
+    sort = "sort"
+    group_by_agg = "group_by_agg"
+
+
+class PolarsExpressionItem(BaseModel):
+    """A single polars expression supplied as a Python code string, e.g. ``pl.col('x') > 0``."""
+
+    code: str  # Python expression string evaluated with pl available
+    descending: Optional[bool] = None  # used only in sort context
+
+
+class PolarsExpressionRequest(BaseModel):
+    context: PolarsExpressionContext
+    expressions: List[PolarsExpressionItem]
+    # For group_by_agg: these are the grouping key expressions
+    group_by_keys: Optional[List[PolarsExpressionItem]] = None
+    new_node_name: Optional[str] = None
+
+
+class PolarsExpressionApplyResponse(BaseModel):
+    node_id: str
+    node_name: str
 
 
 # =============================================================================
@@ -739,14 +768,14 @@ class TokenStatisticsData(BaseModel):
     """
 
     token: str
-    freq_corpus_0: int  # O1 - observed frequency in corpus 1
-    freq_corpus_1: int  # O2 - observed frequency in corpus 2
-    expected_0: float | str | None  # Expected frequency in corpus 1
-    expected_1: float | str | None  # Expected frequency in corpus 2
-    corpus_0_total: int  # Total tokens in corpus 1
-    corpus_1_total: int  # Total tokens in corpus 2
-    percent_corpus_0: float | str | None  # %1 - percentage in corpus 1
-    percent_corpus_1: float | str | None  # %2 - percentage in corpus 2
+    freq_reference: int  # OR - observed frequency in reference corpus
+    freq_study: int  # OS - observed frequency in study corpus
+    expected_reference: float | str | None  # Expected frequency in reference corpus
+    expected_study: float | str | None  # Expected frequency in study corpus
+    reference_total: int  # Total tokens in reference corpus
+    study_total: int  # Total tokens in study corpus
+    percent_reference: float | str | None  # %R - percentage in reference corpus
+    percent_study: float | str | None  # %S - percentage in study corpus
     percent_diff: float | str | None  # %DIFF - percentage difference
     log_likelihood_llv: float | str | None  # LL - log likelihood G2 statistic
     bayes_factor_bic: float | str | None  # Bayes - Bayes factor (BIC)

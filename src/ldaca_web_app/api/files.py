@@ -452,12 +452,9 @@ async def upload_file(file: UploadFile, current_user: dict = Depends(get_current
         )
 
     # Save file
-    try:
-        with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
 
     file_type = detect_file_type(file.filename)
 
@@ -486,12 +483,9 @@ async def delete_file(filename: str, current_user: dict = Depends(get_current_us
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File {filename} not found")
 
-    try:
-        file_path.unlink()
-        _delete_parent_folder_if_redundant(file_path, data_folder)
-        return {"message": f"File {filename} deleted successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+    file_path.unlink()
+    _delete_parent_folder_if_redundant(file_path, data_folder)
+    return {"message": f"File {filename} deleted successfully"}
 
 
 @router.post("/import-sample-data", response_model=ImportSampleDataResponse)
@@ -500,20 +494,16 @@ async def import_sample_data(current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     try:
         summary = import_sample_data_for_user(user_id)
-        return {
-            "status": "ok",
-            "removed_existing": summary["removed_existing"],
-            "file_count": summary["file_count"],
-            "bytes_copied": summary["bytes_copied"],
-            "sample_dir": summary["sample_dir"],
-            "message": "Sample data imported successfully",
-        }
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to import sample data: {e}"
-        )
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return {
+        "status": "ok",
+        "removed_existing": summary["removed_existing"],
+        "file_count": summary["file_count"],
+        "bytes_copied": summary["bytes_copied"],
+        "sample_dir": summary["sample_dir"],
+        "message": "Sample data imported successfully",
+    }
 
 
 @router.post("/import-ldaca", response_model=FilesImportTaskStartResponse)
@@ -530,26 +520,23 @@ async def import_ldaca_dataset(
     - Runs network/download/import pipeline outside request-response lifecycle.
     """
     user_id = current_user["id"]
-    try:
-        # LDaCA import is independent of a specific workspace.
-        workspace_id = workspace_manager.get_current_workspace_id(user_id) or "global"
-        tm = workspace_manager.get_task_manager(user_id)
-        task_info = await tm.submit_task(
-            user_id=user_id,
-            workspace_id=workspace_id,
-            task_type="ldaca_import",
-            task_args={"url": request.url, "filename": request.filename},
-        )
+    # LDaCA import is independent of a specific workspace.
+    workspace_id = workspace_manager.get_current_workspace_id(user_id) or "global"
+    tm = workspace_manager.get_task_manager(user_id)
+    task_info = await tm.submit_task(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        task_type="ldaca_import",
+        task_args={"url": request.url, "filename": request.filename},
+    )
 
-        return {
-            "state": "running",
-            "message": "LDaCA import started",
-            "metadata": {
-                "task_id": task_info.id,
-            },
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to start import: {e}")
+    return {
+        "state": "running",
+        "message": "LDaCA import started",
+        "metadata": {
+            "task_id": task_info.id,
+        },
+    }
 
 
 @router.get("/tasks", response_model=FilesTasksListResponse)
@@ -741,21 +728,16 @@ async def get_file_info(filename: str, current_user: dict = Depends(get_current_
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"File {filename} not found")
 
-    try:
-        stat = file_path.stat()
-        file_type = detect_file_type(filename)
+    stat = file_path.stat()
+    file_type = detect_file_type(filename)
 
-        return {
-            "filename": filename,
-            "size_Byte": stat.st_size,
-            "created_at": stat.st_ctime,
-            "modified_at": stat.st_mtime,
-            "file_type": file_type,
-        }
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error getting file info: {str(e)}"
-        )
+    return {
+        "filename": filename,
+        "size_Byte": stat.st_size,
+        "created_at": stat.st_ctime,
+        "modified_at": stat.st_mtime,
+        "file_type": file_type,
+    }
 
 
 @router.get("/raw")

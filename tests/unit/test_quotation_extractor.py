@@ -141,3 +141,95 @@ def test_download_spacy_model_handles_nested_archive_filename(monkeypatch, tmp_p
 
     assert cache_dir == cache_root / qe._SPACY_MODEL
     assert (cache_dir / "config.cfg").exists()
+
+
+def _assert_mapping_roundtrips(original: str) -> None:
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+    assert len(mapping) == len(preprocessed) + 1
+    assert mapping[0] == 0
+    assert mapping[-1] == len(original)
+    for i in range(len(mapping) - 1):
+        assert 0 <= mapping[i] <= mapping[i + 1] <= len(original)
+
+
+def test_preprocess_with_mapping_identity_for_plain_ascii():
+    original = "Hello world."
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+    assert preprocessed == original
+    assert mapping == list(range(len(original) + 1))
+
+
+def test_preprocess_with_mapping_translates_indices_across_newline_expansion():
+    original = 'Line one\nShe said "hi" loudly.'
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+
+    # Newline expands: "\n" -> ".\n "; no other length change in this string.
+    assert preprocessed.count(".\n ") == 1
+    assert len(preprocessed) == len(original) + 2
+
+    target = "She said"
+    preproc_start = preprocessed.index(target)
+    preproc_end = preproc_start + len(target)
+    orig_start, orig_end = qe._translate_span(preproc_start, preproc_end, mapping)
+    assert original[orig_start:orig_end] == target
+
+    _assert_mapping_roundtrips(original)
+
+
+def test_preprocess_with_mapping_handles_double_space_collapse():
+    original = "word  gap here."
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+    assert preprocessed == "word gap here."
+
+    target = "gap here."
+    preproc_start = preprocessed.index(target)
+    preproc_end = preproc_start + len(target)
+    orig_start, orig_end = qe._translate_span(preproc_start, preproc_end, mapping)
+    assert original[orig_start:orig_end] == target
+
+    _assert_mapping_roundtrips(original)
+
+
+def test_preprocess_with_mapping_preserves_length_for_curly_quotes_and_accents():
+    original = "Café said \u201chello\u201d today."
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+    assert len(preprocessed) == len(original)
+    assert mapping == list(range(len(original) + 1))
+    assert preprocessed.startswith("Cafe said ")
+    assert '"hello"' in preprocessed
+
+
+def test_normalize_quote_translates_indices_to_original_offsets():
+    original = "Line one\nShe said HI loudly."
+    preprocessed, mapping = qe._preprocess_with_mapping(original)
+
+    speaker = "She"
+    verb = "said"
+    quote = "HI"
+
+    def span(needle: str) -> str:
+        start = preprocessed.index(needle)
+        return f"({start},{start + len(needle)})"
+
+    raw = {
+        "speaker": speaker,
+        "speaker_index": span(speaker),
+        "quote": quote,
+        "quote_index": span(quote),
+        "verb": verb,
+        "verb_index": span(verb),
+        "quote_type": "direct",
+        "quote_token_count": 1,
+        "is_floating_quote": False,
+    }
+
+    normalized = qe._normalize_quote(raw, 0, mapping)
+
+    assert (
+        original[normalized["speaker_start_idx"] : normalized["speaker_end_idx"]]
+        == speaker
+    )
+    assert original[normalized["verb_start_idx"] : normalized["verb_end_idx"]] == verb
+    assert (
+        original[normalized["quote_start_idx"] : normalized["quote_end_idx"]] == quote
+    )

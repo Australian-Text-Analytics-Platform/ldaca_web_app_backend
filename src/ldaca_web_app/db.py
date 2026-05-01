@@ -55,6 +55,28 @@ engine = create_async_engine(settings.get_database_url())
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
+_USER_FIELDS = (
+    "email",
+    "name",
+    "picture",
+    "google_id",
+    "user_folder_path",
+    "created_at",
+    "last_login",
+    "is_active",
+    "is_superuser",
+    "is_verified",
+)
+
+
+def _user_to_dict(user: User) -> Dict[str, Any]:
+    """Serialize a `User` row into the dict shape expected by API callers."""
+    payload: Dict[str, Any] = {"id": str(user.id)}
+    for field in _USER_FIELDS:
+        payload[field] = getattr(user, field)
+    return payload
+
+
 async def create_db_and_tables():
     """Create all configured SQLAlchemy tables.
 
@@ -153,19 +175,7 @@ async def get_or_create_user(
             await session.commit()
             await session.refresh(user)
 
-        return {
-            "id": str(user.id),
-            "email": user.email,
-            "name": user.name,
-            "picture": user.picture,
-            "google_id": user.google_id,
-            "user_folder_path": user.user_folder_path,
-            "created_at": user.created_at,
-            "last_login": user.last_login,
-            "is_active": user.is_active,
-            "is_superuser": user.is_superuser,
-            "is_verified": user.is_verified,
-        }
+        return _user_to_dict(user)
 
 
 async def create_user_session(user_id: str) -> Dict[str, Any]:
@@ -236,21 +246,10 @@ async def validate_access_token(access_token: str) -> Optional[Dict[str, Any]]:
 
         if row:
             user, session_data = row
-            return {
-                "id": str(user.id),
-                "email": user.email,
-                "name": user.name,
-                "picture": user.picture,
-                "google_id": user.google_id,
-                "user_folder_path": user.user_folder_path,
-                "created_at": user.created_at,
-                "last_login": user.last_login,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-                "is_verified": user.is_verified,
-                "access_token": session_data.access_token,
-                "expires_at": session_data.expires_at,
-            }
+            payload = _user_to_dict(user)
+            payload["access_token"] = session_data.access_token
+            payload["expires_at"] = session_data.expires_at
+            return payload
         return None
 
 
@@ -270,19 +269,7 @@ async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
         user = result.scalar_one_or_none()
 
         if user:
-            return {
-                "id": str(user.id),
-                "email": user.email,
-                "name": user.name,
-                "picture": user.picture,
-                "google_id": user.google_id,
-                "user_folder_path": user.user_folder_path,
-                "created_at": user.created_at,
-                "last_login": user.last_login,
-                "is_active": user.is_active,
-                "is_superuser": user.is_superuser,
-                "is_verified": user.is_verified,
-            }
+            return _user_to_dict(user)
         return None
 
 

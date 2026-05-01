@@ -45,43 +45,37 @@ def run_ldaca_import_task(
             "Install with: pip install 'ldaca-web-app[ldaca]'"
         )
 
+    from ldaca_web_app.core.utils import get_user_data_folder
+
+    logger.info(
+        "[Worker %d] Starting LDaCA import task for user %s", os.getpid(), user_id
+    )
+
     try:
-        from ldaca_web_app.core.utils import get_user_data_folder
-
-        logger.info(
-            "[Worker %d] Starting LDaCA import task for user %s", os.getpid(), user_id
-        )
-
         if progress_callback:
             progress_callback(0.1, "Connecting to LDaCA...")
-
-        if progress_callback:
-            progress_callback(0.3, "Downloading and extracting...")
 
         cache_dir = settings.get_data_root() / "ldaca_cache"
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-        try:
-            with chdir(cache_dir):
-                ldac_tb = LDaCATabulator(url)
-                corpus_name = ldac_tb.get_name()
-                sanitized = _sanitize_name(corpus_name)
+        with chdir(cache_dir):
+            if progress_callback:
+                progress_callback(0.3, "Downloading and extracting...")
 
-                # Get corpus metadata markdown
-                try:
-                    corpus_info_md = ldac_tb.get_corpus_info()
-                except Exception:
-                    corpus_info_md = None
+            ldac_tb = LDaCATabulator(url)
+            corpus_name = ldac_tb.get_name()
+            sanitized = _sanitize_name(corpus_name)
 
-                if progress_callback:
-                    progress_callback(0.6, "Converting to DataFrame...")
+            # README metadata is best-effort; failure here must not abort the import.
+            try:
+                corpus_info_md = ldac_tb.get_corpus_info()
+            except Exception:
+                corpus_info_md = None
 
-                try:
-                    df = ldac_tb.get_text()
-                except Exception as e:
-                    raise ValueError(f"Failed to extract text DataFrame: {e}")
-        except Exception as e:
-            raise ValueError(f"Failed to download/init LDaCATabulator: {e}")
+            if progress_callback:
+                progress_callback(0.6, "Converting to DataFrame...")
+
+            df = ldac_tb.get_text()
 
         if progress_callback:
             progress_callback(0.8, "Saving to user data...")
@@ -89,7 +83,7 @@ def run_ldaca_import_task(
         user_data_folder = get_user_data_folder(user_id)
         ldaca_folder = user_data_folder / "LDaCA"
 
-        # Create a per-corpus subfolder
+        # Create a per-corpus subfolder, suffixing if the name is taken.
         corpus_folder = ldaca_folder / sanitized
         counter = 1
         base_folder = corpus_folder
@@ -98,18 +92,11 @@ def run_ldaca_import_task(
             counter += 1
         corpus_folder.mkdir(parents=True, exist_ok=True)
 
-        parquet_filename = f"{sanitized}.parquet"
-        file_path = corpus_folder / parquet_filename
+        file_path = corpus_folder / f"{sanitized}.parquet"
+        df.to_parquet(str(file_path))
 
-        try:
-            df.to_parquet(str(file_path))
-        except Exception as e:
-            raise RuntimeError(f"Failed to save parquet file: {e}")
-
-        # Save corpus metadata as README.md
         if corpus_info_md:
-            readme_path = corpus_folder / "README.md"
-            readme_path.write_text(corpus_info_md, encoding="utf-8")
+            (corpus_folder / "README.md").write_text(corpus_info_md, encoding="utf-8")
 
         if progress_callback:
             progress_callback(1.0, "Import completed successfully")

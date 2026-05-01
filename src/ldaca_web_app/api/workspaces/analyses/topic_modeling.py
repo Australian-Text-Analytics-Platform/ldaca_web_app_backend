@@ -29,6 +29,7 @@ from ....models import (
     TopicModelingResponse,
 )
 from ..utils import ensure_task_synced, update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN
 
@@ -142,9 +143,7 @@ async def run_topic_modeling(
             status_code=400, detail="At least one node ID must be provided"
         )
 
-    corpora: list[list[str]] = []
     node_infos: list[dict[str, object]] = []
-    document_column_updated = False
     for node_id in request.node_ids:
         node = ws.nodes[node_id]
         node_data = node.data
@@ -154,7 +153,6 @@ async def run_topic_modeling(
 
         try:
             node.document = column_name
-            document_column_updated = True
         except Exception as exc:
             logger.debug(
                 "Failed to set topic-modeling node.document for node %s column %s: %s",
@@ -162,15 +160,6 @@ async def run_topic_modeling(
                 column_name,
                 exc,
             )
-
-        sel_df = cast(
-            pl.DataFrame,
-            node_data.select(pl.col(column_name).alias("__doc_col__")).collect(),
-        )
-        docs = [
-            str(v) if v is not None else "" for v in sel_df["__doc_col__"].to_list()
-        ]
-        corpora.append(docs)
 
         node_infos.append(
             {
@@ -180,9 +169,6 @@ async def run_topic_modeling(
                 "original_columns": available_columns,
             }
         )
-
-    if document_column_updated:
-        update_workspace(user_id, workspace_id, best_effort=True)
 
     tm = workspace_manager.get_task_manager(user_id)
     submission_lock = _topic_submission_lock(user_id, workspace_id)
@@ -207,6 +193,20 @@ async def run_topic_modeling(
             # Non-fatal: proceed to submit a new task.
             pass
 
+        # Drop any prior completed/failed topic-modeling task before submitting
+        # a new one. Prevents unbounded accumulation of in-memory task records
+        # and on-disk parquet artifacts as the user iterates on parameters.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["topic_modeling", "topic-modeling"]
+        )
+
+        workspace_dir = update_workspace(user_id, workspace_id, ws)
+        if workspace_dir is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to persist workspace before topic modeling",
+            )
+
         artifact_dir, artifact_prefix = _prepare_topic_artifact_target(
             user_id, workspace_id
         )
@@ -215,7 +215,7 @@ async def run_topic_modeling(
             workspace_id=workspace_id,
             task_type="topic_modeling",
             task_args={
-                "corpora": corpora,
+                "workspace_dir": str(workspace_dir),
                 "node_infos": node_infos,
                 "artifact_dir": str(artifact_dir),
                 "artifact_prefix": artifact_prefix,

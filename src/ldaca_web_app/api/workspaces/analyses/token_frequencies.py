@@ -28,6 +28,7 @@ from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
 from ..utils import ensure_task_synced, update_workspace
+from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces")
@@ -221,14 +222,14 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         statistics_payload = [
             {
                 "token": str(row.get("token") or ""),
-                "freq_corpus_0": int(row.get("freq_corpus_0") or 0),
-                "freq_corpus_1": int(row.get("freq_corpus_1") or 0),
-                "expected_0": _safe_float(row.get("expected_0")),
-                "expected_1": _safe_float(row.get("expected_1")),
-                "corpus_0_total": int(row.get("corpus_0_total") or 0),
-                "corpus_1_total": int(row.get("corpus_1_total") or 0),
-                "percent_corpus_0": _safe_float(row.get("percent_corpus_0")),
-                "percent_corpus_1": _safe_float(row.get("percent_corpus_1")),
+                "freq_reference": int(row.get("freq_corpus_0") or 0),
+                "freq_study": int(row.get("freq_corpus_1") or 0),
+                "expected_reference": _safe_float(row.get("expected_0")),
+                "expected_study": _safe_float(row.get("expected_1")),
+                "reference_total": int(row.get("corpus_0_total") or 0),
+                "study_total": int(row.get("corpus_1_total") or 0),
+                "percent_reference": _safe_float(row.get("percent_corpus_0")),
+                "percent_study": _safe_float(row.get("percent_corpus_1")),
                 "percent_diff": _safe_float(row.get("percent_diff")),
                 "log_likelihood_llv": _safe_float(row.get("log_likelihood_llv")),
                 "bayes_factor_bic": _safe_float(row.get("bayes_factor_bic")),
@@ -486,6 +487,12 @@ async def calculate_token_frequencies(
                 workspace_id,
                 exc_info=True,
             )
+
+        # Drop any prior completed/failed token-frequency task before submitting
+        # a new one to keep per-user analysis state and artifacts bounded.
+        await clear_previous_completed_analysis_task(
+            user_id, workspace_id, ["token_frequencies", "token-frequencies"]
+        )
 
         artifact_dir, artifact_prefix = _prepare_token_artifact_target(
             user_id, workspace_id

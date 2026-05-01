@@ -539,7 +539,7 @@ async def compute_on_demand_page(
         lazy_df, node, column, engine, page_size, compute_quote_dataframe_fn
     )
 
-    total_source_rows = lazy_df.select(pl.len()).collect().item()
+    total_source_rows = cast(pl.DataFrame, lazy_df.select(pl.len()).collect()).item()
     total_source_pages = (
         0
         if total_source_rows == 0
@@ -633,7 +633,7 @@ async def _compute_materialized_quotation_page(
         else DEFAULT_PAGE_SIZE
     )
     lazy = pl.scan_parquet(materialized_path)
-    total_rows = int(lazy.select(pl.len()).collect().item() or 0)
+    total_rows = int(cast(pl.DataFrame, lazy.select(pl.len()).collect()).item() or 0)
 
     effective_sort_by: Optional[str] = None
     if sort_by:
@@ -650,18 +650,15 @@ async def _compute_materialized_quotation_page(
             )
 
     start = max(page - 1, 0) * effective_page_size
-    slice_df = lazy.slice(start, effective_page_size).collect()
+    slice_df = cast(pl.DataFrame, lazy.slice(start, effective_page_size).collect())
 
     columns = list(slice_df.columns)
     grouped_rows: list[list[dict[str, Any]]] = []
     for row in slice_df.to_dicts():
-        projected = _project_quotation_hit(row)
-        if _quotation_hit_has_content(projected):
-            merged = {
-                **{k: v for k, v in row.items() if k not in projected},
-                **projected,
-            }
-            grouped_rows.append([merged])
+        # The materialized parquet already uses canonical QUOTE_* column names,
+        # so skip _project_quotation_hit (which expects unprefixed raw keys).
+        if _quotation_hit_has_content(row):
+            grouped_rows.append([row])
 
     total_source_pages = (
         0 if total_rows == 0 else max(1, math.ceil(total_rows / effective_page_size))

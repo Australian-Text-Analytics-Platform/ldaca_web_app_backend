@@ -15,6 +15,7 @@ router = APIRouter(prefix="/config", tags=["configuration"])
 class ConfigResponse(BaseModel):
     data_root: str
     multi_user_mode: bool
+    google_client_id: str = ""
 
 
 class ConfigUpdate(BaseModel):
@@ -26,13 +27,16 @@ async def get_config():
     """Return currently effective runtime configuration values.
 
     Used by:
-    - frontend settings/config panels
+    - frontend settings/config panels and OAuth client bootstrap
 
     Why:
-    - Exposes backend mode and storage root for client configuration UX.
+    - Exposes backend mode, storage root, and Google OAuth client ID so the
+      frontend can initialize the login provider at runtime.
     """
     return ConfigResponse(
-        data_root=str(settings.get_data_root()), multi_user_mode=settings.multi_user
+        data_root=str(settings.get_data_root()),
+        multi_user_mode=settings.multi_user,
+        google_client_id=settings.google_client_id or "",
     )
 
 
@@ -58,5 +62,7 @@ async def update_config(config: ConfigUpdate):
     updated = reload_settings()
 
     return ConfigResponse(
-        data_root=str(updated.get_data_root()), multi_user_mode=updated.multi_user
+        data_root=str(updated.get_data_root()),
+        multi_user_mode=updated.multi_user,
+        google_client_id=updated.google_client_id or "",
     )

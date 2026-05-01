@@ -45,32 +45,26 @@ _DEFAULT_TEXT_FILE_EXTENSIONS: set[str] = {
 # (Optional) Import heavy libs lazily where needed to reduce import cost.
 
 
-def get_user_data_folder(user_id: str) -> Path:
-    """Get user-specific data folder with proper structure"""
-    # In single-user mode, always use 'user_root' folder
-    if not settings.multi_user:
-        folder_name = "user_root"
-    else:
-        folder_name = f"user_{user_id}"
+def _user_root_folder(user_id: str) -> Path:
+    """Return the per-user root folder (``.../users/<name>/``).
 
-    # Base under DATA_ROOT/users/<folder_name>
-    user_folder = settings.get_data_root() / settings.user_data_folder / folder_name
-    user_data_folder = user_folder / "user_data"
+    In single-user mode every caller shares ``user_root``; in multi-user mode
+    the folder name is derived from the user id.
+    """
+    folder_name = "user_root" if not settings.multi_user else f"user_{user_id}"
+    return settings.get_data_root() / settings.user_data_folder / folder_name
+
+
+def get_user_data_folder(user_id: str) -> Path:
+    """Return the user's data folder, creating it if missing."""
+    user_data_folder = _user_root_folder(user_id) / "user_data"
     user_data_folder.mkdir(parents=True, exist_ok=True)
     return user_data_folder
 
 
 def get_user_workspace_folder(user_id: str) -> Path:
-    """Get user-specific workspace folder"""
-    # In single-user mode, always use 'user_root' folder
-    if not settings.multi_user:
-        folder_name = "user_root"
-    else:
-        folder_name = f"user_{user_id}"
-
-    # Base under DATA_ROOT/users/<folder_name>
-    user_folder = settings.get_data_root() / settings.user_data_folder / folder_name
-    workspace_folder = user_folder / "user_workspaces"
+    """Return the user's workspace folder, creating it if missing."""
+    workspace_folder = _user_root_folder(user_id) / "user_workspaces"
     workspace_folder.mkdir(parents=True, exist_ok=True)
     return workspace_folder
 
@@ -159,30 +153,15 @@ def ensure_display_folder_name(current_folder: Path, desired_name: str) -> Path:
 
 
 def setup_user_folders(user_id: str) -> Dict[str, Path]:
-    """Set up complete user folder structure.
+    """Create the complete per-user folder layout and return the paths.
 
-    NOTE: Sample data is NO LONGER copied automatically during auth/login.
-    Clients that wish to import sample data must call the dedicated
-    "import sample data" endpoint which will invoke a controlled copy
-    operation. This keeps login fast and avoids unexpected data resets.
-
-    Used by:
-    - auth login/session bootstrap endpoints
-
-    Why:
-    - Ensures required user data/workspace directories always exist before I/O.
+    Used by the auth login/session bootstrap endpoints to guarantee every
+    subsequent I/O call has a stable home. Sample data is no longer copied
+    automatically — clients must hit the dedicated import endpoint.
     """
-    folder_name = f"user_{user_id}"
-
-    # Base under DATA_ROOT/users/<folder_name>
-    user_folder = settings.get_data_root() / settings.user_data_folder / folder_name
-    user_data_folder = user_folder / "user_data"
-    user_workspaces_folder = user_folder / "user_workspaces"
-
-    # Create the main folders
-    user_data_folder.mkdir(parents=True, exist_ok=True)
-    user_workspaces_folder.mkdir(parents=True, exist_ok=True)
-
+    user_folder = _user_root_folder(user_id)
+    user_data_folder = get_user_data_folder(user_id)
+    user_workspaces_folder = get_user_workspace_folder(user_id)
     return {
         "user_folder": user_folder,
         "user_data": user_data_folder,

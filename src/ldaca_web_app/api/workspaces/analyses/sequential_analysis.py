@@ -8,10 +8,13 @@ Exposes updated paths:
 from __future__ import annotations
 
 import logging
+from datetime import date, datetime
 from typing import Any, Optional, cast
 
 import polars as pl
+from docworkspace import Node
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from ....analysis.implementations.sequential_analysis import (
     SequentialAnalysisRequest as AnalysisSequentialAnalysisRequest,
@@ -22,6 +25,7 @@ from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import SequentialAnalysisRequest
+from ..utils import update_workspace
 from ..utils import ensure_task_synced
 from .current_tasks import get_current_task_ids_for_analysis
 
@@ -33,6 +37,103 @@ router = APIRouter(prefix="/workspaces")
 VALID_CHART_TYPES = {"line", "bar", "area"}
 DEFAULT_CHART_TYPE = "line"
 SEQUENTIAL_TASK = "sequential_analysis"
+
+# Polars duration suffix and strftime format for each custom-interval unit.
+# Keys must match the Literal in `SequentialAnalysisRequest.custom_interval_unit`.
+_CUSTOM_UNIT_SPEC: dict[str, tuple[str, str]] = {
+    "seconds": ("s", "%Y-%m-%d %H:%M:%S"),
+    "minutes": ("m", "%Y-%m-%d %H:%M"),
+    "hours": ("h", "%Y-%m-%d %H:00"),
+    "days": ("d", "%Y-%m-%d"),
+    "weeks": ("w", "%Y-%m-%d"),
+}
+
+
+class SelectedPeriod(BaseModel):
+    period_start: Any
+    period_end: Any
+
+
+class VisibleGroupSelection(BaseModel):
+    values: dict[str, Any]
+
+
+class SequentialAnalysisDetachRequest(BaseModel):
+    selected_periods: list[SelectedPeriod]
+    visible_groups: list[VisibleGroupSelection] | None = None
+    new_node_name: str
+
+
+def _coerce_period_bound(value: Any, *, column_type: str, time_dtype: Any) -> Any:
+    if column_type == "numeric":
+        try:
+            return float(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid numeric period bound: {value!r}",
+            ) from exc
+
+    if isinstance(value, datetime | date):
+        parsed: datetime | date = value
+    elif isinstance(value, str):
+        normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+        try:
+            parsed = datetime.fromisoformat(normalized)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid datetime period bound: {value!r}",
+            ) from exc
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported datetime period bound: {value!r}",
+        )
+
+    if time_dtype == pl.Date and isinstance(parsed, datetime):
+        return parsed.date()
+    return parsed
+
+
+def _build_group_filter_expression(
+    *,
+    visible_groups: list[VisibleGroupSelection] | None,
+    schema: Any,
+    case_sensitive: bool,
+) -> pl.Expr | None:
+    if not visible_groups:
+        return None
+
+    group_expr: pl.Expr | None = None
+    for group_selection in visible_groups:
+        value_expr: pl.Expr | None = None
+        for column_name, raw_value in group_selection.values.items():
+            if schema.get(column_name) is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Group column '{column_name}' is not available on the source node",
+                )
+
+            column_expr = pl.col(column_name)
+            if raw_value is None:
+                current_expr = column_expr.is_null()
+            elif (
+                not case_sensitive
+                and isinstance(raw_value, str)
+                and schema.get(column_name) in {pl.String, pl.Utf8}
+            ):
+                current_expr = column_expr.str.to_lowercase() == raw_value.lower()
+            else:
+                current_expr = column_expr == pl.lit(raw_value)
+
+            value_expr = current_expr if value_expr is None else (value_expr & current_expr)
+
+        if value_expr is None:
+            continue
+        group_expr = value_expr if group_expr is None else (group_expr | value_expr)
+
+    return group_expr
 
 
 # ---------------------------------------------------------------------------
@@ -50,6 +151,9 @@ def _run_sequential_analysis(
     column_type: str = "datetime",
     numeric_origin: float | None = None,
     numeric_interval: float | None = None,
+    custom_interval_value: int | None = None,
+    custom_interval_unit: str | None = None,
+    case_sensitive: bool = True,
 ) -> pl.DataFrame:
     """Pure-Polars implementation of sequential analysis.
 
@@ -104,6 +208,20 @@ def _run_sequential_analysis(
                 pl.col(time_column).dt.truncate("1y").dt.date().alias("time_period")
             )
             time_format = "%Y"
+        elif frequency == "custom":
+            if custom_interval_value is None or custom_interval_value <= 0:
+                raise ValueError(
+                    "custom_interval_value must be a positive integer when frequency='custom'"
+                )
+            unit_spec = _CUSTOM_UNIT_SPEC.get(custom_interval_unit or "")
+            if unit_spec is None:
+                raise ValueError(
+                    f"Unsupported custom_interval_unit '{custom_interval_unit}'. "
+                    f"Use one of: {sorted(_CUSTOM_UNIT_SPEC)}"
+                )
+            duration_suffix, time_format = unit_spec
+            duration = f"{int(custom_interval_value)}{duration_suffix}"
+            time_expr = pl.col(time_column).dt.truncate(duration).alias("time_period")
         else:
             time_expr = pl.col(time_column).dt.date().alias("time_period")
             time_format = "%Y-%m-%d"
@@ -150,6 +268,12 @@ def _run_sequential_analysis(
 
     # Determine grouping columns
     group_cols = ["time_period"] + (group_by_columns or [])
+
+    # Lowercase group-by column values for case-insensitive grouping
+    if not case_sensitive and group_by_columns:
+        for col_name in group_by_columns:
+            if df.schema.get(col_name) == pl.String or df.schema.get(col_name) == pl.Utf8:
+                df = df.with_columns(pl.col(col_name).str.to_lowercase())
 
     # Perform aggregation
     result_df = df.group_by(group_cols).agg(
@@ -362,6 +486,7 @@ async def run_sequential_analysis(
             "monthly",
             "quarterly",
             "yearly",
+            "custom",
         ]
         if (
             request.column_type == "datetime"
@@ -381,6 +506,9 @@ async def run_sequential_analysis(
             column_type=request.column_type,
             numeric_origin=request.numeric_origin,
             numeric_interval=request.numeric_interval,
+            custom_interval_value=request.custom_interval_value,
+            custom_interval_unit=request.custom_interval_unit,
+            case_sensitive=request.case_sensitive,
         )
 
         inherited_chart_type = DEFAULT_CHART_TYPE
@@ -544,4 +672,93 @@ async def update_sequential_analysis_task_result(
         "state": "successful",
         "message": "saved",
         "data": {"chart_type": chart_type},
+    }
+
+
+@router.post("/sequential-analysis/tasks/{task_id}/detach")
+async def detach_sequential_analysis_task(
+    task_id: str,
+    request: SequentialAnalysisDetachRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Create a filtered child node from selected sequential-analysis periods."""
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    if not request.selected_periods:
+        raise HTTPException(status_code=400, detail="At least one selected period is required")
+
+    task_manager = get_task_manager(user_id)
+    task = task_manager.get_task(task_id)
+    if task is None or task.request is None:
+        raise HTTPException(status_code=404, detail="Sequential analysis task not found")
+
+    stored_request = task.request
+    node_id = getattr(stored_request, "node_id", None)
+    time_column = getattr(stored_request, "time_column", None)
+    column_type = getattr(stored_request, "column_type", "datetime") or "datetime"
+    case_sensitive = bool(getattr(stored_request, "case_sensitive", True))
+
+    if not isinstance(node_id, str) or not node_id:
+        raise HTTPException(status_code=400, detail="Sequential analysis task is missing node_id")
+    if not isinstance(time_column, str) or not time_column:
+        raise HTTPException(status_code=400, detail="Sequential analysis task is missing time_column")
+    if node_id not in ws.nodes:
+        raise HTTPException(status_code=404, detail="Source node not found")
+
+    source_node = ws.nodes[node_id]
+    source_lazy = source_node.data
+    schema = source_lazy.collect_schema()
+    time_dtype = schema.get(time_column)
+    if time_dtype is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Time column '{time_column}' is not available on the source node",
+        )
+
+    filter_expr: pl.Expr | None = None
+    for selected_period in request.selected_periods:
+        period_start = _coerce_period_bound(
+            selected_period.period_start,
+            column_type=column_type,
+            time_dtype=time_dtype,
+        )
+        period_end = _coerce_period_bound(
+            selected_period.period_end,
+            column_type=column_type,
+            time_dtype=time_dtype,
+        )
+        period_expr = (pl.col(time_column) >= pl.lit(period_start)) & (
+            pl.col(time_column) <= pl.lit(period_end)
+        )
+        filter_expr = period_expr if filter_expr is None else (filter_expr | period_expr)
+
+    if filter_expr is None:
+        raise HTTPException(status_code=400, detail="No valid period filters were provided")
+
+    group_expr = _build_group_filter_expression(
+        visible_groups=request.visible_groups,
+        schema=schema,
+        case_sensitive=case_sensitive,
+    )
+    final_filter_expr = filter_expr if group_expr is None else (filter_expr & group_expr)
+
+    filtered_lazy = source_lazy.filter(final_filter_expr)
+
+    new_node = Node(
+        data=filtered_lazy,
+        name=request.new_node_name,
+        workspace=ws,
+        operation=f"sequential_analysis_detach({getattr(source_node, 'name', node_id)})",
+        parents=[source_node],
+    )
+    ws.add_node(new_node)
+    update_workspace(user_id, workspace_id, best_effort=True)
+
+    return {
+        "new_node_id": getattr(new_node, "id", None),
+        "new_node_name": request.new_node_name,
     }

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
 from ..api.workspaces.analyses.generated_columns import (
@@ -130,9 +130,39 @@ def run_concordance_detach_task(
         if materialized_path and os.path.exists(materialized_path):
             if progress_callback:
                 progress_callback(0.4, "Reusing materialized occurrences...")
-            lazy = pl.scan_parquet(materialized_path)
+            import uuid
+
+            # Read the materialized parquet and select only the columns the
+            # user requested.  The materialized parquet contains all source
+            # metadata columns so the detach fast path can respect the user's
+            # column selection.
+            mat_df = pl.read_parquet(materialized_path)
+
+            # Determine which columns to keep.
+            keep_cols: list[str] = []
+            if include_document_column and document_column in mat_df.columns:
+                keep_cols.append(document_column)
+            if extra_columns_data:
+                for col_name in extra_columns_data:
+                    if col_name in mat_df.columns and col_name not in keep_cols:
+                        keep_cols.append(col_name)
+            # Always keep concordance-generated columns.
+            for col in mat_df.columns:
+                if col not in keep_cols:
+                    if col.startswith("CONC_"):
+                        keep_cols.append(col)
+            mat_df = mat_df.select(keep_cols) if keep_cols else mat_df
+
+            detach_data_dir = os.path.join(workspace_dir, "data")
+            os.makedirs(detach_data_dir, exist_ok=True)
+            detach_parquet_path = os.path.join(
+                detach_data_dir,
+                f"concordance_detach_{uuid.uuid4().hex}.parquet",
+            )
+            mat_df.write_parquet(detach_parquet_path)
+            lazy = pl.scan_parquet(detach_parquet_path)
             schema_names = list(lazy.collect_schema().names())
-            record_count = int(lazy.select(pl.len()).collect().item() or 0)
+            record_count = len(mat_df)
             output_columns = schema_names
             detached_node = Node(
                 data=lazy,
@@ -173,6 +203,24 @@ def run_concordance_detach_task(
             include_document_column=include_document_column,
             extra_columns_data=extra_columns_data,
         )
+
+        # Compute frequency columns (same as materialize) so detach always
+        # includes CONC_l1_freq and CONC_r1_freq regardless of prior
+        # materialization.
+        l1_freq = (
+            result.group_by(CONC_L1_COLUMN)
+            .len()
+            .rename({"len": CONC_L1_FREQ_COLUMN})
+        )
+        r1_freq = (
+            result.group_by(CONC_R1_COLUMN)
+            .len()
+            .rename({"len": CONC_R1_FREQ_COLUMN})
+        )
+        result = result.join(l1_freq, on=CONC_L1_COLUMN, how="left").join(
+            r1_freq, on=CONC_R1_COLUMN, how="left"
+        )
+        output_columns = output_columns + [CONC_L1_FREQ_COLUMN, CONC_R1_FREQ_COLUMN]
 
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")
@@ -274,10 +322,20 @@ def run_concordance_materialize_task(
         if progress_callback:
             progress_callback(0.85, "Writing materialized parquet...")
 
-        materialized_dir = os.path.join(workspace_dir, "materialized", parent_task_id)
+        materialized_dir = os.path.join(workspace_dir, "data")
         os.makedirs(materialized_dir, exist_ok=True)
-        materialized_path = os.path.join(materialized_dir, f"{parent_node_id}.parquet")
+        materialized_path = os.path.join(
+            materialized_dir,
+            f".materialized_concordance_{parent_task_id}_{parent_node_id}.parquet",
+        )
         result.write_parquet(materialized_path)
+
+        total_source_documents = len(node_corpus)
+        unique_documents_with_hits = (
+            int(result.select(pl.col(document_column).n_unique()).item())
+            if document_column in result.columns
+            else 0
+        )
 
         if progress_callback:
             progress_callback(1.0, "Concordance materialize completed")
@@ -290,6 +348,8 @@ def run_concordance_materialize_task(
                 "parent_node_id": parent_node_id,
                 "output_columns": output_columns,
                 "record_count": int(len(result)),
+                "unique_documents_with_hits": unique_documents_with_hits,
+                "total_source_documents": total_source_documents,
             },
             "message": "Concordance materialize completed successfully",
         }

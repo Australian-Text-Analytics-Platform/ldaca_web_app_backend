@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Any, Dict, Optional
 
@@ -52,11 +53,36 @@ async def clear_tasks(
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
 
+    analysis_tm = get_analysis_task_manager(user_id)
+    analysis_task = analysis_tm.get_task(task_id)
+
+    # Delete any materialized parquet artifacts owned by this analysis task
+    # that never became a detached node. Detach copies the parquet into a
+    # node-owned file, so deleting the original here is safe.
+    materialized_files: list[str] = []
+    if (
+        analysis_task is not None
+        and getattr(analysis_task, "request", None) is not None
+    ):
+        paths_map = getattr(analysis_task.request, "materialized_paths", None)
+        if isinstance(paths_map, dict):
+            materialized_files.extend(
+                str(p) for p in paths_map.values() if isinstance(p, str) and p
+            )
+        single_path = getattr(analysis_task.request, "materialized_path", None)
+        if isinstance(single_path, str) and single_path:
+            materialized_files.append(single_path)
+    for path in materialized_files:
+        try:
+            if os.path.isfile(path):
+                os.unlink(path)
+        except OSError as exc:
+            logger.warning("Failed to delete materialized parquet %s: %s", path, exc)
+
     cleared_worker = await tm.clear_task(task_id)
 
     cleared_analysis = False
-    analysis_tm = get_analysis_task_manager(user_id)
-    if analysis_tm.get_task(task_id) is not None:
+    if analysis_task is not None:
         analysis_tm.clear_task(task_id)
         cleared_analysis = True
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import polars as pl
@@ -15,6 +16,8 @@ from ldaca_web_app.core.workspace import workspace_manager
 
 @pytest.fixture(autouse=True)
 def _stub_worker_task_manager(monkeypatch):
+    holder: dict[str, object] = {}
+
     class ImmediateTaskManager:
         async def any_running(self, **_kwargs):
             return False
@@ -23,6 +26,7 @@ def _stub_worker_task_manager(monkeypatch):
             return None
 
         async def submit_task(self, **_kwargs):
+            holder["submit_kwargs"] = _kwargs
             return SimpleNamespace(id="topic-worker-task")
 
     def fake_get_task_manager(self, _user_id):
@@ -32,10 +36,12 @@ def _stub_worker_task_manager(monkeypatch):
         workspace_manager.__class__, "get_task_manager", fake_get_task_manager
     )
 
+    return holder
+
 
 @pytest.mark.anyio
 async def test_topic_modeling_request_persists_random_seed_and_word_count(
-    authenticated_client, workspace_id
+    authenticated_client, workspace_id, _stub_worker_task_manager
 ):
     user_id = "test"
     workspace = workspace_manager.get_current_workspace(user_id)
@@ -81,6 +87,12 @@ async def test_topic_modeling_request_persists_random_seed_and_word_count(
         if hasattr(analysis_task.request, "model_dump")
         else analysis_task.request.dict()
     )
+    submit_kwargs = _stub_worker_task_manager.get("submit_kwargs")
+    assert isinstance(submit_kwargs, dict)
+    task_args = submit_kwargs["task_args"]
+    assert "corpora" not in task_args
+    assert Path(task_args["workspace_dir"]).exists()
+    assert task_args["node_infos"][0]["text_column"] == "document"
     assert request_data["random_seed"] == 123
     assert request_data["representative_words_count"] == 7
 

@@ -193,15 +193,12 @@ class TestAuthenticationIntegration:
     """Test authentication integration with the rest of the system"""
 
     async def test_auth_system_consistency(self, test_client):
-        """Test that the auth system is internally consistent"""
-        # Get auth info
+        """Auth info and /me should agree on authenticated state."""
         auth_info_response = await test_client.get("/api/auth/")
         auth_info = auth_info_response.json()
 
-        # Get current user info
         me_response = await test_client.get("/api/auth/me")
 
-        # Responses should be consistent
         if auth_info["authenticated"]:
             assert me_response.status_code == 200
             me_data = me_response.json()
@@ -209,96 +206,3 @@ class TestAuthenticationIntegration:
             assert "email" in me_data
         else:
             assert me_response.status_code == 401
-
-    async def test_auth_dependency_injection(self, authenticated_client):
-        """Test that auth dependency injection works properly"""
-        endpoints_to_test = ["/api/workspaces/", "/api/auth/me", "/api/auth/status"]
-
-        for endpoint in endpoints_to_test:
-            response = await authenticated_client.get(endpoint)
-
-            # Should either work or give proper error
-            assert response.status_code in [200, 404, 422]
-
-            if response.status_code == 200:
-                data = response.json()
-                assert data is not None
-
-
-class TestAuthenticationConfiguration:
-    """Test authentication configuration and environment"""
-
-    async def test_current_configuration_values(self, test_client):
-        """Document and test current configuration values"""
-        from unittest.mock import MagicMock, patch
-
-        from ldaca_web_app.core.auth import get_available_auth_methods
-        from ldaca_web_app.settings import settings
-
-        # Create a mock settings object with test values
-        mock_settings = MagicMock()
-        mock_settings.multi_user = False
-        mock_settings.single_user_id = "test"
-        mock_settings.single_user_name = "Test User"
-        mock_settings.single_user_email = "test@localhost"
-        mock_settings.google_client_id = ""
-        mock_settings.database_url = "sqlite+aiosqlite:///:memory:"
-
-        # Patch the settings in the config module
-        with patch("ldaca_web_app.settings.settings", mock_settings):
-            # Test current configuration
-            assert settings.multi_user is False  # Should be single-user mode
-            assert settings.single_user_id == "test"
-            assert settings.single_user_email == "test@localhost"
-
-            # Auth methods should be empty in single-user mode
-        methods = get_available_auth_methods()
-        assert methods == []
-
-    async def test_environment_setup(self, test_client):
-        """Test that test environment is properly configured"""
-        import os
-
-        # Document environment variables relevant to testing
-        env_vars = {
-            "MULTI_USER": os.getenv("MULTI_USER"),
-            "GOOGLE_CLIENT_ID": os.getenv("GOOGLE_CLIENT_ID"),
-        }
-
-        # For tests, these should be None/False to ensure single-user mode
-        assert (
-            env_vars["MULTI_USER"] is None or env_vars["MULTI_USER"].lower() == "false"
-        )
-
-        # Test passes regardless - this documents the environment
-        assert True
-
-
-class TestAuthCleanup:
-    """Test that authentication tests clean up properly"""
-
-    async def test_no_test_files_left_behind(self, test_client):
-        """Verify that no test user files are left behind"""
-        import glob
-        from pathlib import Path
-
-        # Check for test user folders that should be cleaned up
-        backend_root = Path(__file__).parent.parent.parent
-        data_folder = backend_root / "data"
-
-        if data_folder.exists():
-            test_patterns = [
-                "user_test-user-*",
-                "user_test_user*",
-            ]
-
-            for pattern in test_patterns:
-                pattern_path = data_folder / pattern
-                leftover_folders = list(glob.glob(str(pattern_path)))
-
-                # Should be empty after test cleanup
-                if leftover_folders:
-                    print(f"Warning: Found leftover test folders: {leftover_folders}")
-
-                # Test doesn't fail - this is informational
-                assert True

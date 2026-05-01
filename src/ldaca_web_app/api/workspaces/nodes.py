@@ -17,20 +17,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = logging.getLogger(__name__)
 
+import json
+
 from docworkspace import Node
 
 from ...core.auth import get_current_user
-from ...core.expression_parser import ExpressionParseError, build_polars_expression
+from ...core.polars_expr_validator import (
+    PolarsExprValidationError,
+    ValidationResult,
+    validate_polars_expr_code,
+)
+from ...core.polars_operations import get_operations_for_dtype
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
     ConcatPreviewRequest,
     ConcatRequest,
-    ExpressionApplyResponse,
-    ExpressionTransformRequest,
     FilterPreviewResponse,
     FilterRequest,
     PaginationInfo,
+    PolarsExpressionApplyResponse,
+    PolarsExpressionContext,
+    PolarsExpressionRequest,
     ReplaceApplyResponse,
     ReplaceRequest,
     SliceRequest,
@@ -96,20 +104,6 @@ def _sanitize_column_alias(label: str) -> str:
     if not sanitized:
         return "computed_column"
     return sanitized[:120]
-
-
-def _resolve_expression_column_name(request: ExpressionTransformRequest) -> str:
-    """Resolve final computed-column name from request expression metadata.
-
-    Used by:
-    - `compute_column_preview`
-    - `compute_column_apply`
-
-    Why:
-    - Keeps naming rules consistent between preview and apply endpoints.
-    """
-    candidate = (request.new_column_name or request.expression or "").strip()
-    return _sanitize_column_alias(candidate)
 
 
 def _resolve_replace_column_name(request: ReplaceRequest) -> str:
@@ -205,10 +199,15 @@ def _build_filter_expression(
                     expr = column_expr.is_null()
         elif op == "contains":
             pattern = str(raw_value)
+            case_sensitive = bool(getattr(condition, "case_sensitive", False))
             if getattr(condition, "regex", False):
                 expr = column_expr.str.contains(pattern)
-            else:
+            elif case_sensitive:
                 expr = column_expr.str.contains(pl.lit(pattern), literal=True)
+            else:
+                expr = column_expr.str.to_lowercase().str.contains(
+                    pl.lit(pattern.lower()), literal=True
+                )
         elif op == "startswith":
             expr = column_expr.str.starts_with(str(raw_value))
         elif op == "endswith":
@@ -459,123 +458,6 @@ def _derive_concat_node_name(nodes: list[Node], desired_name: Optional[str]) -> 
 
 
 @router.post(
-    "/nodes/{node_id}/compute-column/preview",
-    response_model=FilterPreviewResponse,
-)
-async def compute_column_preview(
-    node_id: str,
-    request: ExpressionTransformRequest,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(10, ge=1, le=500),
-    current_user: dict = Depends(get_current_user),
-):
-    user_id = current_user["id"]
-    workspace = _require_current_workspace(user_id)
-    lazy_data = workspace.nodes[node_id].data
-
-    try:
-        columns, _ = _extract_lazy_schema(lazy_data)
-        expr = build_polars_expression(request.expression, columns=columns)
-        column_name = _resolve_expression_column_name(request)
-        computed_lazy = lazy_data.with_columns(
-            expr.cast(pl.Utf8, strict=False).alias(column_name)
-        )
-
-        total_rows_df = cast(
-            pl.DataFrame,
-            computed_lazy.select(pl.len().alias("_len")).collect(),
-        )
-        total_rows = (
-            int(total_rows_df.to_series(0).item())
-            if total_rows_df.to_series(0).len()
-            else 0
-        )
-
-        normalized_page_size = page_size
-        total_pages = math.ceil(total_rows / normalized_page_size) if total_rows else 0
-        normalized_page = min(max(page, 1), total_pages or 1)
-        start_idx = (normalized_page - 1) * normalized_page_size if total_rows else 0
-
-        preview_df = cast(
-            pl.DataFrame,
-            computed_lazy.slice(start_idx, normalized_page_size).collect(),
-        )
-    except ExpressionParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return FilterPreviewResponse(
-        data=preview_df.to_dicts(),
-        columns=list(preview_df.columns),
-        dtypes={col: str(dtype) for col, dtype in preview_df.schema.items()},
-        pagination=PaginationInfo(
-            page=normalized_page,
-            page_size=normalized_page_size,
-            total_rows=total_rows,
-            total_pages=total_pages,
-            has_next=normalized_page < total_pages,
-            has_prev=normalized_page > 1 and total_rows > 0,
-        ),
-    )
-
-
-@router.post(
-    "/nodes/{node_id}/compute-column",
-    response_model=ExpressionApplyResponse,
-)
-async def compute_column_apply(
-    node_id: str,
-    request: ExpressionTransformRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    user_id = current_user["id"]
-    ws = _require_current_workspace(user_id)
-    workspace_id = ws.id
-    node = ws.nodes[node_id]
-    try:
-        lazy_data = node.data
-        columns, _ = _extract_lazy_schema(lazy_data)
-        column_name = _resolve_expression_column_name(request)
-        updated_data = lazy_data.with_columns(
-            build_polars_expression(request.expression, columns=columns)
-            .cast(pl.Utf8, strict=False)
-            .alias(column_name)
-        )
-    except HTTPException:
-        raise
-    except ExpressionParseError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    dtype_str: Optional[str] = None
-    try:
-        schema_dict = dict(updated_data.collect_schema().items())
-        dtype = schema_dict.get(column_name)
-        if dtype is not None:
-            dtype_str = str(dtype)
-    except Exception:  # pragma: no cover - best effort only
-        logger.debug("Could not resolve dtype for column %s", column_name)
-        dtype_str = None
-
-    try:
-        node.data = updated_data
-        update_workspace(user_id, workspace_id)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return ExpressionApplyResponse(
-        state="successful",
-        node_id=node_id,
-        column_name=column_name,
-        expression=request.expression.strip(),
-        dtype=dtype_str,
-        message=f"Added column '{column_name}' to node",
-    )
-
-
-@router.post(
     "/nodes/{node_id}/replace/preview",
     response_model=FilterPreviewResponse,
 )
@@ -681,12 +563,7 @@ async def get_node_info(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    try:
-        return ws.nodes[node_id].info()
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return ws.nodes[node_id].info()
 
 
 @router.get("/nodes/{node_id}/query-plan")
@@ -696,14 +573,9 @@ async def get_node_query_plan(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    try:
-        lazyframe = ws.nodes[node_id].data
-        plan = lazyframe.explain(format="tree")
-        return {"plan": plan}
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    lazyframe = ws.nodes[node_id].data
+    plan = lazyframe.explain(format="tree")
+    return {"plan": plan}
 
 
 @router.get("/nodes/{node_id}/data")
@@ -711,32 +583,70 @@ async def get_node_data(
     node_id: str,
     page: int = 1,
     page_size: int = 20,
+    sort_by: Optional[str] = None,
+    descending: bool = False,
+    filter_column: Optional[str] = None,
+    filter_value: Optional[str] = None,
+    filter_op: str = "contains",
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    try:
-        lazyframe = _require_current_workspace(user_id).nodes[node_id].data
-        df = cast(pl.DataFrame, lazyframe.collect())
-        total_rows = len(df)
-        start_idx = (page - 1) * page_size
-        paginated_df = df.slice(start_idx, page_size)
-        return {
-            "data": stringify_unsafe_integers(paginated_df.to_dicts()),
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total_rows": total_rows,
-                "total_pages": (total_rows + page_size - 1) // page_size,
-                "has_next": start_idx + page_size < total_rows,
-                "has_prev": page > 1,
-            },
-            "columns": list(df.columns),
-            "dtypes": {col: str(dtype) for col, dtype in df.schema.items()},
-        }
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    lf = _require_current_workspace(user_id).nodes[node_id].data
+    schema = {col: str(dtype) for col, dtype in lf.collect_schema().items()}
+    columns = list(schema.keys())
+
+    # Apply column filter on the lazy frame before materialising.
+    if filter_column and filter_value is not None and filter_column in columns:
+        dtype_str = schema.get(filter_column, "")
+        is_string_like = any(
+            t in dtype_str.lower() for t in ("utf8", "string", "categorical")
+        )
+        if is_string_like:
+            col_expr = pl.col(filter_column).cast(pl.Utf8)
+            val = filter_value
+            if filter_op == "eq":
+                lf = lf.filter(col_expr == val)
+            elif filter_op == "startswith":
+                lf = lf.filter(col_expr.str.starts_with(val))
+            elif filter_op == "endswith":
+                lf = lf.filter(col_expr.str.ends_with(val))
+            else:
+                lf = lf.filter(col_expr.str.contains(val, literal=True))
+
+    # Count total rows after filtering (cheap on LazyFrame).
+    total_rows: int = cast(pl.DataFrame, lf.select(pl.len()).collect()).item()
+
+    # Sort lazily before slicing.
+    if sort_by and sort_by in columns:
+        lf = lf.sort(sort_by, descending=descending, nulls_last=True)
+
+    start_idx = (page - 1) * page_size
+    page_df = cast(pl.DataFrame, lf.slice(start_idx, page_size).collect())
+
+    return {
+        "data": stringify_unsafe_integers(page_df.to_dicts()),
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_rows": total_rows,
+            "total_pages": (total_rows + page_size - 1) // page_size,
+            "has_next": start_idx + page_size < total_rows,
+            "has_prev": page > 1,
+        },
+        "columns": columns,
+        "dtypes": schema,
+        "sorting": {
+            "sort_by": sort_by if sort_by and sort_by in columns else None,
+            "descending": descending,
+        },
+        "filtering": {
+            "column": filter_column
+            if filter_column and filter_column in columns
+            else None,
+            "value": filter_value,
+            "op": filter_op,
+        },
+    }
 
 
 @router.get("/nodes/{node_id}/shape")
@@ -745,12 +655,7 @@ async def get_node_shape(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    try:
-        return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
-    except HTTPException:
-        raise
-    except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
 
 
 @router.get("/nodes/{node_id}/columns/{column_name}/unique")
@@ -1388,3 +1293,239 @@ async def join_nodes(
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+# =============================================================================
+# COLUMN OPERATIONS REGISTRY ENDPOINT
+# =============================================================================
+
+
+@router.get("/nodes/{node_id}/columns/{column_name}/operations")
+async def column_operations(
+    node_id: str,
+    column_name: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return available no-arg Polars operations for a column, filtered by dtype."""
+    user_id = current_user["id"]
+    ws = _require_current_workspace(user_id)
+    node = ws.nodes[node_id]
+    schema = dict(node.data.collect_schema().items())
+    dtype = schema.get(column_name)
+    if dtype is None:
+        raise HTTPException(status_code=404, detail=f"Column '{column_name}' not found")
+    return {"operations": get_operations_for_dtype(dtype)}
+
+
+# =============================================================================
+# UNIFIED POLARS EXPRESSION ENDPOINTS
+# =============================================================================
+
+
+def _split_top_level_commas(code: str) -> list[str]:
+    """Split *code* at commas that are not inside parentheses, brackets, braces, or strings."""
+    segments: list[str] = []
+    depth = 0
+    current: list[str] = []
+    in_string: str | None = None
+    escape = False
+
+    for char in code:
+        if escape:
+            current.append(char)
+            escape = False
+            continue
+        if char == "\\":
+            current.append(char)
+            escape = True
+            continue
+        if in_string:
+            current.append(char)
+            if char == in_string:
+                in_string = None
+            continue
+        if char in ('"', "'"):
+            in_string = char
+            current.append(char)
+            continue
+        if char in ("(", "[", "{"):
+            depth += 1
+        elif char in (")", "]", "}"):
+            depth = max(0, depth - 1)
+        if char == "," and depth == 0:
+            segments.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+
+    remainder = "".join(current).strip()
+    if remainder:
+        segments.append(remainder)
+    return segments
+
+
+def _exec_polars_expr(code: str) -> list[pl.Expr]:
+    """Execute polars expression code string(s) and return resulting pl.Expr(s).
+
+    A single textarea may contain comma-separated segments.  Each segment is
+    validated and executed individually, supporting:
+
+    * Plain expression: ``pl.col("a")``
+    * Assignment: ``name = pl.col("a")`` → ``pl.col("a").alias(name)``
+    * Mixed: ``pl.col("a"), b = pl.col("x")``
+    """
+    segments = _split_top_level_commas(code.strip())
+    if not segments:
+        raise ValueError("Expression code cannot be empty")
+
+    exprs: list[pl.Expr] = []
+    for segment in segments:
+        vr: ValidationResult = validate_polars_expr_code(segment)
+
+        if vr.mode == "assign":
+            expr_source = segment.split("=", 1)[1].strip()
+        else:
+            expr_source = segment
+
+        ns: dict[str, object] = {"pl": pl}
+        exec(f"_result = {expr_source}", {"__builtins__": {}}, ns)  # noqa: S102
+        result = ns["_result"]
+
+        if not isinstance(result, pl.Expr):
+            raise ValueError(f"Expected pl.Expr, got {type(result).__name__}")
+
+        if vr.mode == "assign" and vr.alias:
+            result = result.alias(vr.alias)
+
+        exprs.append(result)
+
+    return exprs
+
+
+def _apply_expression_context(
+    lazy: pl.LazyFrame,
+    request: PolarsExpressionRequest,
+) -> pl.LazyFrame:
+    """Apply the requested polars context + expressions to a LazyFrame."""
+    context = request.context
+    items = request.expressions
+
+    if context == PolarsExpressionContext.filter:
+        exprs = _exec_polars_expr(items[0].code)
+        return lazy.filter(exprs[0])
+
+    if context == PolarsExpressionContext.with_columns:
+        exprs = [e for item in items for e in _exec_polars_expr(item.code)]
+        return lazy.with_columns(exprs)
+
+    if context == PolarsExpressionContext.select:
+        exprs = [e for item in items for e in _exec_polars_expr(item.code)]
+        return lazy.select(exprs)
+
+    if context == PolarsExpressionContext.sort:
+        pairs = [
+            (e, bool(item.descending))
+            for item in items
+            for e in _exec_polars_expr(item.code)
+        ]
+        by = [p[0] for p in pairs]
+        descending = [p[1] for p in pairs]
+        return lazy.sort(by, descending=descending)
+
+    if context == PolarsExpressionContext.group_by_agg:
+        keys = [
+            e for k in (request.group_by_keys or []) for e in _exec_polars_expr(k.code)
+        ]
+        aggs = [e for item in items for e in _exec_polars_expr(item.code)]
+        return lazy.group_by(keys).agg(aggs)
+
+    raise HTTPException(status_code=400, detail=f"Unknown context: {context}")
+
+
+@router.post("/nodes/{node_id}/expression/preview")
+async def polars_expression_preview(
+    node_id: str,
+    request: PolarsExpressionRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=500),
+    current_user: dict = Depends(get_current_user),
+) -> FilterPreviewResponse:
+    user_id = current_user["id"]
+    workspace = _require_current_workspace(user_id)
+    lazy_data = workspace.nodes[node_id].data
+
+    try:
+        result_lazy = _apply_expression_context(lazy_data, request)
+    except PolarsExprValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    total_rows_df = cast(
+        pl.DataFrame,
+        result_lazy.select(pl.len().alias("_len")).collect(),
+    )
+    total_rows = int(total_rows_df.to_series(0).item()) if total_rows_df.height else 0
+
+    total_pages = math.ceil(total_rows / page_size) if total_rows else 0
+    normalized_page = min(max(page, 1), total_pages or 1)
+    start_idx = (normalized_page - 1) * page_size if total_rows else 0
+
+    page_df = cast(
+        pl.DataFrame,
+        result_lazy.slice(start_idx, page_size).collect(),
+    )
+    columns, dtypes = _extract_lazy_schema(result_lazy)
+    data = stringify_unsafe_integers(page_df.to_dicts())
+
+    return FilterPreviewResponse(
+        data=data,
+        columns=columns,
+        dtypes=dtypes,
+        pagination=PaginationInfo(
+            page=normalized_page,
+            page_size=page_size,
+            total_rows=total_rows,
+            total_pages=total_pages,
+            has_next=normalized_page < total_pages,
+            has_prev=normalized_page > 1,
+        ),
+    )
+
+
+@router.post("/nodes/{node_id}/expression/apply")
+async def polars_expression_apply(
+    node_id: str,
+    request: PolarsExpressionRequest,
+    current_user: dict = Depends(get_current_user),
+) -> PolarsExpressionApplyResponse:
+    user_id = current_user["id"]
+    workspace = _require_current_workspace(user_id)
+    workspace_id = workspace.id
+    node = workspace.nodes[node_id]
+
+    try:
+        result_lazy = _apply_expression_context(node.data, request)
+    except PolarsExprValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # with_columns without an explicit new node name mutates the existing node
+    # in place (adds/replaces columns), matching the behaviour of replace_apply.
+    if request.context == PolarsExpressionContext.with_columns and not request.new_node_name:
+        node.data = result_lazy
+        update_workspace(user_id, workspace_id)
+        return PolarsExpressionApplyResponse(node_id=node_id, node_name=node.name)
+
+    new_node_name = request.new_node_name or f"{node.name}_{request.context}"
+    new_node = Node(
+        data=result_lazy,
+        name=new_node_name,
+        workspace=workspace,
+        operation=f"expression({request.context}, {node.name})",
+        parents=[node],
+    )
+    workspace.add_node(new_node)
+    update_workspace(user_id, workspace_id)
+    return PolarsExpressionApplyResponse(node_id=new_node.id, node_name=new_node.name)
