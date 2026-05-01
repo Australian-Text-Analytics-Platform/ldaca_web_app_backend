@@ -15,6 +15,7 @@ from ..api.workspaces.analyses.generated_columns import (
 logger = logging.getLogger(__name__)
 
 _EMBEDDER_CACHE: dict[str, Any] = {}
+_EMBEDDING_CHUNK_SIZE = 512
 
 
 def _get_embedder(model_name: str):
@@ -30,15 +31,40 @@ def _get_embedder(model_name: str):
     return embedder
 
 
+def _encode_embeddings_in_chunks(
+    embedder: Any,
+    docs: list[str],
+    *,
+    chunk_size: int = _EMBEDDING_CHUNK_SIZE,
+):
+    effective_chunk_size = max(1, int(chunk_size or 0))
+    chunk_embeddings: list[Any] = []
+
+    for start in range(0, len(docs), effective_chunk_size):
+        chunk = docs[start : start + effective_chunk_size]
+        chunk_embeddings.append(
+            embedder.encode(chunk, show_progress_bar=False)
+        )
+
+    if len(chunk_embeddings) == 1:
+        return chunk_embeddings[0]
+
+    import numpy as np
+
+    normalized_chunks = [np.asarray(chunk) for chunk in chunk_embeddings]
+    return np.concatenate(normalized_chunks, axis=0)
+
+
 def run_topic_modeling_task(
     configure_worker_environment,
     user_id: str,
     workspace_id: str,
-    corpora: list[list[str]],
     node_infos: list[Dict[str, Any]],
     artifact_dir: str,
     artifact_prefix: str,
     min_topic_size: int = 5,
+    workspace_dir: str | None = None,
+    corpora: list[list[str]] | None = None,
     random_seed: int = 42,
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
@@ -75,8 +101,53 @@ def run_topic_modeling_task(
             workspace_id,
         )
 
+        def _load_corpora_from_workspace(
+            target_workspace_dir: str, node_payloads: list[Dict[str, Any]]
+        ) -> list[list[str]]:
+            from docworkspace import Workspace
+
+            workspace = Workspace.load(Path(target_workspace_dir))
+            loaded_corpora: list[list[str]] = []
+
+            for node_info in node_payloads:
+                node_id = str(node_info.get("node_id") or "")
+                text_column = str(node_info.get("text_column") or "")
+                if not node_id or not text_column:
+                    raise ValueError(
+                        "Topic modeling requires node_id and text_column for each node"
+                    )
+
+                try:
+                    node = workspace.nodes[node_id]
+                except KeyError as exc:
+                    raise ValueError(
+                        f"Topic modeling node {node_id} is missing from workspace"
+                    ) from exc
+
+                selected = cast(
+                    pl.DataFrame,
+                    node.data.select(pl.col(text_column).alias("__doc_col__")).collect(),
+                )
+                loaded_corpora.append(
+                    [
+                        str(value) if value is not None else ""
+                        for value in selected["__doc_col__"].to_list()
+                    ]
+                )
+
+            return loaded_corpora
+
         artifact_root = Path(artifact_dir)
         artifact_root.mkdir(parents=True, exist_ok=True)
+
+        if corpora is None:
+            if workspace_dir is None:
+                raise ValueError(
+                    "Topic modeling requires corpora or a workspace_dir to load them"
+                )
+            if progress_callback:
+                progress_callback(0.12, "Loading source documents from workspace...")
+            corpora = _load_corpora_from_workspace(workspace_dir, node_infos)
 
         if len(corpora) != len(node_infos):
             raise ValueError(
@@ -174,9 +245,10 @@ def run_topic_modeling_task(
             except ImportError:
                 pass
 
-            # Build embeddings once for BERTopic fitting.
+            # Build embeddings once for BERTopic fitting while capping peak
+            # memory in the Python worker process on large corpora.
             embedder = _get_embedder(embedding_model_name)
-            all_embeddings = embedder.encode(all_docs, show_progress_bar=False)
+            all_embeddings = _encode_embeddings_in_chunks(embedder, all_docs)
 
             # Reuse the same loaded embedder instance to avoid loading model
             # weights twice in a single task.
