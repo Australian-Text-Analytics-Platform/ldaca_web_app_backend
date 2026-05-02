@@ -531,7 +531,7 @@ class TestWorkspaceAPI:
 
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/octet-stream"
-        assert response.headers["content-disposition"].endswith(".parquet")
+        assert response.headers["content-disposition"].rstrip('"').endswith(".parquet")
 
         exported = pl.read_parquet(io.BytesIO(response.content))
         assert exported.shape == (2, 1)
@@ -564,7 +564,7 @@ class TestWorkspaceAPI:
 
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "text/csv; charset=utf-8"
-        assert response.headers["content-disposition"].endswith(".csv")
+        assert response.headers["content-disposition"].rstrip('"').endswith(".csv")
 
         rows = list(DictReader(io.StringIO(response.text)))
         assert rows == [
@@ -616,7 +616,7 @@ class TestWorkspaceAPI:
             response.headers["content-type"]
             == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-        assert response.headers["content-disposition"].endswith(".xlsx")
+        assert response.headers["content-disposition"].rstrip('"').endswith(".xlsx")
 
         exported = pl.read_excel(io.BytesIO(response.content))
         assert exported.shape == (3, 7)
@@ -651,7 +651,7 @@ class TestWorkspaceAPI:
 
         assert response.status_code == 200, response.text
         assert response.headers["content-type"] == "application/zip"
-        assert response.headers["content-disposition"].endswith(".zip")
+        assert response.headers["content-disposition"].rstrip('"').endswith(".zip")
 
         with zipfile.ZipFile(io.BytesIO(response.content), "r") as archive:
             names = sorted(archive.namelist())
