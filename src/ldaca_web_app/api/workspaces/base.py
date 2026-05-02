@@ -700,10 +700,10 @@ async def export_nodes(
     If multiple node_ids are provided, a ZIP archive is returned.
     Supported formats: csv, json, parquet, ipc, ndjson.
     """
-    import io
     import zipfile
 
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
 
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -748,41 +748,37 @@ async def export_nodes(
                 )
             )
 
+        # Use FileResponse so the response includes a Content-Length header.
+        # Tauri's WebView2 on Windows fails ("Failed to fetch") on cross-origin
+        # responses delivered with Transfer-Encoding: chunked when the body is
+        # large enough — replacing the previous StreamingResponse with a sized
+        # FileResponse fixes >10MB exports without sacrificing on-disk streaming.
         if len(exported) == 1:
             filename, artifact_path = exported[0]
-
-            def _stream_and_cleanup_single_export():
-                try:
-                    with open(artifact_path, "rb") as fh:
-                        while True:
-                            chunk = fh.read(64 * 1024)
-                            if not chunk:
-                                break
-                            yield chunk
-                finally:
-                    _cleanup_export_dir(export_dir)
-
             cleanup_on_return = False
-            return StreamingResponse(
-                _stream_and_cleanup_single_export(),
+            return FileResponse(
+                path=str(artifact_path),
                 media_type=str(spec["media_type"]),
-                headers={"Content-Disposition": f"attachment; filename={filename}"},
+                filename=filename,
+                background=BackgroundTask(_cleanup_export_dir, export_dir),
             )
 
-        zip_buf = io.BytesIO()
-        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zip_filename = (
+            f"{build_timestamp_fragment()}_"
+            f"{_sanitize_export_label(getattr(ws, 'name', None), workspace_id)}.zip"
+        )
+        zip_path = _allocate_export_path(
+            export_dir, "_workspace_export", "zip"
+        )
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for archive_name, artifact_path in exported:
                 zf.write(artifact_path, arcname=archive_name)
-        zip_buf.seek(0)
-        return StreamingResponse(
-            zip_buf,
+        cleanup_on_return = False
+        return FileResponse(
+            path=str(zip_path),
             media_type="application/zip",
-            headers={
-                "Content-Disposition": (
-                    f"attachment; filename={build_timestamp_fragment()}_"
-                    f"{_sanitize_export_label(getattr(ws, 'name', None), workspace_id)}.zip"
-                )
-            },
+            filename=zip_filename,
+            background=BackgroundTask(_cleanup_export_dir, export_dir),
         )
     finally:
         if cleanup_on_return:
