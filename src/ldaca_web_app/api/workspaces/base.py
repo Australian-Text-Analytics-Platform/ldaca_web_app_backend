@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -113,6 +114,13 @@ def _allocate_export_path(export_dir: Path, stem: str, extension: str) -> Path:
         candidate = export_dir / f"{stem}_{suffix}.{extension}"
         suffix += 1
     return candidate
+
+
+def _cleanup_export_dir(export_dir: Path) -> None:
+    try:
+        shutil.rmtree(export_dir)
+    except OSError as exc:
+        logger.debug("Best-effort export temp dir cleanup failed for %s: %s", export_dir, exc)
 
 
 def _export_node_artifact(
@@ -695,7 +703,6 @@ async def export_nodes(
     import io
     import zipfile
 
-    from fastapi import Response
     from fastapi.responses import StreamingResponse
 
     user_id = current_user["id"]
@@ -725,10 +732,9 @@ async def export_nodes(
             f"{now.hour:02d}-{now.minute:02d}-{now.second:02d}"
         )
 
-    with tempfile.TemporaryDirectory(
-        prefix=f"workspace_export_{workspace_id}_"
-    ) as temp_dir:
-        export_dir = Path(temp_dir)
+    export_dir = Path(tempfile.mkdtemp(prefix=f"workspace_export_{workspace_id}_"))
+    cleanup_on_return = True
+    try:
         exported: list[tuple[str, Path]] = []
 
         for nid in ids:
@@ -744,8 +750,21 @@ async def export_nodes(
 
         if len(exported) == 1:
             filename, artifact_path = exported[0]
-            return Response(
-                content=artifact_path.read_bytes(),
+
+            def _stream_and_cleanup_single_export():
+                try:
+                    with open(artifact_path, "rb") as fh:
+                        while True:
+                            chunk = fh.read(64 * 1024)
+                            if not chunk:
+                                break
+                            yield chunk
+                finally:
+                    _cleanup_export_dir(export_dir)
+
+            cleanup_on_return = False
+            return StreamingResponse(
+                _stream_and_cleanup_single_export(),
                 media_type=str(spec["media_type"]),
                 headers={"Content-Disposition": f"attachment; filename={filename}"},
             )
@@ -765,3 +784,6 @@ async def export_nodes(
                 )
             },
         )
+    finally:
+        if cleanup_on_return:
+            _cleanup_export_dir(export_dir)
