@@ -139,10 +139,14 @@ def main(argv: list[str] | None = None):
         reload_settings()
 
     from ._logging import setup_file_logging, setup_logging
+    from .core.parent_watchdog import start_parent_watchdog
 
     setup_logging()
     setup_file_logging("cli")
     _setup_signal_handlers()
+    # Self-destruct if the Tauri parent dies (force-quit, crash, kill -9).
+    # No-op in non-Tauri runs because LDACA_PARENT_PID is unset.
+    start_parent_watchdog()
 
     # Mutually exclusive argparse group: at most one of these is True.
     # No flag  -> both   (default: full app)
