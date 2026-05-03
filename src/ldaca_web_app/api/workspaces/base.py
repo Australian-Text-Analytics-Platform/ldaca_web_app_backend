@@ -166,16 +166,33 @@ def _export_node_artifact(
             sheet_name = (
                 "".join("_" if ch in "[]" else ch for ch in stem)[:31] or "Sheet1"
             )
-            collected_data.write_excel(
-                output_path,
-                worksheet=sheet_name,
-                dtype_formats={
-                    pl.Date: "yyyy-mm-dd",
-                    pl.Datetime: "yyyy-mm-dd hh:mm:ss",
-                    pl.Time: "hh:mm:ss",
-                },
-                autofit=True,
+            # Construct the xlsxwriter workbook ourselves so we can disable
+            # `strings_to_urls`. xlsxwriter's default auto-detects URL-like
+            # strings (http://, file://, mailto:, etc.) and writes them as
+            # hyperlinks — but Excel caps hyperlinks at 65,530 per sheet, so
+            # any export with >65,530 URL-shaped cells emits a flood of
+            # warnings, drops cells past the cap, and produces a workbook
+            # Excel reports as damaged. Tabular exports don't need clickable
+            # hyperlinks, and turning detection off both fixes the corruption
+            # and shrinks the output.
+            import xlsxwriter
+
+            workbook = xlsxwriter.Workbook(
+                str(output_path), {"strings_to_urls": False}
             )
+            try:
+                collected_data.write_excel(
+                    workbook=workbook,
+                    worksheet=sheet_name,
+                    dtype_formats={
+                        pl.Date: "yyyy-mm-dd",
+                        pl.Datetime: "yyyy-mm-dd hh:mm:ss",
+                        pl.Time: "hh:mm:ss",
+                    },
+                    autofit=True,
+                )
+            finally:
+                workbook.close()
         else:
             # Polars does not currently expose LazyFrame.sink_json, so JSON
             # remains the single explicit eager export path.
