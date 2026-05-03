@@ -39,12 +39,16 @@ dependencies = [
     # breaks LazyFrame.deserialize() for plans containing those dtypes.
     # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
     "polars[rtcompat]>=1.40.0",
-    # polars-text 0.1.6 enables polars-plan's `nightly` Cargo feature, which
-    # gates extra DslPlan variants (e.g. `StringFunction::Titlecase`) that
-    # Python polars wheels emit. Older wheels (<=0.1.5) fail to deserialize
-    # plans containing `.str.to_titlecase()` with
-    # `unknown variant 'Titlecase'`.
-    "polars-text>=0.1.6",
+    # polars-text 0.1.7 adds the `random` polars-plan feature (plus 10 more
+    # future-proofing features). Older wheels (<=0.1.6) fail to deserialize
+    # any workspace plan containing `.sample()` / `.shuffle()` with
+    # `unknown variant 'Random'` — workspace save/load both walk every plbin
+    # through `polars_text.list_source_paths` (docworkspace GC + rebase),
+    # turning the missing variant into an HTTP 500. 0.1.7 also enables
+    # `bitwise`, `is_close`, `arg_where`, `hive_partitions`, `scan_lines`,
+    # `dtype-extension`, etc., to cover the full DslPlan surface that
+    # Python polars 1.40 wheels emit.
+    "polars-text>=0.1.7",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
