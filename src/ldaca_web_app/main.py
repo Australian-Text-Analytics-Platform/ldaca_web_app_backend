@@ -420,7 +420,12 @@ def start_server(
     global _server, _server_task
     global settings
 
-    _port = port or (8001 if backend else 3000)
+    # Honor LDACA_BACKEND_PORT / BACKEND_PORT injected by Tauri (dynamic port
+    # selection) when no explicit port argument was given. Without this, a None
+    # port always resolves to 8001, overwriting the env-var and binding to the
+    # occupied port that Tauri already detected and skipped.
+    _env_port = os.environ.get("LDACA_BACKEND_PORT") or os.environ.get("BACKEND_PORT")
+    _port = port or (int(_env_port) if _env_port else (8001 if backend else 3000))
     _host = host or ("localhost" if background else "0.0.0.0")
 
     # Write effective values into env vars, then reload the settings singleton
