@@ -97,6 +97,23 @@ class Settings(BaseSettings):
     # Google OAuth Configuration (when multi_user=True)
     google_client_id: str = Field(default="", description="Google OAuth client ID")
 
+    # CILogon OIDC Configuration (when multi_user=True)
+    cilogon_client_id: str = Field(default="", description="CILogon OIDC client ID")
+    cilogon_client_secret: str = Field(
+        default="", description="CILogon OIDC client secret"
+    )
+    cilogon_discovery_url: str = Field(
+        default="https://test.cilogon.aaf.edu.au/.well-known/openid-configuration",
+        description="CILogon OIDC discovery document URL",
+    )
+    cilogon_redirect_uri: str = Field(
+        default="",
+        description=(
+            "CILogon callback URL registered with the provider. "
+            "Set to the full URL of /api/auth/cilogon/callback on your deployment."
+        ),
+    )
+
     # Security Configuration
     token_expire_hours: int = Field(default=24, description="Token expiration hours")
     secret_key: str = Field(
