@@ -330,6 +330,21 @@ def token_frequencies_task(
     )
 
 
+def _pid_reporting_wrapper(task_func: Any, **kwargs: Any) -> Any:
+    """Wrapper executed inside the worker process.
+
+    Sends the worker's own PID as the first message on the progress queue so
+    the main process can terminate it if the user requests cancellation.
+    """
+    pq = kwargs.get("progress_queue")
+    if pq is not None:
+        try:
+            pq.put_nowait({"type": "pid", "pid": os.getpid()})
+        except Exception:
+            pass
+    return task_func(**kwargs)
+
+
 TASK_REGISTRY: Dict[str, Any] = {
     "ldaca_import": ldaca_import_task,
     "workspace_download": workspace_download_task,
@@ -369,7 +384,7 @@ class WorkerTaskManager:
             self.start()
 
         assert self.executor is not None
-        return self.executor.submit(task_func, **kwargs)
+        return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
         if self.executor is None:

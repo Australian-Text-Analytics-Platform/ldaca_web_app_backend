@@ -8,7 +8,9 @@ that uses separate processes for heavy computational tasks.
 import asyncio
 import logging
 import multiprocessing as mp
+import os
 import queue as std_queue
+import signal
 import time
 import uuid
 from concurrent.futures import Future
@@ -63,6 +65,7 @@ class TaskInfo:
     name: str = ""
     user_id: str = ""
     workspace_id: str = ""
+    worker_pid: Optional[int] = None  # PID of the worker process, set once known
 
     def update_status(self):
         """Update status based on future state."""
@@ -240,12 +243,19 @@ class WorkerTaskManager:
                 if not isinstance(payload, dict):
                     continue
 
+                # PID notification sent by _pid_reporting_wrapper at process start
+                if payload.get("type") == "pid":
+                    pid = payload.get("pid")
+                    if isinstance(pid, int):
+                        task_info.worker_pid = pid
+                    continue
+
                 raw_progress = payload.get("progress")
                 message = payload.get("message")
 
                 try:
                     progress_value = float(raw_progress)
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     continue
 
                 message_value = str(message) if message is not None else ""
@@ -286,7 +296,7 @@ class WorkerTaskManager:
                 message = payload.get("message")
                 try:
                     progress_value = float(raw_progress)
-                except TypeError, ValueError:
+                except (TypeError, ValueError):
                     continue
 
                 message_value = str(message) if message is not None else ""
@@ -601,7 +611,31 @@ class WorkerTaskManager:
                 },
             )
 
+        except asyncio.CancelledError:
+            # The future was cancelled before it started running.
+            if task_info.status != TaskStatus.CANCELLED:
+                task_info.update_status()
+                await self.emit(
+                    user_id,
+                    workspace_id,
+                    {
+                        "type": "task_changed",
+                        "task": self._serialize_task(task_info),
+                        "result_persisted": False,
+                        "timestamp": time.time(),
+                    },
+                )
         except Exception as e:
+            # If stop_task already set CANCELLED (process was killed), trust that
+            # status and don't override it with a failure state.
+            if task_info.status == TaskStatus.CANCELLED:
+                logger.info(
+                    "Task %s was stopped by user; ignoring worker exception: %s",
+                    task_info.id,
+                    e,
+                )
+                return
+
             logger.error(f"Error monitoring task completion for {task_info.id}: {e}")
             task_info.update_status()  # Update with error
 
@@ -746,6 +780,67 @@ class WorkerTaskManager:
             f"Task {task_info.id} submitted successfully for user {user_id}, workspace {workspace_id}"
         )
         return task_info
+
+    async def stop_task(self, task_id: str) -> bool:
+        """Stop a running task, mark it cancelled, and keep the record for user dismissal.
+
+        Unlike ``clear_task``, the task record is *not* removed so the UI can
+        display the cancelled state until the user explicitly clears it.
+
+        Strategy:
+        - For tasks not yet picked up by a worker: ``future.cancel()`` works and
+          the future is marked cancelled immediately.
+        - For tasks already running: send SIGTERM to the worker PID (obtained via
+          the progress-queue PID notification), then call ``future.cancel()`` as a
+          belt-and-braces measure.  The worker process will exit, causing the
+          future to raise ``BrokenProcessPool``; ``_monitor_task_completion``
+          detects the pre-set CANCELLED status and does not override it.
+        """
+        async with self._lock:
+            task_info = self._tasks.get(task_id)
+            if not task_info:
+                return False
+
+            if task_info.future.done():
+                return False
+
+            # Mark cancelled immediately so _monitor_task_completion can detect it
+            task_info.status = TaskStatus.CANCELLED
+            task_info.progress = -1.0
+            task_info.progress_message = "Cancelled by user"
+            task_info.finished_at = time.time()
+            self._progress_store[task_id] = {
+                "progress": -1.0,
+                "message": "Cancelled by user",
+                "updated_at": time.time(),
+            }
+
+            # Kill the worker process if we know its PID
+            pid = task_info.worker_pid
+            if pid is not None:
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                    logger.info("Sent SIGTERM to worker PID %d for task %s", pid, task_id)
+                except (ProcessLookupError, OSError) as exc:
+                    logger.debug("Could not send SIGTERM to PID %d: %s", pid, exc)
+
+            # Also attempt future.cancel() for queued-but-not-yet-running tasks
+            task_info.future.cancel()
+
+            user_id = task_info.user_id
+            workspace_id = task_info.workspace_id
+            serialized = self._serialize_task(task_info)
+
+        await self.emit(
+            user_id,
+            workspace_id,
+            {
+                "type": "task_changed",
+                "task": serialized,
+                "timestamp": time.time(),
+            },
+        )
+        return True
 
     async def cancel_task(self, task_id: str) -> bool:
         """Cancel a task by its ID."""
