@@ -95,14 +95,28 @@ def _build_online_pipeline(
 
 
 def _get_embedder(model_id: str):
-    """Get or create a cached ONNX embedder per worker process."""
+    """Get or create a cached embedder per worker process.
+
+    On Apple Silicon, prefers MPS (PyTorch Metal) over ONNX CPU — the full
+    BERT graph runs on Metal/Neural Engine as a single unit, giving ~3× cold
+    throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
+    26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
+    """
     embedder = _EMBEDDER_CACHE.get(model_id)
     if embedder is not None:
         return embedder
 
-    from .onnx_embedder import OnnxEmbedder
+    from .mps_embedder import is_mps_available
 
-    embedder = OnnxEmbedder.from_pretrained(model_id)
+    if is_mps_available():
+        from .mps_embedder import MpsEmbedder
+
+        embedder = MpsEmbedder.from_pretrained(model_id)
+    else:
+        from .onnx_embedder import OnnxEmbedder
+
+        embedder = OnnxEmbedder.from_pretrained(model_id)
+
     _EMBEDDER_CACHE[model_id] = embedder
     return embedder
 

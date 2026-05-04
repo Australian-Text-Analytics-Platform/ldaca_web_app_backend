@@ -130,19 +130,16 @@ async def clear_topic_modeling_embedding_cache(
     from scratch.  Useful after a model upgrade or to reclaim disk space.
     """
     from ....core.embedding_cache import EmbeddingCache
-    from ....core.onnx_embedder import _select_onnx_filename, _select_providers
+    from ....core.mps_embedder import get_active_provider_id
     from ....core.worker_tasks_topic import _TOPIC_EMBEDDER_REPO_ID
 
     user_id = current_user["id"]
     cache_dir = get_user_data_folder(user_id) / "embedding_cache"
 
-    providers = _select_providers()
-    provider_id = providers[0]
-
     cache = EmbeddingCache(
         cache_dir=cache_dir,
         model_id=_TOPIC_EMBEDDER_REPO_ID,
-        provider_id=provider_id,
+        provider_id=get_active_provider_id(),
     )
     cache.clear()
     return {"state": "successful", "message": "Embedding cache cleared."}

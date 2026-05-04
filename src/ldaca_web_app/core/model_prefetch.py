@@ -39,7 +39,28 @@ def _prefetch_spacy_model() -> None:
         logger.warning("[prefetch] spaCy model prefetch failed", exc_info=True)
 
 
-def _prefetch_topic_embedder() -> None:
+def _prefetch_topic_embedder_mps() -> None:
+    """Download the SentenceTransformer model weights for MPS inference.
+
+    On Apple Silicon, the worker uses SentenceTransformer + PyTorch MPS rather
+    than the ONNX path.  This prefetch loads the model on CPU (safe from a
+    daemon thread) which populates the HuggingFace disk cache; the worker then
+    loads from cache with device="mps".
+    """
+    try:
+        from sentence_transformers import SentenceTransformer
+
+        logger.info(
+            "[prefetch] Downloading SentenceTransformer model %s for MPS...",
+            _TOPIC_EMBEDDER_REPO_ID,
+        )
+        SentenceTransformer(_TOPIC_EMBEDDER_REPO_ID, device="cpu")
+        logger.info("[prefetch] SentenceTransformer model ready")
+    except Exception:
+        logger.warning("[prefetch] MPS model prefetch failed", exc_info=True)
+
+
+def _prefetch_topic_embedder_onnx() -> None:
     """Download ONNX model + tokenizer for topic modelling if not cached.
 
     Downloads only the files needed by OnnxEmbedder (quantized model +
@@ -98,6 +119,20 @@ def _prefetch_topic_embedder() -> None:
         logger.info("[prefetch] topic embedder download complete")
     except Exception:
         logger.warning("[prefetch] topic embedder prefetch failed", exc_info=True)
+
+
+def _prefetch_topic_embedder() -> None:
+    """Download the topic embedder model appropriate for this platform.
+
+    On Apple Silicon (MPS available): downloads SentenceTransformer weights.
+    On Windows/Linux/Intel Mac: downloads ONNX model + tokenizer.
+    """
+    from .mps_embedder import is_mps_available
+
+    if is_mps_available():
+        _prefetch_topic_embedder_mps()
+    else:
+        _prefetch_topic_embedder_onnx()
 
 
 def _run_all_prefetches() -> None:

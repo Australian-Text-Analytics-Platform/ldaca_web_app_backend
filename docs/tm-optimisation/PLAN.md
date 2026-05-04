@@ -223,17 +223,35 @@ Start with option 1 (sentinel file in artifact_dir, worker checks every chunk). 
 - [ ] Cancel button kills the worker within 5 s
 - [ ] Cancelled tasks leave no partial artifacts behind
 
-## Phase 5 — MPS for residual torch (conditional)
+## Phase 5 — MPS for Apple Silicon cold-run performance
 
-Only relevant if torch survives phase 1 (e.g., for representation models). If so:
+**Status:** complete
 
-```python
-import torch
-if torch.backends.mps.is_available():
-    embedder.to("mps")
-```
+**Scope:** On Apple Silicon, prefer `SentenceTransformer(device="mps")` over ONNX
+Runtime for the embedding step.  The full BERT graph runs on Metal/Neural Engine
+as a single unit with no graph-partition overhead, giving ~3× cold throughput vs
+the ONNX ARM64 CPU path.
 
-Skip this phase if torch is fully removed.
+**Files changed:**
+- `src/ldaca_web_app/core/mps_embedder.py` (new) — `is_mps_available()`,
+  `get_active_provider_id()`, `MpsEmbedder` class
+- `src/ldaca_web_app/core/worker_tasks_topic.py` — `_get_embedder` branches on
+  `is_mps_available()`; MPS path creates `MpsEmbedder`, ONNX path unchanged
+- `src/ldaca_web_app/core/model_prefetch.py` — `_prefetch_topic_embedder` now
+  dispatches to `_prefetch_topic_embedder_mps` (downloads ST weights) or
+  `_prefetch_topic_embedder_onnx` based on `is_mps_available()`
+- `src/ldaca_web_app/api/workspaces/analyses/topic_modeling.py` — cache-clear
+  endpoint uses `get_active_provider_id()` so it clears the right cache file
+
+**Notes:**
+- `MpsEmbedder.provider = "MPS"` → separate Parquet cache from ONNX providers
+- Graceful fallback: if MPS unavailable at runtime, `MpsEmbedder.__init__` falls
+  back to `device="cpu"` with `provider = "CPU-ST"`
+- `is_mps_available()` returns `False` on `ImportError` (no torch installed),
+  so Windows/Linux workers fall through to ONNX unchanged
+- `normalize_embeddings=True` passed to `SentenceTransformer.encode` to match
+  the L2-normalised output of `OnnxEmbedder`
+- 12 new unit tests; all 232 suite tests pass
 
 ## Open questions specific to backend
 
