@@ -127,8 +127,8 @@ def _encode_embeddings_in_chunks(
     *,
     chunk_size: int = _EMBEDDING_CHUNK_SIZE,
     progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_start: float = 0.48,
-    progress_end: float = 0.60,
+    progress_start: float = 0.08,
+    progress_end: float = 0.88,
     docs_offset: int = 0,
     total_docs_for_display: int = 0,
     report_every: int = 10,
@@ -165,6 +165,8 @@ def _embed_with_cache(
     docs: list[str],
     cache_dir: str | None,
     progress_callback: Optional[Callable[[float, str], None]],
+    progress_start: float = 0.08,
+    progress_end: float = 0.88,
 ) -> Any:
     """Encode docs using the embedder, reading from / writing to disk cache.
 
@@ -176,13 +178,13 @@ def _embed_with_cache(
 
     if cache_dir is None:
         if progress_callback:
-            progress_callback(0.48, f"Embedding {len(docs):,} documents...")
+            progress_callback(progress_start, f"Embedding {len(docs):,} documents...")
         return _encode_embeddings_in_chunks(
             embedder,
             docs,
             progress_callback=progress_callback,
-            progress_start=0.48,
-            progress_end=0.60,
+            progress_start=progress_start,
+            progress_end=progress_end,
             total_docs_for_display=len(docs),
         )
 
@@ -209,12 +211,12 @@ def _embed_with_cache(
 
     if not missing_idx:
         if progress_callback:
-            progress_callback(0.55, f"All {len(docs)} embeddings loaded from cache.")
+            progress_callback(progress_end, f"All {len(docs):,} embeddings loaded from cache.")
         return cached_embeds
 
     if progress_callback:
         progress_callback(
-            0.48,
+            progress_start,
             f"Embedding {len(missing_idx):,} new documents "
             f"({n_cached:,} loaded from cache)...",
         )
@@ -224,8 +226,8 @@ def _embed_with_cache(
         embedder,
         missed_docs,
         progress_callback=progress_callback,
-        progress_start=0.48,
-        progress_end=0.60,
+        progress_start=progress_start,
+        progress_end=progress_end,
         docs_offset=n_cached,
         total_docs_for_display=len(docs),
     )
@@ -252,7 +254,7 @@ def _embed_with_cache(
             result[slot] = emb_row
 
     if progress_callback:
-        progress_callback(0.55, "Embedding complete.")
+        progress_callback(progress_end, "Embedding complete.")
 
     return result
 
@@ -289,7 +291,7 @@ def run_topic_modeling_task(
     try:
         if progress_callback:
             progress_callback(
-                0.02,
+                0.01,
                 "Loading topic modeling resources. First runs may download model files...",
             )
 
@@ -351,7 +353,7 @@ def run_topic_modeling_task(
                     "Topic modeling requires corpora or a workspace_dir to load them"
                 )
             if progress_callback:
-                progress_callback(0.12, "Loading source documents from workspace...")
+                progress_callback(0.03, "Loading source documents from workspace...")
             corpora = _load_corpora_from_workspace(workspace_dir, node_infos)
 
         if len(corpora) != len(node_infos):
@@ -360,7 +362,7 @@ def run_topic_modeling_task(
             )
 
         if progress_callback:
-            progress_callback(0.2, "Preparing topic modeling payload...")
+            progress_callback(0.05, "Preparing topic modeling payload...")
 
         node_names = [
             str(info.get("node_name") or info.get("node_id") or "node")
@@ -368,10 +370,7 @@ def run_topic_modeling_task(
         ]
 
         if progress_callback:
-            progress_callback(0.45, "Loading embedding model...")
-
-        if progress_callback:
-            progress_callback(0.6, "Running topic modeling...")
+            progress_callback(0.07, "Loading embedding model...")
 
         def _compute_topics() -> dict[str, Any]:
             all_docs = [doc for corpus in corpora for doc in corpus]
@@ -442,16 +441,8 @@ def run_topic_modeling_task(
             random.seed(random_state)
             np.random.seed(random_state)
 
-            # Build embeddings once for BERTopic fitting while capping peak
-            # memory in the Python worker process on large corpora.
-            embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
-            embedding_backend = (
-                "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
-            )
-            all_embeddings = _embed_with_cache(
-                embedder, all_docs, embedding_cache_dir, progress_callback
-            )
-
+            # Determine pipeline mode before embedding so progress fractions
+            # reflect actual time distribution (embedding dominates for large corpora).
             use_online = _should_use_online_pipeline(all_docs, force_mode)
             pipeline_mode = "online" if use_online else "classic"
             logger.info(
@@ -461,10 +452,26 @@ def run_topic_modeling_task(
                 len(all_docs),
             )
 
+            # Online: embedding ~92% of wall time → 80% of bar (0.08–0.88)
+            # Classic: embedding ~50% of wall time → 55% of bar (0.08–0.63)
+            # Cluster stage is opaque (no intra-UMAP callbacks); give it remaining bar before writing.
+            embed_start = 0.08
+            embed_end = 0.88 if use_online else 0.63
+            cluster_frac = 0.89 if use_online else 0.65
+
+            embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
+            embedding_backend = (
+                "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
+            )
+            all_embeddings = _embed_with_cache(
+                embedder, all_docs, embedding_cache_dir, progress_callback,
+                progress_start=embed_start, progress_end=embed_end,
+            )
+
             if use_online:
                 if progress_callback:
                     progress_callback(
-                        0.62,
+                        cluster_frac,
                         f"Running online pipeline for {len(all_docs):,} documents "
                         f"(IncrementalPCA + MiniBatchKMeans)...",
                     )
@@ -474,7 +481,7 @@ def run_topic_modeling_task(
             else:
                 if progress_callback:
                     progress_callback(
-                        0.62, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
+                        cluster_frac, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
                     )
                 topic_model = _build_classic_pipeline(int(min_topic_size), random_state, embedder)
                 actual_k = None

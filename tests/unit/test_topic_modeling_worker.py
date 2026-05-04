@@ -102,7 +102,8 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
     assert result["topics"][0]["label"] == "alpha | beta | gamma"
     assert progress_updates[0][1].startswith("Loading topic modeling")
     assert any(
-        "Running topic modeling" in message for _progress, message in progress_updates
+        "Embedding" in message or "pipeline" in message.lower()
+        for _progress, message in progress_updates
     )
     assert progress_updates[-1] == (1.0, "Topic modeling completed")
     assert progress_updates[-1] == (1.0, "Topic modeling completed")
