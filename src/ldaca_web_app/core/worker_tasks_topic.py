@@ -416,6 +416,9 @@ def run_topic_modeling_task(
             # Build embeddings once for BERTopic fitting while capping peak
             # memory in the Python worker process on large corpora.
             embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
+            embedding_backend = (
+                "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
+            )
             all_embeddings = _embed_with_cache(
                 embedder, all_docs, embedding_cache_dir, progress_callback
             )
@@ -668,7 +671,7 @@ def run_topic_modeling_task(
                     "native": True,
                     "engine": "bertopic",
                     "embedding_model": embedding_model_name,
-                    "embedding_backend": "onnx",
+                    "embedding_backend": embedding_backend,
                     "embeddings_from_ctfidf": bool(c_tfidf_used),
                     "min_topic_size": int(min_topic_size),
                     "representative_words_count": max_representative_words,
