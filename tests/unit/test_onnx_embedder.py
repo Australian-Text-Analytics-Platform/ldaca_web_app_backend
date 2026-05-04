@@ -64,15 +64,17 @@ def test_l2_normalize_batch():
 # ---------------------------------------------------------------------------
 
 
-def test_select_providers_returns_coreml_when_available(monkeypatch):
+def test_select_providers_skips_coreml_even_when_available(monkeypatch):
+    # CoreML is intentionally excluded: the all-MiniLM-L6-v2 graph only has
+    # 68% CoreML node coverage, producing 55 partitions with expensive
+    # CoreML<->CPU sync overhead that is slower than ARM64 quantized CPU ONNX.
     monkeypatch.setattr(
         "onnxruntime.get_available_providers",
         lambda: ["CoreMLExecutionProvider", "CPUExecutionProvider"],
     )
     import onnxruntime  # noqa: F401 — ensure monkeypatch target exists
     providers = oem._select_providers()
-    assert providers[0] == "CoreMLExecutionProvider"
-    assert "CPUExecutionProvider" in providers
+    assert providers == ["CPUExecutionProvider"]
 
 
 def test_select_providers_returns_directml_on_windows(monkeypatch):
@@ -93,13 +95,14 @@ def test_select_providers_falls_back_to_cpu(monkeypatch):
     assert providers == ["CPUExecutionProvider"]
 
 
-def test_select_providers_prefers_coreml_over_directml(monkeypatch):
+def test_select_providers_prefers_directml_when_coreml_also_available(monkeypatch):
+    # DirectML is preferred when both are available; CoreML is always skipped.
     monkeypatch.setattr(
         "onnxruntime.get_available_providers",
         lambda: ["DmlExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"],
     )
     providers = oem._select_providers()
-    assert providers[0] == "CoreMLExecutionProvider"
+    assert providers[0] == "DmlExecutionProvider"
 
 
 # ---------------------------------------------------------------------------
@@ -223,8 +226,11 @@ def test_encode_skips_token_type_ids_when_not_in_inputs():
 # ---------------------------------------------------------------------------
 
 
-def test_select_onnx_filename_fp32_for_coreml():
-    assert oem._select_onnx_filename(["CoreMLExecutionProvider", "CPUExecutionProvider"]) == "onnx/model.onnx"
+def test_select_onnx_filename_arm64_when_coreml_provider_passed(monkeypatch):
+    # _select_providers() never produces a CoreML provider list anymore, but
+    # _select_onnx_filename() should still behave sensibly if called with one.
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    assert oem._select_onnx_filename(["CoreMLExecutionProvider", "CPUExecutionProvider"]) == "onnx/model_qint8_arm64.onnx"
 
 
 def test_select_onnx_filename_fp32_for_directml():
@@ -305,12 +311,15 @@ def test_from_pretrained_downloads_tokenizer(tmp_path, monkeypatch):
     assert "tokenizer.json" in downloaded
 
 
-def test_from_pretrained_uses_fp32_for_coreml(tmp_path, monkeypatch):
+def test_from_pretrained_uses_arm64_quantized_even_when_coreml_available(tmp_path, monkeypatch):
+    # CoreML is excluded from provider selection; the ARM64 quantized model
+    # should be chosen on ARM64 regardless of CoreML availability.
     downloaded: list[str] = []
     monkeypatch.setattr(
         "onnxruntime.get_available_providers",
         lambda: ["CoreMLExecutionProvider", "CPUExecutionProvider"],
     )
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
 
     def fake_hf_download(repo_id, filename):
         downloaded.append(filename)
@@ -323,5 +332,5 @@ def test_from_pretrained_uses_fp32_for_coreml(tmp_path, monkeypatch):
     with patch.object(oem.OnnxEmbedder, "__init__", return_value=None):
         oem.OnnxEmbedder.from_pretrained("some/model")
 
-    assert "onnx/model.onnx" in downloaded
-    assert not any("qint8" in f or "quint8" in f for f in downloaded)
+    assert "onnx/model_qint8_arm64.onnx" in downloaded
+    assert "onnx/model.onnx" not in downloaded

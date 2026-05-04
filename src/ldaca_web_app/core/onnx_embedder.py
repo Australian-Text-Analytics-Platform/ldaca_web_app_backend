@@ -2,9 +2,14 @@
 
 Drop-in replacement for SentenceTransformer("all-MiniLM-L6-v2") that uses
 ONNX Runtime instead of PyTorch.  Platform-aware execution provider selection:
-  - CoreMLExecutionProvider  — Apple Silicon (Neural Engine + GPU, no CUDA)
-  - DmlExecutionProvider     — Windows (DirectML, works on any GPU)
-  - CPUExecutionProvider     — universal fallback
+  - DmlExecutionProvider  — Windows (DirectML, works on any GPU/iGPU)
+  - CPUExecutionProvider  — universal fallback (ARM64 quantized model on Mac)
+
+Note: CoreMLExecutionProvider is intentionally skipped.  The all-MiniLM-L6-v2
+graph has only 68% CoreML node coverage (285/418), producing 55 separate
+CoreML↔CPU partitions that add heavy synchronisation overhead on every batch.
+Running the ARM64-quantized model on CPUExecutionProvider is significantly
+faster on Apple Silicon.
 
 The class implements the same `.encode(sentences)` interface as
 SentenceTransformer so it can be passed directly as BERTopic's
@@ -27,31 +32,37 @@ _MAX_SEQ_LEN = 256  # all-MiniLM-L6-v2 uses 256-token windows
 
 
 def _select_providers() -> list[str]:
-    """Return the best available ONNX execution provider list for this platform."""
+    """Return the best available ONNX execution provider list for this platform.
+
+    CoreMLExecutionProvider is intentionally excluded: the all-MiniLM-L6-v2
+    ONNX graph is only 68% CoreML-compatible (285/418 nodes), leaving 55
+    separate CoreML↔CPU partitions that must sync data on every inference
+    call.  The per-batch overhead is worse than running the ARM64 quantized
+    model entirely on CPU.  DirectML on Windows covers the full graph, so
+    it remains a preferred provider.
+    """
     import onnxruntime as ort
 
     available = set(ort.get_available_providers())
-    for preferred in ("CoreMLExecutionProvider", "DmlExecutionProvider"):
-        if preferred in available:
-            return [preferred, "CPUExecutionProvider"]
+    if "DmlExecutionProvider" in available:
+        return ["DmlExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
 
 
 def _select_onnx_filename(providers: list[str]) -> str:
     """Choose the best ONNX model file given the active provider list.
 
-    Hardware-accelerated providers (CoreML, DirectML) run their own
-    compilation passes on the fp32 model and don't benefit from CPU-level
-    weight quantisation.  For plain CPUExecutionProvider we pick the
-    architecture-specific quantized variant to get the speed win.
+    DirectML runs its own compilation pass on the fp32 model and doesn't
+    benefit from CPU-level weight quantisation.  For CPUExecutionProvider
+    we pick the architecture-specific quantized variant for the speed win.
 
     Available quantized variants in sentence-transformers/all-MiniLM-L6-v2:
-      onnx/model_qint8_arm64.onnx   — ARM64 (Apple Silicon without CoreML)
+      onnx/model_qint8_arm64.onnx   — ARM64 (Apple Silicon)
       onnx/model_quint8_avx2.onnx   — x86_64 with AVX2 (2013+, ubiquitous)
       onnx/model.onnx                — fp32 fallback, works everywhere
     """
     active = providers[0] if providers else "CPUExecutionProvider"
-    if active in ("CoreMLExecutionProvider", "DmlExecutionProvider"):
+    if active == "DmlExecutionProvider":
         return "onnx/model.onnx"
 
     machine = platform.machine().lower()
