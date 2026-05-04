@@ -6,8 +6,28 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 import polars as pl
+import pytest
 
 from ldaca_web_app.core import worker_tasks_topic
+
+
+@pytest.fixture(autouse=True)
+def _stub_umap(monkeypatch):
+    # Linux Python 3.14 + PyYAML 6.0.3 has a partial-init bug: importing real
+    # umap pulls in numba → yaml → AttributeError on yaml.error.  None of these
+    # tests exercise UMAP behaviour, so swap in a fake module that only
+    # provides a UMAP class with the constructor signature we use.
+    fake = cast(Any, ModuleType("umap"))
+
+    class FakeUMAP:
+        def __init__(self, **_kwargs):
+            pass
+
+        def fit_transform(self, X):
+            return X
+
+    fake.UMAP = FakeUMAP
+    monkeypatch.setitem(sys.modules, "umap", fake)
 
 
 def test_run_topic_modeling_task_emits_representative_words_as_list_string(
