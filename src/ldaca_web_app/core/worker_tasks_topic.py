@@ -16,18 +16,19 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDER_CACHE: dict[str, Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
+_TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def _get_embedder(model_name: str):
-    """Get or create a cached sentence-transformer embedder per worker process."""
-    embedder = _EMBEDDER_CACHE.get(model_name)
+def _get_embedder(model_id: str):
+    """Get or create a cached ONNX embedder per worker process."""
+    embedder = _EMBEDDER_CACHE.get(model_id)
     if embedder is not None:
         return embedder
 
-    from sentence_transformers import SentenceTransformer
+    from .onnx_embedder import OnnxEmbedder
 
-    embedder = SentenceTransformer(model_name)
-    _EMBEDDER_CACHE[model_name] = embedder
+    embedder = OnnxEmbedder.from_pretrained(model_id)
+    _EMBEDDER_CACHE[model_id] = embedder
     return embedder
 
 
@@ -236,18 +237,10 @@ def run_topic_modeling_task(
 
             random.seed(random_state)
             np.random.seed(random_state)
-            try:
-                import torch
-
-                torch.manual_seed(random_state)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(random_state)
-            except ImportError:
-                pass
 
             # Build embeddings once for BERTopic fitting while capping peak
             # memory in the Python worker process on large corpora.
-            embedder = _get_embedder(embedding_model_name)
+            embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
             all_embeddings = _encode_embeddings_in_chunks(embedder, all_docs)
 
             # Reuse the same loaded embedder instance to avoid loading model
@@ -487,6 +480,7 @@ def run_topic_modeling_task(
                     "native": True,
                     "engine": "bertopic",
                     "embedding_model": embedding_model_name,
+                    "embedding_backend": "onnx",
                     "embeddings_from_ctfidf": bool(c_tfidf_used),
                     "min_topic_size": int(min_topic_size),
                     "representative_words_count": max_representative_words,

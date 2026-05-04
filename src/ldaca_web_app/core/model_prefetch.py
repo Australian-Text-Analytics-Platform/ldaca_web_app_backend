@@ -13,9 +13,10 @@ import threading
 
 logger = logging.getLogger(__name__)
 
-# Sentence-transformer used by topic modelling (BERTopic embeddings). Must
-# stay in sync with `embedding_model_name` in worker_tasks_topic.py.
+# ONNX model + tokenizer used by topic modelling (BERTopic embeddings). Must
+# stay in sync with _TOPIC_EMBEDDER_REPO_ID in worker_tasks_topic.py.
 _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 
 def _prefetch_spacy_model() -> None:
@@ -39,18 +40,15 @@ def _prefetch_spacy_model() -> None:
 
 
 def _prefetch_topic_embedder() -> None:
-    """Download the sentence-transformer used by topic modelling if not cached.
+    """Download ONNX model + tokenizer for topic modelling if not cached.
 
-    `snapshot_download` is idempotent: when the repo is already in the
-    Hugging Face cache it just returns the local path without contacting
-    the network. We probe with `local_files_only=True` first so we can log
-    the cached/downloading distinction the same way the spaCy path does.
-    Files only — we deliberately don't instantiate `SentenceTransformer`,
-    since the worker process loads it itself and we don't want to keep
-    ~80MB of weights in the main process's memory.
+    Downloads only the files needed by OnnxEmbedder (quantized model +
+    tokenizer), skipping the full safetensors weights that were previously
+    fetched via snapshot_download.  hf_hub_download is idempotent — cached
+    files are returned instantly without hitting the network.
     """
     try:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import hf_hub_download
         from huggingface_hub.errors import LocalEntryNotFoundError
     except Exception:
         logger.warning(
@@ -59,23 +57,44 @@ def _prefetch_topic_embedder() -> None:
         )
         return
 
-    try:
-        try:
-            cached_path = snapshot_download(
-                repo_id=_TOPIC_EMBEDDER_REPO_ID, local_files_only=True
-            )
-            logger.info(
-                "[prefetch] topic embedder already cached at %s", cached_path
-            )
-            return
-        except LocalEntryNotFoundError:
-            pass
+    from .onnx_embedder import _select_onnx_filename, _select_providers
 
-        logger.info(
-            "[prefetch] Downloading topic embedder %s in background...",
-            _TOPIC_EMBEDDER_REPO_ID,
+    providers = _select_providers()
+    onnx_filename = _select_onnx_filename(providers)
+
+    # Probe primary files — if both are cached we're done.
+    try:
+        hf_hub_download(
+            repo_id=_TOPIC_EMBEDDER_REPO_ID,
+            filename=onnx_filename,
+            local_files_only=True,
         )
-        snapshot_download(repo_id=_TOPIC_EMBEDDER_REPO_ID)
+        hf_hub_download(
+            repo_id=_TOPIC_EMBEDDER_REPO_ID,
+            filename="tokenizer.json",
+            local_files_only=True,
+        )
+        logger.info("[prefetch] topic embedder ONNX files already cached")
+        return
+    except (LocalEntryNotFoundError, Exception):
+        pass
+
+    # Download: platform-appropriate model, fp32 fallback, tokenizer.
+    files_to_fetch = [onnx_filename, "tokenizer.json"]
+    if onnx_filename != "onnx/model.onnx":
+        files_to_fetch.append("onnx/model.onnx")
+
+    logger.info(
+        "[prefetch] Downloading ONNX topic embedder %s...",
+        _TOPIC_EMBEDDER_REPO_ID,
+    )
+    try:
+        for filename in files_to_fetch:
+            try:
+                hf_hub_download(repo_id=_TOPIC_EMBEDDER_REPO_ID, filename=filename)
+                logger.info("[prefetch] downloaded %s", filename)
+            except Exception as exc:
+                logger.warning("[prefetch] could not download %s: %s", filename, exc)
         logger.info("[prefetch] topic embedder download complete")
     except Exception:
         logger.warning("[prefetch] topic embedder prefetch failed", exc_info=True)
