@@ -26,14 +26,17 @@ _ONLINE_THRESHOLD_DOCS = 10_000_000
 _ONLINE_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 
-def _sample_corpus(docs: list[str], fraction: float, seed: int) -> list[str]:
-    """Return a reproducible random sample of docs without replacement."""
+def _sample_corpus(
+    docs: list[str], fraction: float, seed: int
+) -> tuple[list[str], list[int]]:
+    """Return a reproducible random sample of docs and their original indices."""
     import random as _random
     rng = _random.Random(seed)
     k = max(1, round(len(docs) * fraction))
     if k >= len(docs):
-        return docs
-    return rng.sample(docs, k)
+        return docs, list(range(len(docs)))
+    indices = sorted(rng.sample(range(len(docs)), k))
+    return [docs[i] for i in indices], indices
 
 
 def _compute_min_topic_size(
@@ -413,16 +416,23 @@ def run_topic_modeling_task(
 
         def _compute_topics() -> dict[str, Any]:
             corpus_sizes_before_sample = [len(corpus) for corpus in corpora]
+            active_corpora: list[list[str]] = []
+            # original row indices for each corpus — used to write correct __row_nr__
+            # values in the assignments parquet so detach joins back to the right rows.
+            active_corpora_indices: list[list[int]] = []
             if sample_fractions is not None:
-                active_corpora: list[list[str]] = []
                 for _i, _corpus in enumerate(corpora):
                     _frac = sample_fractions[_i] if _i < len(sample_fractions) else None
                     if _frac is not None and 0.0 < _frac < 1.0:
-                        active_corpora.append(_sample_corpus(_corpus, _frac, random_seed + _i))
+                        _sampled_docs, _sampled_idx = _sample_corpus(_corpus, _frac, random_seed + _i)
+                        active_corpora.append(_sampled_docs)
+                        active_corpora_indices.append(_sampled_idx)
                     else:
                         active_corpora.append(_corpus)
+                        active_corpora_indices.append(list(range(len(_corpus))))
             else:
                 active_corpora = list(corpora)
+                active_corpora_indices = [list(range(len(c))) for c in corpora]
 
             all_docs = [doc for corpus in active_corpora for doc in corpus]
             corpus_sizes = [len(corpus) for corpus in active_corpora]
@@ -451,7 +461,7 @@ def run_topic_modeling_task(
                     )
                     pl.DataFrame(
                         {
-                            "__row_nr__": list(range(len(corpus))),
+                            "__row_nr__": active_corpora_indices[idx],
                             TOPIC_COLUMN: [],
                         }
                     ).with_columns(
@@ -576,7 +586,7 @@ def run_topic_modeling_task(
                 )
                 pl.DataFrame(
                     {
-                        "__row_nr__": list(range(size)),
+                        "__row_nr__": active_corpora_indices[idx],
                         TOPIC_COLUMN: normalized_topics,
                     }
                 ).with_columns(

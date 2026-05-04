@@ -409,21 +409,42 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
 
 def test_sample_corpus_reduces_length():
     docs = [f"doc {i}" for i in range(100)]
-    sampled = worker_tasks_topic._sample_corpus(docs, 0.5, seed=42)
-    assert len(sampled) == 50
-    assert worker_tasks_topic._sample_corpus(docs, 0.5, seed=42) == sampled
-    assert worker_tasks_topic._sample_corpus(docs, 0.5, seed=99) != sampled
+    sampled_docs, sampled_idx = worker_tasks_topic._sample_corpus(docs, 0.5, seed=42)
+    assert len(sampled_docs) == 50
+    assert len(sampled_idx) == 50
+    # Reproducible
+    docs2, idx2 = worker_tasks_topic._sample_corpus(docs, 0.5, seed=42)
+    assert docs2 == sampled_docs
+    assert idx2 == sampled_idx
+    # Different seed → different sample
+    docs3, idx3 = worker_tasks_topic._sample_corpus(docs, 0.5, seed=99)
+    assert docs3 != sampled_docs
+
+
+def test_sample_corpus_indices_are_original_positions():
+    docs = [f"doc {i}" for i in range(20)]
+    sampled_docs, sampled_idx = worker_tasks_topic._sample_corpus(docs, 0.5, seed=7)
+    # Each returned doc must match the original at the stored index
+    for doc, idx in zip(sampled_docs, sampled_idx):
+        assert doc == docs[idx]
+    # Indices are sorted
+    assert sampled_idx == sorted(sampled_idx)
 
 
 def test_sample_corpus_fraction_at_or_above_1_returns_original():
     docs = ["a", "b", "c"]
-    assert worker_tasks_topic._sample_corpus(docs, 1.0, seed=42) is docs
-    assert worker_tasks_topic._sample_corpus(docs, 2.0, seed=42) is docs
+    result_docs, result_idx = worker_tasks_topic._sample_corpus(docs, 1.0, seed=42)
+    assert result_docs is docs
+    assert result_idx == [0, 1, 2]
+    result_docs2, _ = worker_tasks_topic._sample_corpus(docs, 2.0, seed=42)
+    assert result_docs2 is docs
 
 
 def test_sample_corpus_min_k_is_1():
     docs = ["only"]
-    assert len(worker_tasks_topic._sample_corpus(docs, 0.01, seed=42)) == 1
+    result_docs, result_idx = worker_tasks_topic._sample_corpus(docs, 0.01, seed=42)
+    assert len(result_docs) == 1
+    assert len(result_idx) == 1
 
 
 def test_compute_min_topic_size_target():
