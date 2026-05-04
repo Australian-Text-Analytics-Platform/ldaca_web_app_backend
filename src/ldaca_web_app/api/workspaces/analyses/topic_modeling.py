@@ -254,6 +254,9 @@ async def run_topic_modeling(
                 ),
                 "force_mode": request.force_mode,
                 "n_clusters": request.n_clusters,
+                "sample_fractions": request.sample_fractions,
+                "topic_size_mode": request.topic_size_mode,
+                "topic_size_value": request.topic_size_value,
             },
             task_name="Topic Modeling",
         )
@@ -277,6 +280,9 @@ async def run_topic_modeling(
         representative_words_count=representative_words_count,
         force_mode=request.force_mode,
         n_clusters=request.n_clusters,
+        sample_fractions=request.sample_fractions,
+        topic_size_mode=request.topic_size_mode,
+        topic_size_value=request.topic_size_value,
     )
     analysis_tm.save_task(
         AnalysisTask(

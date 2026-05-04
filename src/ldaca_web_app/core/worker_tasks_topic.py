@@ -18,8 +18,44 @@ _EMBEDDER_CACHE: dict[str, Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
-_ONLINE_THRESHOLD_DOCS = 100_000
-_ONLINE_THRESHOLD_BYTES = 250 * 1024 * 1024  # 250 MB raw text
+# Auto-engagement of the online pipeline is disabled: sampling handles large
+# corpora by default.  These thresholds are set to effectively unreachable
+# values so the classic UMAP+HDBSCAN pipeline is always used unless the caller
+# explicitly passes force_mode="online".
+_ONLINE_THRESHOLD_DOCS = 10_000_000
+_ONLINE_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
+
+
+def _sample_corpus(docs: list[str], fraction: float, seed: int) -> list[str]:
+    """Return a reproducible random sample of docs without replacement."""
+    import random as _random
+    rng = _random.Random(seed)
+    k = max(1, round(len(docs) * fraction))
+    if k >= len(docs):
+        return docs
+    return rng.sample(docs, k)
+
+
+def _compute_min_topic_size(
+    n_eff: int,
+    topic_size_mode: str,
+    topic_size_value: int,
+) -> int:
+    """Derive BERTopic min_topic_size from the chosen sizing mode.
+
+    Args:
+        n_eff: Effective document count (post-sample total across all corpora).
+        topic_size_mode: "target", "min", or "exact".
+        topic_size_value: The user-supplied numeric value for the chosen mode.
+    """
+    if topic_size_mode == "min":
+        return max(2, int(topic_size_value))
+    if topic_size_mode == "exact":
+        # Use a smaller min_topic_size so BERTopic produces more than enough
+        # topics before reduction; reduce_topics() merges down to the exact count.
+        return max(2, n_eff // (int(topic_size_value) * 15))
+    # "target" (default)
+    return max(2, n_eff // (int(topic_size_value) * 10))
 
 
 def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool:
@@ -275,6 +311,9 @@ def run_topic_modeling_task(
     embedding_cache_dir: str | None = None,
     force_mode: str | None = None,
     n_clusters: int | None = None,
+    sample_fractions: list[float | None] | None = None,
+    topic_size_mode: str | None = "target",
+    topic_size_value: int | None = 50,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -373,8 +412,20 @@ def run_topic_modeling_task(
             progress_callback(0.07, "Loading embedding model...")
 
         def _compute_topics() -> dict[str, Any]:
-            all_docs = [doc for corpus in corpora for doc in corpus]
-            corpus_sizes = [len(corpus) for corpus in corpora]
+            corpus_sizes_before_sample = [len(corpus) for corpus in corpora]
+            if sample_fractions is not None:
+                active_corpora: list[list[str]] = []
+                for _i, _corpus in enumerate(corpora):
+                    _frac = sample_fractions[_i] if _i < len(sample_fractions) else None
+                    if _frac is not None and 0.0 < _frac < 1.0:
+                        active_corpora.append(_sample_corpus(_corpus, _frac, random_seed + _i))
+                    else:
+                        active_corpora.append(_corpus)
+            else:
+                active_corpora = list(corpora)
+
+            all_docs = [doc for corpus in active_corpora for doc in corpus]
+            corpus_sizes = [len(corpus) for corpus in active_corpora]
             if not all_docs:
                 topic_meanings_path = (
                     artifact_root / f"{artifact_prefix}_topic_meanings.parquet"
@@ -387,7 +438,7 @@ def run_topic_modeling_task(
                 ).lazy().sink_parquet(topic_meanings_path)
 
                 node_artifacts: list[dict[str, Any]] = []
-                for idx, corpus in enumerate(corpora):
+                for idx, corpus in enumerate(active_corpora):
                     node_id = str(node_infos[idx]["node_id"])
                     node_name = str(node_infos[idx].get("node_name") or node_id)
                     text_column = str(node_infos[idx].get("text_column") or "")
@@ -441,6 +492,11 @@ def run_topic_modeling_task(
             random.seed(random_state)
             np.random.seed(random_state)
 
+            n_eff = len(all_docs)
+            effective_min_topic_size = _compute_min_topic_size(
+                n_eff, topic_size_mode or "target", topic_size_value or 50
+            )
+
             # Determine pipeline mode before embedding so progress fractions
             # reflect actual time distribution (embedding dominates for large corpora).
             use_online = _should_use_online_pipeline(all_docs, force_mode)
@@ -483,15 +539,24 @@ def run_topic_modeling_task(
                     progress_callback(
                         cluster_frac, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
                     )
-                topic_model = _build_classic_pipeline(int(min_topic_size), random_state, embedder)
+                topic_model = _build_classic_pipeline(effective_min_topic_size, random_state, embedder)
                 actual_k = None
 
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
 
+            if (topic_size_mode or "target") == "exact" and topic_size_value:
+                if progress_callback:
+                    progress_callback(
+                        cluster_frac,
+                        f"Reducing topics to exactly {topic_size_value}...",
+                    )
+                topic_model.reduce_topics(all_docs, nr_topics=int(topic_size_value))
+                assigned_topics = list(topic_model.topics_)
+
             assignments: list[list[int]] = []
             node_artifacts: list[dict[str, Any]] = []
             offset = 0
-            for idx, corpus in enumerate(corpora):
+            for idx, corpus in enumerate(active_corpora):
                 size = len(corpus)
                 end = offset + size
                 corpus_topics = assigned_topics[offset:end]
@@ -709,12 +774,22 @@ def run_topic_modeling_task(
                     "embedding_model": embedding_model_name,
                     "embedding_backend": embedding_backend,
                     "embeddings_from_ctfidf": bool(c_tfidf_used),
-                    "min_topic_size": int(min_topic_size),
+                    "min_topic_size": effective_min_topic_size,
+                    "topic_size_mode": topic_size_mode or "target",
+                    "topic_size_value": topic_size_value,
                     "representative_words_count": max_representative_words,
                     "total_topics_incl_outlier": int(topic_freq.height),
                     "random_state": random_state,
                     "pipeline_mode": pipeline_mode,
                     **({"n_clusters": actual_k} if actual_k is not None else {}),
+                    **(
+                        {
+                            "corpus_sizes_before_sample": corpus_sizes_before_sample,
+                            "corpus_sizes_after_sample": corpus_sizes,
+                        }
+                        if sample_fractions is not None
+                        else {}
+                    ),
                 },
             }
 

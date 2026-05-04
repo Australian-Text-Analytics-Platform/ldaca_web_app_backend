@@ -400,3 +400,162 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
 
     assert result["meta"]["pipeline_mode"] == "classic"
     assert "n_clusters" not in result["meta"]
+
+
+# ---------------------------------------------------------------------------
+# Sampling and topic size mode tests
+# ---------------------------------------------------------------------------
+
+
+def test_sample_corpus_reduces_length():
+    docs = [f"doc {i}" for i in range(100)]
+    sampled = worker_tasks_topic._sample_corpus(docs, 0.5, seed=42)
+    assert len(sampled) == 50
+    assert worker_tasks_topic._sample_corpus(docs, 0.5, seed=42) == sampled
+    assert worker_tasks_topic._sample_corpus(docs, 0.5, seed=99) != sampled
+
+
+def test_sample_corpus_fraction_at_or_above_1_returns_original():
+    docs = ["a", "b", "c"]
+    assert worker_tasks_topic._sample_corpus(docs, 1.0, seed=42) is docs
+    assert worker_tasks_topic._sample_corpus(docs, 2.0, seed=42) is docs
+
+
+def test_sample_corpus_min_k_is_1():
+    docs = ["only"]
+    assert len(worker_tasks_topic._sample_corpus(docs, 0.01, seed=42)) == 1
+
+
+def test_compute_min_topic_size_target():
+    # max(2, 10000 // (50 * 10)) = max(2, 20) = 20
+    assert worker_tasks_topic._compute_min_topic_size(10_000, "target", 50) == 20
+
+
+def test_compute_min_topic_size_min():
+    assert worker_tasks_topic._compute_min_topic_size(10_000, "min", 50) == 50
+
+
+def test_compute_min_topic_size_exact():
+    # max(2, 10000 // (50 * 15)) = max(2, 13) = 13
+    assert worker_tasks_topic._compute_min_topic_size(10_000, "exact", 50) == 13
+
+
+def test_compute_min_topic_size_floor_is_2():
+    assert worker_tasks_topic._compute_min_topic_size(1, "target", 50) == 2
+    assert worker_tasks_topic._compute_min_topic_size(1, "exact", 50) == 2
+
+
+def _make_classic_fake_bertopic_cls(received_docs: list):
+    """FakeBERTopic that records the docs passed to fit_transform."""
+
+    class FakeBERTopicClassic:
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
+            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+
+        def fit_transform(self, docs, embeddings):
+            received_docs.extend(docs)
+            return [0] * len(docs), None
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, -1], "Count": [len(received_docs), 0]})
+
+        def get_topics(self):
+            return {-1: [], 0: [("alpha", 0.9), ("beta", 0.8)]}
+
+    return FakeBERTopicClassic
+
+
+def test_run_topic_modeling_task_sampling_reduces_corpus(tmp_path, monkeypatch):
+    """sample_fractions trims corpus before fit; meta records before/after sizes."""
+    received_docs: list = []
+
+    class FakeEmbedder:
+        def encode(self, docs, show_progress_bar=False):
+            return np.array([[0.1, 0.2] for _ in docs], dtype=float)
+
+    def fake_select(*_a, **_k):
+        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+
+    bertopic_module = cast(Any, ModuleType("bertopic"))
+    bertopic_module.BERTopic = _make_classic_fake_bertopic_cls(received_docs)
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
+    bertopic_utils_module.select_topic_representation = fake_select
+
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _: FakeEmbedder())
+    monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
+    monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
+
+    corpus = [f"doc {i}" for i in range(20)]
+    result = worker_tasks_topic.run_topic_modeling_task(
+        configure_worker_environment=lambda: None,
+        user_id="u",
+        workspace_id="w",
+        corpora=[corpus],
+        node_infos=[{"node_id": "n1", "node_name": "N1", "text_column": "t", "original_columns": []}],
+        artifact_dir=str(tmp_path),
+        artifact_prefix="sample_test",
+        sample_fractions=[0.5],
+        force_mode="classic",
+    )
+
+    assert len(received_docs) == 10
+    assert result["meta"]["corpus_sizes_before_sample"] == [20]
+    assert result["meta"]["corpus_sizes_after_sample"] == [10]
+
+
+def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkeypatch):
+    """topic_size_mode='exact' calls reduce_topics after fit_transform."""
+    reduce_topics_calls: list = []
+
+    class FakeEmbedder:
+        def encode(self, docs, show_progress_bar=False):
+            return np.array([[0.1, 0.2] for _ in docs], dtype=float)
+
+    class FakeBERTopicExact:
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
+            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+            self.topics_ = [0, 0]
+
+        def fit_transform(self, docs, embeddings):
+            return [0] * len(docs), None
+
+        def reduce_topics(self, docs, nr_topics):
+            reduce_topics_calls.append(nr_topics)
+            self.topics_ = [0] * len(docs)
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, -1], "Count": [2, 0]})
+
+        def get_topics(self):
+            return {-1: [], 0: [("alpha", 0.9), ("beta", 0.8)]}
+
+    def fake_select(*_a, **_k):
+        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+
+    bertopic_module = cast(Any, ModuleType("bertopic"))
+    bertopic_module.BERTopic = FakeBERTopicExact
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
+    bertopic_utils_module.select_topic_representation = fake_select
+
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _: FakeEmbedder())
+    monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
+    monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
+
+    result = worker_tasks_topic.run_topic_modeling_task(
+        configure_worker_environment=lambda: None,
+        user_id="u",
+        workspace_id="w",
+        corpora=[["doc one", "doc two"]],
+        node_infos=[{"node_id": "n1", "node_name": "N1", "text_column": "t", "original_columns": []}],
+        artifact_dir=str(tmp_path),
+        artifact_prefix="exact_test",
+        topic_size_mode="exact",
+        topic_size_value=5,
+        force_mode="classic",
+    )
+
+    assert reduce_topics_calls == [5]
+    assert result["meta"]["topic_size_mode"] == "exact"
+    assert result["meta"]["topic_size_value"] == 5
