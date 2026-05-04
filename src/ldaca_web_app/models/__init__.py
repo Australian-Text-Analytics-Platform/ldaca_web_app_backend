@@ -941,6 +941,8 @@ class TopicModelingRequest(BaseModel):
     min_topic_size: Optional[int] = 10  # BERTopic minimum topic size
     random_seed: Optional[int] = 42
     representative_words_count: Optional[int] = 5
+    force_mode: Optional[Literal["auto", "classic", "online"]] = None
+    n_clusters: Optional[int] = None
 
     # Pydantic v2 model config
     model_config = ConfigDict(

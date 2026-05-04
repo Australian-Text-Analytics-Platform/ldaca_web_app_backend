@@ -227,3 +227,175 @@ def test_encode_embeddings_in_chunks_preserves_document_order(monkeypatch):
         [4.0, 1.0],
         [5.0, 0.0],
     ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Online pipeline tests
+# ---------------------------------------------------------------------------
+
+
+def test_should_use_online_pipeline_force_online():
+    """force_mode='online' always selects the online pipeline."""
+    docs = ["short", "corpus"]
+    assert worker_tasks_topic._should_use_online_pipeline(docs, "online") is True
+
+
+def test_should_use_online_pipeline_force_classic(monkeypatch):
+    """force_mode='classic' always selects the classic pipeline, even on large corpora."""
+    monkeypatch.setattr(worker_tasks_topic, "_ONLINE_THRESHOLD_DOCS", 1)
+    big_docs = ["x"] * 100
+    assert worker_tasks_topic._should_use_online_pipeline(big_docs, "classic") is False
+
+
+def test_should_use_online_pipeline_auto_by_doc_count(monkeypatch):
+    """Auto mode engages online pipeline when doc count exceeds threshold."""
+    monkeypatch.setattr(worker_tasks_topic, "_ONLINE_THRESHOLD_DOCS", 10)
+    monkeypatch.setattr(worker_tasks_topic, "_ONLINE_THRESHOLD_BYTES", 10 * 1024 * 1024)
+    docs = ["doc"] * 11
+    assert worker_tasks_topic._should_use_online_pipeline(docs, None) is True
+
+
+def test_should_use_online_pipeline_auto_by_bytes(monkeypatch):
+    """Auto mode engages online pipeline when total byte size exceeds threshold."""
+    monkeypatch.setattr(worker_tasks_topic, "_ONLINE_THRESHOLD_DOCS", 1_000_000)
+    monkeypatch.setattr(worker_tasks_topic, "_ONLINE_THRESHOLD_BYTES", 100)
+    # 3 docs × 50 chars = 150 bytes > 100 byte threshold
+    docs = ["x" * 50] * 3
+    assert worker_tasks_topic._should_use_online_pipeline(docs, None) is True
+
+
+def test_should_use_online_pipeline_small_corpus_stays_classic():
+    """Small corpus below all thresholds stays on the classic pipeline."""
+    docs = ["small", "corpus", "stays", "classic"]
+    assert worker_tasks_topic._should_use_online_pipeline(docs, None) is False
+
+
+def test_should_use_online_pipeline_auto_value_falls_through_to_threshold():
+    """'auto' is not a special sentinel — threshold logic applies as with None."""
+    docs = ["small", "corpus"]
+    assert worker_tasks_topic._should_use_online_pipeline(docs, "auto") is False
+
+
+def _make_online_fake_bertopic_cls():
+    """Return a FakeBERTopic class that accepts online-pipeline kwargs."""
+
+    class FakeBERTopicOnline:
+        def __init__(self, **kwargs):
+            # Online pipeline passes umap_model (IncrementalPCA) and hdbscan_model
+            # (MiniBatchKMeans); accept anything via **kwargs.
+            assert kwargs.get("verbose") is False
+            assert kwargs.get("embedding_model") is not None
+            assert "umap_model" in kwargs
+            assert "hdbscan_model" in kwargs
+            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
+            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+
+        def fit_transform(self, docs, embeddings):
+            return [0] * len(docs), None
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, -1], "Count": [2, 0]})
+
+        def get_topics(self):
+            return {-1: [], 0: [("alpha", 0.9), ("beta", 0.8)]}
+
+    return FakeBERTopicOnline
+
+
+def test_run_topic_modeling_task_online_pipeline_mode(tmp_path, monkeypatch):
+    """force_mode='online' produces pipeline_mode='online' and n_clusters in meta."""
+
+    class FakeEmbedder:
+        def encode(self, docs, show_progress_bar=False):
+            return np.array([[0.1, 0.2] for _ in docs], dtype=float)
+
+    def fake_select_topic_representation(*_args, **_kwargs):
+        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+
+    bertopic_module = cast(Any, ModuleType("bertopic"))
+    bertopic_module.BERTopic = _make_online_fake_bertopic_cls()
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
+    bertopic_utils_module.select_topic_representation = fake_select_topic_representation
+
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
+    monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
+
+    result = worker_tasks_topic.run_topic_modeling_task(
+        configure_worker_environment=lambda: None,
+        user_id="test-user",
+        workspace_id="test-workspace",
+        corpora=[["doc one", "doc two"]],
+        node_infos=[
+            {
+                "node_id": "node-1",
+                "node_name": "Node 1",
+                "text_column": "document",
+                "original_columns": ["document"],
+            }
+        ],
+        artifact_dir=str(tmp_path),
+        artifact_prefix="topic_online_test",
+        min_topic_size=2,
+        force_mode="online",
+        n_clusters=5,
+    )
+
+    assert result["meta"]["pipeline_mode"] == "online"
+    assert result["meta"]["n_clusters"] == 5
+
+
+def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
+    """force_mode='classic' produces pipeline_mode='classic' with no n_clusters in meta."""
+
+    class FakeEmbedder:
+        def encode(self, docs, show_progress_bar=False):
+            return np.array([[0.1, 0.2] for _ in docs], dtype=float)
+
+    class FakeBERTopicClassic:
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
+            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+
+        def fit_transform(self, docs, embeddings):
+            return [0] * len(docs), None
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, -1], "Count": [2, 0]})
+
+        def get_topics(self):
+            return {-1: [], 0: [("alpha", 0.9), ("beta", 0.8)]}
+
+    def fake_select_topic_representation(*_args, **_kwargs):
+        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+
+    bertopic_module = cast(Any, ModuleType("bertopic"))
+    bertopic_module.BERTopic = FakeBERTopicClassic
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
+    bertopic_utils_module.select_topic_representation = fake_select_topic_representation
+
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
+    monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
+
+    result = worker_tasks_topic.run_topic_modeling_task(
+        configure_worker_environment=lambda: None,
+        user_id="test-user",
+        workspace_id="test-workspace",
+        corpora=[["doc one", "doc two"]],
+        node_infos=[
+            {
+                "node_id": "node-1",
+                "node_name": "Node 1",
+                "text_column": "document",
+                "original_columns": ["document"],
+            }
+        ],
+        artifact_dir=str(tmp_path),
+        artifact_prefix="topic_classic_test",
+        min_topic_size=2,
+        force_mode="classic",
+    )
+
+    assert result["meta"]["pipeline_mode"] == "classic"
+    assert "n_clusters" not in result["meta"]

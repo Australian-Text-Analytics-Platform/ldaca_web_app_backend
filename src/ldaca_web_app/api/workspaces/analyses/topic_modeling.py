@@ -255,6 +255,8 @@ async def run_topic_modeling(
                 "embedding_cache_dir": str(
                     get_user_data_folder(user_id) / "embedding_cache"
                 ),
+                "force_mode": request.force_mode,
+                "n_clusters": request.n_clusters,
             },
             task_name="Topic Modeling",
         )
@@ -276,6 +278,8 @@ async def run_topic_modeling(
         min_topic_size=min_topic_size,
         random_seed=random_seed,
         representative_words_count=representative_words_count,
+        force_mode=request.force_mode,
+        n_clusters=request.n_clusters,
     )
     analysis_tm.save_task(
         AnalysisTask(

@@ -7,6 +7,8 @@ Why:
 - Keeps topic-modeling specific input contract centralized.
 """
 
+from typing import Literal
+
 from pydantic import Field
 
 from ..models import BaseAnalysisRequest
@@ -36,4 +38,19 @@ class TopicModelingRequest(BaseAnalysisRequest):
     )
     representative_words_count: int = Field(
         5, description="Number of representative words to keep per topic"
+    )
+    force_mode: Literal["auto", "classic", "online"] | None = Field(
+        None,
+        description=(
+            "Override pipeline selection: 'classic' forces UMAP+HDBSCAN, "
+            "'online' forces IncrementalPCA+MiniBatchKMeans, "
+            "'auto' uses the corpus-size threshold (default)."
+        ),
+    )
+    n_clusters: int | None = Field(
+        None,
+        description=(
+            "Number of clusters for the online pipeline. "
+            "Auto-selected (sqrt heuristic, clamped 10–200) when not set."
+        ),
     )

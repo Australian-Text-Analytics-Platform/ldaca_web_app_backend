@@ -279,6 +279,9 @@ def topic_modeling_task(
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
+    embedding_cache_dir: str | None = None,
+    force_mode: str | None = None,
+    n_clusters: int | None = None,
 ) -> Dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(
@@ -294,6 +297,9 @@ def topic_modeling_task(
         random_seed=random_seed,
         representative_words_count=representative_words_count,
         progress_callback=cb,
+        embedding_cache_dir=embedding_cache_dir,
+        force_mode=force_mode,
+        n_clusters=n_clusters,
     )
 
 

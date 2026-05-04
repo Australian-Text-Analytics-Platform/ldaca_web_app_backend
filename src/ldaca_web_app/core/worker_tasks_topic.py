@@ -18,6 +18,81 @@ _EMBEDDER_CACHE: dict[str, Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
+_ONLINE_THRESHOLD_DOCS = 100_000
+_ONLINE_THRESHOLD_BYTES = 250 * 1024 * 1024  # 250 MB raw text
+
+
+def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool:
+    """Return True when the online pipeline should be used for this corpus."""
+    if force_mode == "online":
+        return True
+    if force_mode == "classic":
+        return False
+    if len(docs) > _ONLINE_THRESHOLD_DOCS:
+        return True
+    return sum(len(d) for d in docs) > _ONLINE_THRESHOLD_BYTES
+
+
+def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: Any) -> Any:
+    """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
+    from bertopic import BERTopic
+    from umap import UMAP
+
+    return BERTopic(
+        verbose=False,
+        min_topic_size=min_topic_size,
+        embedding_model=embedder,
+        umap_model=UMAP(
+            n_neighbors=15,
+            n_components=5,
+            min_dist=0.0,
+            metric="cosine",
+            random_state=random_state,
+        ),
+    )
+
+
+def _build_online_pipeline(
+    n_docs: int,
+    n_clusters: int | None,
+    random_state: int,
+    embedder: Any,
+) -> tuple[Any, int]:
+    """Build a BERTopic pipeline using IncrementalPCA + MiniBatchKMeans.
+
+    Returns (topic_model, k) where k is the actual cluster count selected.
+    Suitable for corpora that exceed the online-mode thresholds.
+    """
+    import math
+
+    from bertopic import BERTopic
+    from sklearn.cluster import MiniBatchKMeans
+    from sklearn.decomposition import IncrementalPCA
+
+    k = (
+        n_clusters
+        if (n_clusters and n_clusters > 0)
+        else max(10, min(200, int(math.sqrt(n_docs / 2))))
+    )
+
+    dim_model = IncrementalPCA(n_components=5)
+    cluster_model = MiniBatchKMeans(n_clusters=k, random_state=random_state, n_init="auto")
+
+    kwargs: dict[str, Any] = dict(
+        verbose=False,
+        embedding_model=embedder,
+        umap_model=dim_model,
+        hdbscan_model=cluster_model,
+    )
+    try:
+        from bertopic.vectorizers import OnlineCountVectorizer
+
+        kwargs["vectorizer_model"] = OnlineCountVectorizer(stop_words="english", decay=0.01)
+    except ImportError:
+        logger.debug("[Worker] OnlineCountVectorizer unavailable; using default CountVectorizer")
+
+    return BERTopic(**kwargs), k
+
 
 def _get_embedder(model_id: str):
     """Get or create a cached ONNX embedder per worker process."""
@@ -153,6 +228,8 @@ def run_topic_modeling_task(
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     embedding_cache_dir: str | None = None,
+    force_mode: str | None = None,
+    n_clusters: int | None = None,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -329,22 +406,33 @@ def run_topic_modeling_task(
                 embedder, all_docs, embedding_cache_dir, progress_callback
             )
 
-            # Reuse the same loaded embedder instance to avoid loading model
-            # weights twice in a single task.
-            from umap import UMAP
-
-            topic_model = BERTopic(
-                verbose=False,
-                min_topic_size=int(min_topic_size),
-                embedding_model=embedder,
-                umap_model=UMAP(
-                    n_neighbors=15,
-                    n_components=5,
-                    min_dist=0.0,
-                    metric="cosine",
-                    random_state=random_state,
-                ),
+            use_online = _should_use_online_pipeline(all_docs, force_mode)
+            pipeline_mode = "online" if use_online else "classic"
+            logger.info(
+                "[Worker %d] Pipeline mode: %s (%d docs)",
+                os.getpid(),
+                pipeline_mode,
+                len(all_docs),
             )
+
+            if use_online:
+                if progress_callback:
+                    progress_callback(
+                        0.62,
+                        f"Running online pipeline for {len(all_docs):,} documents "
+                        f"(IncrementalPCA + MiniBatchKMeans)...",
+                    )
+                topic_model, actual_k = _build_online_pipeline(
+                    len(all_docs), n_clusters, random_state, embedder
+                )
+            else:
+                if progress_callback:
+                    progress_callback(
+                        0.62, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
+                    )
+                topic_model = _build_classic_pipeline(int(min_topic_size), random_state, embedder)
+                actual_k = None
+
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
 
             assignments: list[list[int]] = []
@@ -572,6 +660,8 @@ def run_topic_modeling_task(
                     "representative_words_count": max_representative_words,
                     "total_topics_incl_outlier": int(topic_freq.height),
                     "random_state": random_state,
+                    "pipeline_mode": pipeline_mode,
+                    **({"n_clusters": actual_k} if actual_k is not None else {}),
                 },
             }
 
