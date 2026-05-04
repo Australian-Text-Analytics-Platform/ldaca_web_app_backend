@@ -8,6 +8,7 @@ with mocks and synthetic data.
 from __future__ import annotations
 
 import platform
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -266,7 +267,9 @@ def _patched_from_pretrained(tmp_path, monkeypatch, *, platform_machine="x86_64"
         p.write_bytes(b"fake")
         return str(p)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_download)
+    mock_hf = MagicMock()
+    mock_hf.hf_hub_download = fake_hf_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", mock_hf)
     return downloaded
 
 
@@ -298,7 +301,9 @@ def test_from_pretrained_falls_back_to_fp32_on_missing_quantized(tmp_path, monke
         p.write_bytes(b"fake")
         return str(p)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_download)
+    mock_hf = MagicMock()
+    mock_hf.hf_hub_download = fake_hf_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", mock_hf)
 
     with patch.object(oem.OnnxEmbedder, "__init__", return_value=None):
         oem.OnnxEmbedder.from_pretrained("some/model")  # must not raise
