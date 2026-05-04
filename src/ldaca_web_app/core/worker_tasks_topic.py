@@ -126,15 +126,30 @@ def _encode_embeddings_in_chunks(
     docs: list[str],
     *,
     chunk_size: int = _EMBEDDING_CHUNK_SIZE,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_start: float = 0.48,
+    progress_end: float = 0.60,
+    docs_offset: int = 0,
+    total_docs_for_display: int = 0,
+    report_every: int = 10,
 ):
     effective_chunk_size = max(1, int(chunk_size or 0))
     chunk_embeddings: list[Any] = []
+    n_chunks = max(1, (len(docs) + effective_chunk_size - 1) // effective_chunk_size)
+    total_display = total_docs_for_display or len(docs)
 
-    for start in range(0, len(docs), effective_chunk_size):
+    for chunk_idx, start in enumerate(range(0, len(docs), effective_chunk_size)):
         chunk = docs[start : start + effective_chunk_size]
-        chunk_embeddings.append(
-            embedder.encode(chunk, show_progress_bar=False)
-        )
+        chunk_embeddings.append(embedder.encode(chunk, show_progress_bar=False))
+
+        if progress_callback and (chunk_idx + 1) % report_every == 0:
+            done_docs = docs_offset + min(start + effective_chunk_size, len(docs))
+            cb_frac = progress_start + ((chunk_idx + 1) / n_chunks) * (progress_end - progress_start)
+            pct = int(done_docs / total_display * 100) if total_display > 0 else 0
+            progress_callback(
+                cb_frac,
+                f"Embedding documents... ({done_docs:,} / {total_display:,},  {pct}%)",
+            )
 
     if len(chunk_embeddings) == 1:
         return chunk_embeddings[0]
@@ -161,8 +176,15 @@ def _embed_with_cache(
 
     if cache_dir is None:
         if progress_callback:
-            progress_callback(0.48, "Embedding documents...")
-        return _encode_embeddings_in_chunks(embedder, docs)
+            progress_callback(0.48, f"Embedding {len(docs):,} documents...")
+        return _encode_embeddings_in_chunks(
+            embedder,
+            docs,
+            progress_callback=progress_callback,
+            progress_start=0.48,
+            progress_end=0.60,
+            total_docs_for_display=len(docs),
+        )
 
     from pathlib import Path
 
@@ -191,15 +213,22 @@ def _embed_with_cache(
         return cached_embeds
 
     if progress_callback:
-        pct = n_cached / len(docs) if docs else 0.0
         progress_callback(
             0.48,
-            f"Embedding {len(missing_idx)} new documents "
-            f"({n_cached} loaded from cache)...",
+            f"Embedding {len(missing_idx):,} new documents "
+            f"({n_cached:,} loaded from cache)...",
         )
 
     missed_docs = [docs[i] for i in missing_idx]
-    new_embeds = _encode_embeddings_in_chunks(embedder, missed_docs)
+    new_embeds = _encode_embeddings_in_chunks(
+        embedder,
+        missed_docs,
+        progress_callback=progress_callback,
+        progress_start=0.48,
+        progress_end=0.60,
+        docs_offset=n_cached,
+        total_docs_for_display=len(docs),
+    )
 
     cache.store(missed_docs, new_embeds)
 
