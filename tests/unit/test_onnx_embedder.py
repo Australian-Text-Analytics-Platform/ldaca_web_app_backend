@@ -332,7 +332,9 @@ def test_from_pretrained_uses_arm64_quantized_even_when_coreml_available(tmp_pat
         p.write_bytes(b"fake")
         return str(p)
 
-    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_download)
+    mock_hf = MagicMock()
+    mock_hf.hf_hub_download = fake_hf_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", mock_hf)
 
     with patch.object(oem.OnnxEmbedder, "__init__", return_value=None):
         oem.OnnxEmbedder.from_pretrained("some/model")

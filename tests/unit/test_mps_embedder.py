@@ -257,11 +257,18 @@ def test_get_embedder_caches_result():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    not __import__("ldaca_web_app.core.mps_embedder", fromlist=["is_mps_available"])
-    .is_mps_available(),
-    reason="MPS not available on this machine",
-)
+def _smoke_prerequisites_met() -> bool:
+    try:
+        mps_mod = __import__("ldaca_web_app.core.mps_embedder", fromlist=["is_mps_available"])
+        if not mps_mod.is_mps_available():
+            return False
+        import sentence_transformers  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _smoke_prerequisites_met(), reason="MPS not available or sentence_transformers not importable")
 def test_mps_embedder_smoke_encodes_sentences():
     """On Apple Silicon: encode a small batch and verify shape + L2 norm."""
     from ldaca_web_app.core.mps_embedder import MpsEmbedder
