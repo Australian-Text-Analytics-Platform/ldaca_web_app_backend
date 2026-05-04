@@ -16,18 +16,147 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDER_CACHE: dict[str, Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
+_TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+
+# Auto-engagement of the online pipeline is disabled: sampling handles large
+# corpora by default.  These thresholds are set to effectively unreachable
+# values so the classic UMAP+HDBSCAN pipeline is always used unless the caller
+# explicitly passes force_mode="online".
+_ONLINE_THRESHOLD_DOCS = 10_000_000
+_ONLINE_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 
-def _get_embedder(model_name: str):
-    """Get or create a cached sentence-transformer embedder per worker process."""
-    embedder = _EMBEDDER_CACHE.get(model_name)
+def _sample_corpus(
+    docs: list[str], fraction: float, seed: int
+) -> tuple[list[str], list[int]]:
+    """Return a reproducible random sample of docs and their original indices."""
+    import random as _random
+    rng = _random.Random(seed)
+    k = max(1, round(len(docs) * fraction))
+    if k >= len(docs):
+        return docs, list(range(len(docs)))
+    indices = sorted(rng.sample(range(len(docs)), k))
+    return [docs[i] for i in indices], indices
+
+
+def _compute_min_topic_size(
+    n_eff: int,
+    topic_size_mode: str,
+    topic_size_value: int,
+) -> int:
+    """Derive BERTopic min_topic_size from the chosen sizing mode.
+
+    Args:
+        n_eff: Effective document count (post-sample total across all corpora).
+        topic_size_mode: "target", "min", or "exact".
+        topic_size_value: The user-supplied numeric value for the chosen mode.
+    """
+    if topic_size_mode == "min":
+        return max(2, int(topic_size_value))
+    if topic_size_mode == "exact":
+        # Use a smaller min_topic_size so BERTopic produces more than enough
+        # topics before reduction; reduce_topics() merges down to the exact count.
+        return max(2, n_eff // (int(topic_size_value) * 15))
+    # "target" (default)
+    return max(2, n_eff // (int(topic_size_value) * 10))
+
+
+def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool:
+    """Return True when the online pipeline should be used for this corpus."""
+    if force_mode == "online":
+        return True
+    if force_mode == "classic":
+        return False
+    if len(docs) > _ONLINE_THRESHOLD_DOCS:
+        return True
+    return sum(len(d) for d in docs) > _ONLINE_THRESHOLD_BYTES
+
+
+def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: Any) -> Any:
+    """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
+    from bertopic import BERTopic
+    from umap import UMAP
+
+    return BERTopic(
+        verbose=False,
+        min_topic_size=min_topic_size,
+        embedding_model=embedder,
+        umap_model=UMAP(
+            n_neighbors=15,
+            n_components=5,
+            min_dist=0.0,
+            metric="cosine",
+            random_state=random_state,
+        ),
+    )
+
+
+def _build_online_pipeline(
+    n_docs: int,
+    n_clusters: int | None,
+    random_state: int,
+    embedder: Any,
+) -> tuple[Any, int]:
+    """Build a BERTopic pipeline using IncrementalPCA + MiniBatchKMeans.
+
+    Returns (topic_model, k) where k is the actual cluster count selected.
+    Suitable for corpora that exceed the online-mode thresholds.
+    """
+    import math
+
+    from bertopic import BERTopic
+    from sklearn.cluster import MiniBatchKMeans
+    from sklearn.decomposition import IncrementalPCA
+
+    k = (
+        n_clusters
+        if (n_clusters and n_clusters > 0)
+        else max(10, min(200, int(math.sqrt(n_docs / 2))))
+    )
+
+    dim_model = IncrementalPCA(n_components=5)
+    cluster_model = MiniBatchKMeans(n_clusters=k, random_state=random_state, n_init="auto")
+
+    kwargs: dict[str, Any] = dict(
+        verbose=False,
+        embedding_model=embedder,
+        umap_model=dim_model,
+        hdbscan_model=cluster_model,
+    )
+    try:
+        from bertopic.vectorizers import OnlineCountVectorizer
+
+        kwargs["vectorizer_model"] = OnlineCountVectorizer(stop_words="english", decay=0.01)
+    except ImportError:
+        logger.debug("[Worker] OnlineCountVectorizer unavailable; using default CountVectorizer")
+
+    return BERTopic(**kwargs), k
+
+
+def _get_embedder(model_id: str):
+    """Get or create a cached embedder per worker process.
+
+    On Apple Silicon, prefers MPS (PyTorch Metal) over ONNX CPU — the full
+    BERT graph runs on Metal/Neural Engine as a single unit, giving ~3× cold
+    throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
+    26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
+    """
+    embedder = _EMBEDDER_CACHE.get(model_id)
     if embedder is not None:
         return embedder
 
-    from sentence_transformers import SentenceTransformer
+    from .mps_embedder import is_mps_available
 
-    embedder = SentenceTransformer(model_name)
-    _EMBEDDER_CACHE[model_name] = embedder
+    if is_mps_available():
+        from .mps_embedder import MpsEmbedder
+
+        embedder = MpsEmbedder.from_pretrained(model_id)
+    else:
+        from .onnx_embedder import OnnxEmbedder
+
+        embedder = OnnxEmbedder.from_pretrained(model_id)
+
+    _EMBEDDER_CACHE[model_id] = embedder
     return embedder
 
 
@@ -36,15 +165,30 @@ def _encode_embeddings_in_chunks(
     docs: list[str],
     *,
     chunk_size: int = _EMBEDDING_CHUNK_SIZE,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_start: float = 0.08,
+    progress_end: float = 0.88,
+    docs_offset: int = 0,
+    total_docs_for_display: int = 0,
+    report_every: int = 10,
 ):
     effective_chunk_size = max(1, int(chunk_size or 0))
     chunk_embeddings: list[Any] = []
+    n_chunks = max(1, (len(docs) + effective_chunk_size - 1) // effective_chunk_size)
+    total_display = total_docs_for_display or len(docs)
 
-    for start in range(0, len(docs), effective_chunk_size):
+    for chunk_idx, start in enumerate(range(0, len(docs), effective_chunk_size)):
         chunk = docs[start : start + effective_chunk_size]
-        chunk_embeddings.append(
-            embedder.encode(chunk, show_progress_bar=False)
-        )
+        chunk_embeddings.append(embedder.encode(chunk, show_progress_bar=False))
+
+        if progress_callback and (chunk_idx + 1) % report_every == 0:
+            done_docs = docs_offset + min(start + effective_chunk_size, len(docs))
+            cb_frac = progress_start + ((chunk_idx + 1) / n_chunks) * (progress_end - progress_start)
+            pct = int(done_docs / total_display * 100) if total_display > 0 else 0
+            progress_callback(
+                cb_frac,
+                f"Embedding documents... ({done_docs:,} / {total_display:,},  {pct}%)",
+            )
 
     if len(chunk_embeddings) == 1:
         return chunk_embeddings[0]
@@ -53,6 +197,105 @@ def _encode_embeddings_in_chunks(
 
     normalized_chunks = [np.asarray(chunk) for chunk in chunk_embeddings]
     return np.concatenate(normalized_chunks, axis=0)
+
+
+def _embed_with_cache(
+    embedder: Any,
+    docs: list[str],
+    cache_dir: str | None,
+    progress_callback: Optional[Callable[[float, str], None]],
+    progress_start: float = 0.08,
+    progress_end: float = 0.88,
+) -> Any:
+    """Encode docs using the embedder, reading from / writing to disk cache.
+
+    When cache_dir is None the cache is bypassed and all docs are encoded
+    directly (preserves the pre-Phase-2 behaviour for callers that don't
+    pass a cache dir).
+    """
+    import numpy as np
+
+    if cache_dir is None:
+        if progress_callback:
+            progress_callback(progress_start, f"Embedding {len(docs):,} documents...")
+        return _encode_embeddings_in_chunks(
+            embedder,
+            docs,
+            progress_callback=progress_callback,
+            progress_start=progress_start,
+            progress_end=progress_end,
+            total_docs_for_display=len(docs),
+        )
+
+    from pathlib import Path
+
+    from .embedding_cache import EmbeddingCache
+
+    cache = EmbeddingCache(
+        cache_dir=Path(cache_dir),
+        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        provider_id=getattr(embedder, "provider", "cpu"),
+    )
+
+    cached_embeds, missing_idx = cache.lookup(docs)
+
+    n_cached = len(docs) - len(missing_idx)
+    logger.info(
+        "[Worker %d] embedding cache: %d/%d hits, %d misses",
+        os.getpid(),
+        n_cached,
+        len(docs),
+        len(missing_idx),
+    )
+
+    if not missing_idx:
+        if progress_callback:
+            progress_callback(progress_end, f"All {len(docs):,} embeddings loaded from cache.")
+        return cached_embeds
+
+    if progress_callback:
+        progress_callback(
+            progress_start,
+            f"Embedding {len(missing_idx):,} new documents "
+            f"({n_cached:,} loaded from cache)...",
+        )
+
+    missed_docs = [docs[i] for i in missing_idx]
+    new_embeds = _encode_embeddings_in_chunks(
+        embedder,
+        missed_docs,
+        progress_callback=progress_callback,
+        progress_start=progress_start,
+        progress_end=progress_end,
+        docs_offset=n_cached,
+        total_docs_for_display=len(docs),
+    )
+
+    cache.store(missed_docs, new_embeds)
+
+    # Reassemble: fill newly computed embeddings into the pre-allocated array.
+    dim = new_embeds.shape[1]
+    if cached_embeds.shape[1] != dim:
+        # First ever run — cached_embeds was zero-width placeholder
+        result = np.zeros((len(docs), dim), dtype=np.float32)
+        for idx, emb_row in zip(missing_idx, new_embeds):
+            result[idx] = emb_row
+        # Rows NOT in missing_idx were already cached — re-fetch after store
+        # since cached_embeds had wrong width on first run.
+        hit_idx = [i for i in range(len(docs)) if i not in set(missing_idx)]
+        if hit_idx:
+            cached_embeds2, _ = cache.lookup(docs)
+            for i in hit_idx:
+                result[i] = cached_embeds2[i]
+    else:
+        result = cached_embeds.copy()
+        for slot, emb_row in zip(missing_idx, new_embeds):
+            result[slot] = emb_row
+
+    if progress_callback:
+        progress_callback(progress_end, "Embedding complete.")
+
+    return result
 
 
 def run_topic_modeling_task(
@@ -68,6 +311,12 @@ def run_topic_modeling_task(
     random_seed: int = 42,
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    embedding_cache_dir: str | None = None,
+    force_mode: str | None = None,
+    n_clusters: int | None = None,
+    sample_fractions: list[float | None] | None = None,
+    topic_size_mode: str | None = "target",
+    topic_size_value: int | None = 50,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -84,7 +333,7 @@ def run_topic_modeling_task(
     try:
         if progress_callback:
             progress_callback(
-                0.02,
+                0.01,
                 "Loading topic modeling resources. First runs may download model files...",
             )
 
@@ -146,7 +395,7 @@ def run_topic_modeling_task(
                     "Topic modeling requires corpora or a workspace_dir to load them"
                 )
             if progress_callback:
-                progress_callback(0.12, "Loading source documents from workspace...")
+                progress_callback(0.03, "Loading source documents from workspace...")
             corpora = _load_corpora_from_workspace(workspace_dir, node_infos)
 
         if len(corpora) != len(node_infos):
@@ -155,7 +404,7 @@ def run_topic_modeling_task(
             )
 
         if progress_callback:
-            progress_callback(0.2, "Preparing topic modeling payload...")
+            progress_callback(0.05, "Preparing topic modeling payload...")
 
         node_names = [
             str(info.get("node_name") or info.get("node_id") or "node")
@@ -163,14 +412,30 @@ def run_topic_modeling_task(
         ]
 
         if progress_callback:
-            progress_callback(0.45, "Loading embedding model...")
-
-        if progress_callback:
-            progress_callback(0.6, "Running topic modeling...")
+            progress_callback(0.07, "Loading embedding model...")
 
         def _compute_topics() -> dict[str, Any]:
-            all_docs = [doc for corpus in corpora for doc in corpus]
-            corpus_sizes = [len(corpus) for corpus in corpora]
+            corpus_sizes_before_sample = [len(corpus) for corpus in corpora]
+            active_corpora: list[list[str]] = []
+            # original row indices for each corpus — used to write correct __row_nr__
+            # values in the assignments parquet so detach joins back to the right rows.
+            active_corpora_indices: list[list[int]] = []
+            if sample_fractions is not None:
+                for _i, _corpus in enumerate(corpora):
+                    _frac = sample_fractions[_i] if _i < len(sample_fractions) else None
+                    if _frac is not None and 0.0 < _frac < 1.0:
+                        _sampled_docs, _sampled_idx = _sample_corpus(_corpus, _frac, random_seed + _i)
+                        active_corpora.append(_sampled_docs)
+                        active_corpora_indices.append(_sampled_idx)
+                    else:
+                        active_corpora.append(_corpus)
+                        active_corpora_indices.append(list(range(len(_corpus))))
+            else:
+                active_corpora = list(corpora)
+                active_corpora_indices = [list(range(len(c))) for c in corpora]
+
+            all_docs = [doc for corpus in active_corpora for doc in corpus]
+            corpus_sizes = [len(corpus) for corpus in active_corpora]
             if not all_docs:
                 topic_meanings_path = (
                     artifact_root / f"{artifact_prefix}_topic_meanings.parquet"
@@ -183,7 +448,7 @@ def run_topic_modeling_task(
                 ).lazy().sink_parquet(topic_meanings_path)
 
                 node_artifacts: list[dict[str, Any]] = []
-                for idx, corpus in enumerate(corpora):
+                for idx, corpus in enumerate(active_corpora):
                     node_id = str(node_infos[idx]["node_id"])
                     node_name = str(node_infos[idx].get("node_name") or node_id)
                     text_column = str(node_infos[idx].get("text_column") or "")
@@ -196,7 +461,7 @@ def run_topic_modeling_task(
                     )
                     pl.DataFrame(
                         {
-                            "__row_nr__": list(range(len(corpus))),
+                            "__row_nr__": active_corpora_indices[idx],
                             TOPIC_COLUMN: [],
                         }
                     ).with_columns(
@@ -236,42 +501,72 @@ def run_topic_modeling_task(
 
             random.seed(random_state)
             np.random.seed(random_state)
-            try:
-                import torch
 
-                torch.manual_seed(random_state)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(random_state)
-            except ImportError:
-                pass
-
-            # Build embeddings once for BERTopic fitting while capping peak
-            # memory in the Python worker process on large corpora.
-            embedder = _get_embedder(embedding_model_name)
-            all_embeddings = _encode_embeddings_in_chunks(embedder, all_docs)
-
-            # Reuse the same loaded embedder instance to avoid loading model
-            # weights twice in a single task.
-            from umap import UMAP
-
-            topic_model = BERTopic(
-                verbose=False,
-                min_topic_size=int(min_topic_size),
-                embedding_model=embedder,
-                umap_model=UMAP(
-                    n_neighbors=15,
-                    n_components=5,
-                    min_dist=0.0,
-                    metric="cosine",
-                    random_state=random_state,
-                ),
+            n_eff = len(all_docs)
+            effective_min_topic_size = _compute_min_topic_size(
+                n_eff, topic_size_mode or "target", topic_size_value or 50
             )
+
+            # Determine pipeline mode before embedding so progress fractions
+            # reflect actual time distribution (embedding dominates for large corpora).
+            use_online = _should_use_online_pipeline(all_docs, force_mode)
+            pipeline_mode = "online" if use_online else "classic"
+            logger.info(
+                "[Worker %d] Pipeline mode: %s (%d docs)",
+                os.getpid(),
+                pipeline_mode,
+                len(all_docs),
+            )
+
+            # Online: embedding ~92% of wall time → 80% of bar (0.08–0.88)
+            # Classic: embedding ~50% of wall time → 55% of bar (0.08–0.63)
+            # Cluster stage is opaque (no intra-UMAP callbacks); give it remaining bar before writing.
+            embed_start = 0.08
+            embed_end = 0.88 if use_online else 0.63
+            cluster_frac = 0.89 if use_online else 0.65
+
+            embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
+            embedding_backend = (
+                "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
+            )
+            all_embeddings = _embed_with_cache(
+                embedder, all_docs, embedding_cache_dir, progress_callback,
+                progress_start=embed_start, progress_end=embed_end,
+            )
+
+            if use_online:
+                if progress_callback:
+                    progress_callback(
+                        cluster_frac,
+                        f"Running online pipeline for {len(all_docs):,} documents "
+                        f"(IncrementalPCA + MiniBatchKMeans)...",
+                    )
+                topic_model, actual_k = _build_online_pipeline(
+                    len(all_docs), n_clusters, random_state, embedder
+                )
+            else:
+                if progress_callback:
+                    progress_callback(
+                        cluster_frac, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
+                    )
+                topic_model = _build_classic_pipeline(effective_min_topic_size, random_state, embedder)
+                actual_k = None
+
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
+
+            if (topic_size_mode or "target") == "exact" and topic_size_value:
+                if progress_callback:
+                    progress_callback(
+                        cluster_frac,
+                        f"Reducing topics to exactly {topic_size_value}...",
+                    )
+                topic_model.reduce_topics(all_docs, nr_topics=int(topic_size_value))
+                assigned_topics = list(topic_model.topics_)
 
             assignments: list[list[int]] = []
             node_artifacts: list[dict[str, Any]] = []
             offset = 0
-            for idx, corpus in enumerate(corpora):
+            for idx, corpus in enumerate(active_corpora):
                 size = len(corpus)
                 end = offset + size
                 corpus_topics = assigned_topics[offset:end]
@@ -291,7 +586,7 @@ def run_topic_modeling_task(
                 )
                 pl.DataFrame(
                     {
-                        "__row_nr__": list(range(size)),
+                        "__row_nr__": active_corpora_indices[idx],
                         TOPIC_COLUMN: normalized_topics,
                     }
                 ).with_columns(
@@ -487,11 +782,24 @@ def run_topic_modeling_task(
                     "native": True,
                     "engine": "bertopic",
                     "embedding_model": embedding_model_name,
+                    "embedding_backend": embedding_backend,
                     "embeddings_from_ctfidf": bool(c_tfidf_used),
-                    "min_topic_size": int(min_topic_size),
+                    "min_topic_size": effective_min_topic_size,
+                    "topic_size_mode": topic_size_mode or "target",
+                    "topic_size_value": topic_size_value,
                     "representative_words_count": max_representative_words,
                     "total_topics_incl_outlier": int(topic_freq.height),
                     "random_state": random_state,
+                    "pipeline_mode": pipeline_mode,
+                    **({"n_clusters": actual_k} if actual_k is not None else {}),
+                    **(
+                        {
+                            "corpus_sizes_before_sample": corpus_sizes_before_sample,
+                            "corpus_sizes_after_sample": corpus_sizes,
+                        }
+                        if sample_fractions is not None
+                        else {}
+                    ),
                 },
             }
 

@@ -28,6 +28,7 @@ from ....models import (
     TopicModelingRequest,
     TopicModelingResponse,
 )
+from ....core.utils import get_user_data_folder
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
@@ -116,6 +117,32 @@ async def clear_topic_modeling_results(
         "state": "successful",
         "message": "Topic modeling analysis results have been cleared.",
     }
+
+
+@router.delete("/topic-modeling/embedding-cache")
+async def clear_topic_modeling_embedding_cache(
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete the on-disk embedding cache for the current user.
+
+    The cache is shared across all workspaces for a given user and model.
+    Clearing it forces the next topic-modelling run to re-encode all documents
+    from scratch.  Useful after a model upgrade or to reclaim disk space.
+    """
+    from ....core.embedding_cache import EmbeddingCache
+    from ....core.mps_embedder import get_active_provider_id
+    from ....core.worker_tasks_topic import _TOPIC_EMBEDDER_REPO_ID
+
+    user_id = current_user["id"]
+    cache_dir = get_user_data_folder(user_id) / "embedding_cache"
+
+    cache = EmbeddingCache(
+        cache_dir=cache_dir,
+        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        provider_id=get_active_provider_id(),
+    )
+    cache.clear()
+    return {"state": "successful", "message": "Embedding cache cleared."}
 
 
 @router.post("/topic-modeling", response_model=TopicModelingResponse)
@@ -222,6 +249,14 @@ async def run_topic_modeling(
                 "min_topic_size": request.min_topic_size,
                 "random_seed": request.random_seed,
                 "representative_words_count": request.representative_words_count,
+                "embedding_cache_dir": str(
+                    get_user_data_folder(user_id) / "embedding_cache"
+                ),
+                "force_mode": request.force_mode,
+                "n_clusters": request.n_clusters,
+                "sample_fractions": request.sample_fractions,
+                "topic_size_mode": request.topic_size_mode,
+                "topic_size_value": request.topic_size_value,
             },
             task_name="Topic Modeling",
         )
@@ -243,6 +278,11 @@ async def run_topic_modeling(
         min_topic_size=min_topic_size,
         random_seed=random_seed,
         representative_words_count=representative_words_count,
+        force_mode=request.force_mode,
+        n_clusters=request.n_clusters,
+        sample_fractions=request.sample_fractions,
+        topic_size_mode=request.topic_size_mode,
+        topic_size_value=request.topic_size_value,
     )
     analysis_tm.save_task(
         AnalysisTask(
