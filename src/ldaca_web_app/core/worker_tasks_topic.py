@@ -56,6 +56,89 @@ def _encode_embeddings_in_chunks(
     return np.concatenate(normalized_chunks, axis=0)
 
 
+def _embed_with_cache(
+    embedder: Any,
+    docs: list[str],
+    cache_dir: str | None,
+    progress_callback: Optional[Callable[[float, str], None]],
+) -> Any:
+    """Encode docs using the embedder, reading from / writing to disk cache.
+
+    When cache_dir is None the cache is bypassed and all docs are encoded
+    directly (preserves the pre-Phase-2 behaviour for callers that don't
+    pass a cache dir).
+    """
+    import numpy as np
+
+    if cache_dir is None:
+        if progress_callback:
+            progress_callback(0.48, "Embedding documents...")
+        return _encode_embeddings_in_chunks(embedder, docs)
+
+    from pathlib import Path
+
+    from .embedding_cache import EmbeddingCache
+
+    cache = EmbeddingCache(
+        cache_dir=Path(cache_dir),
+        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        provider_id=getattr(embedder, "provider", "cpu"),
+    )
+
+    cached_embeds, missing_idx = cache.lookup(docs)
+
+    n_cached = len(docs) - len(missing_idx)
+    logger.info(
+        "[Worker %d] embedding cache: %d/%d hits, %d misses",
+        os.getpid(),
+        n_cached,
+        len(docs),
+        len(missing_idx),
+    )
+
+    if not missing_idx:
+        if progress_callback:
+            progress_callback(0.55, f"All {len(docs)} embeddings loaded from cache.")
+        return cached_embeds
+
+    if progress_callback:
+        pct = n_cached / len(docs) if docs else 0.0
+        progress_callback(
+            0.48,
+            f"Embedding {len(missing_idx)} new documents "
+            f"({n_cached} loaded from cache)...",
+        )
+
+    missed_docs = [docs[i] for i in missing_idx]
+    new_embeds = _encode_embeddings_in_chunks(embedder, missed_docs)
+
+    cache.store(missed_docs, new_embeds)
+
+    # Reassemble: fill newly computed embeddings into the pre-allocated array.
+    dim = new_embeds.shape[1]
+    if cached_embeds.shape[1] != dim:
+        # First ever run — cached_embeds was zero-width placeholder
+        result = np.zeros((len(docs), dim), dtype=np.float32)
+        for idx, emb_row in zip(missing_idx, new_embeds):
+            result[idx] = emb_row
+        # Rows NOT in missing_idx were already cached — re-fetch after store
+        # since cached_embeds had wrong width on first run.
+        hit_idx = [i for i in range(len(docs)) if i not in set(missing_idx)]
+        if hit_idx:
+            cached_embeds2, _ = cache.lookup(docs)
+            for i in hit_idx:
+                result[i] = cached_embeds2[i]
+    else:
+        result = cached_embeds.copy()
+        for slot, emb_row in zip(missing_idx, new_embeds):
+            result[slot] = emb_row
+
+    if progress_callback:
+        progress_callback(0.55, "Embedding complete.")
+
+    return result
+
+
 def run_topic_modeling_task(
     configure_worker_environment,
     user_id: str,
@@ -69,6 +152,7 @@ def run_topic_modeling_task(
     random_seed: int = 42,
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    embedding_cache_dir: str | None = None,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -241,7 +325,9 @@ def run_topic_modeling_task(
             # Build embeddings once for BERTopic fitting while capping peak
             # memory in the Python worker process on large corpora.
             embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
-            all_embeddings = _encode_embeddings_in_chunks(embedder, all_docs)
+            all_embeddings = _embed_with_cache(
+                embedder, all_docs, embedding_cache_dir, progress_callback
+            )
 
             # Reuse the same loaded embedder instance to avoid loading model
             # weights twice in a single task.

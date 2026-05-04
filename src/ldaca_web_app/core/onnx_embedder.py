@@ -102,10 +102,10 @@ class OnnxEmbedder:
         self._tokenizer.enable_padding(pad_id=pad_id, pad_token="[PAD]")
         self._tokenizer.enable_truncation(max_length=_MAX_SEQ_LEN)
 
-        active_provider = self._session.get_providers()[0]
+        self.provider: str = self._session.get_providers()[0]
         logger.info(
             "[OnnxEmbedder] provider=%s model=%s",
-            active_provider,
+            self.provider,
             model_path.name,
         )
 
