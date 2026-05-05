@@ -12,7 +12,7 @@ import zipfile
 from contextlib import nullcontext
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Union
+from typing import Any, Dict, Iterable, Optional, Union, overload
 
 import polars as pl
 
@@ -420,6 +420,12 @@ def validate_file_path(file_path: Path, user_folder: Path) -> bool:
 _JS_MAX_SAFE_INTEGER = 2**53 - 1
 
 
+@overload
+def stringify_unsafe_integers(data: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+@overload
+def stringify_unsafe_integers(
+    data: list[list[dict[str, Any]]],
+) -> list[list[dict[str, Any]]]: ...
 def stringify_unsafe_integers(
     data: list[dict[str, Any]] | list[list[dict[str, Any]]],
 ) -> list[dict[str, Any]] | list[list[dict[str, Any]]]:

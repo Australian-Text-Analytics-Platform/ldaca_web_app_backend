@@ -91,6 +91,8 @@ exclude = ["**/_vendor/"]
 allowed-unresolved-imports = [
     "ldacatabulator.**",
     "hatchling.builders.hooks.plugin.interface",
+    "pytest",
+    "_pytest.**",
 ]
 
 [tool.hatch.build]

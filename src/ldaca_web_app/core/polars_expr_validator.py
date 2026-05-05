@@ -193,19 +193,17 @@ def validate_polars_expr_code(code: str) -> ValidationResult:
                 "Only Polars expressions (pl.col(...).method(...)) are permitted."
             )
 
-        if node_type is ast.Name:
-            name_node = node  # type: ignore[assignment]
-            if name_node.id not in allowed_names:  # type: ignore[attr-defined]
+        if isinstance(node, ast.Name):
+            if node.id not in allowed_names:
                 raise PolarsExprValidationError(
-                    f"Disallowed name: {name_node.id!r}. "  # type: ignore[attr-defined]
+                    f"Disallowed name: {node.id!r}. "
                     "Only 'pl' is available as a top-level name."
                 )
 
-        if node_type is ast.Attribute:
-            attr_node = node  # type: ignore[assignment]
-            if attr_node.attr.startswith("_"):  # type: ignore[attr-defined]
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith("_"):
                 raise PolarsExprValidationError(
-                    f"Access to private attribute '.{attr_node.attr}' is not permitted."  # type: ignore[attr-defined]
+                    f"Access to private attribute '.{node.attr}' is not permitted."
                 )
 
     return ValidationResult(mode=mode, alias=alias)
