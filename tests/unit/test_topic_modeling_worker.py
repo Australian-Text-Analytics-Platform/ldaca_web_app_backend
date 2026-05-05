@@ -477,13 +477,13 @@ def test_compute_min_topic_size_min():
 
 
 def test_compute_min_topic_size_exact():
-    # max(2, 10000 // (50 * 15)) = max(2, 13) = 13
-    assert worker_tasks_topic._compute_min_topic_size(10_000, "exact", 50) == 13
+    # target heuristic = 10000 // (50 * 10) = 20, then exact uses max(5, int(20 * 0.75)) = 15
+    assert worker_tasks_topic._compute_min_topic_size(10_000, "exact", 50) == 15
 
 
 def test_compute_min_topic_size_floor_is_2():
     assert worker_tasks_topic._compute_min_topic_size(1, "target", 50) == 2
-    assert worker_tasks_topic._compute_min_topic_size(1, "exact", 50) == 2
+    assert worker_tasks_topic._compute_min_topic_size(1, "exact", 50) == 5
 
 
 def _make_classic_fake_bertopic_cls(received_docs: list):
@@ -555,8 +555,30 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
 
     class FakeBERTopicExact:
         def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
-            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
-            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+            self.c_tf_idf_ = np.array(
+                [
+                    [1.0, 0.5],
+                    [0.9, 0.4],
+                    [0.8, 0.3],
+                    [0.7, 0.2],
+                    [0.6, 0.1],
+                    [0.5, 0.2],
+                    [0.1, 0.1],
+                ],
+                dtype=float,
+            )
+            self.topic_embeddings_ = np.array(
+                [
+                    [0.2, 0.4],
+                    [0.3, 0.5],
+                    [0.4, 0.6],
+                    [0.5, 0.7],
+                    [0.6, 0.8],
+                    [0.7, 0.9],
+                    [0.1, 0.2],
+                ],
+                dtype=float,
+            )
             self.topics_ = [0, 0]
 
         def fit_transform(self, docs, embeddings):
@@ -566,14 +588,42 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
             reduce_topics_calls.append(nr_topics)
             self.topics_ = [0] * len(docs)
 
+        def save(self, path, serialization="pickle", save_embedding_model=False):
+            with open(path, "wb") as saved_model:
+                saved_model.write(b"fake-bertopic")
+
         def get_topic_freq(self):
-            return pd.DataFrame({"Topic": [0, -1], "Count": [2, 0]})
+            return pd.DataFrame(
+                {"Topic": [0, 1, 2, 3, 4, 5, -1], "Count": [1, 1, 1, 1, 1, 1, 0]}
+            )
 
         def get_topics(self):
-            return {-1: [], 0: [("alpha", 0.9), ("beta", 0.8)]}
+            return {
+                -1: [],
+                0: [("alpha", 0.9), ("beta", 0.8)],
+                1: [("bravo", 0.9), ("beta", 0.8)],
+                2: [("charlie", 0.9), ("beta", 0.8)],
+                3: [("delta", 0.9), ("beta", 0.8)],
+                4: [("echo", 0.9), ("beta", 0.8)],
+                5: [("foxtrot", 0.9), ("beta", 0.8)],
+            }
 
     def fake_select(*_a, **_k):
-        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+        return (
+            np.array(
+                [
+                    [0.0, 0.0],
+                    [1.0, 2.0],
+                    [2.0, 3.0],
+                    [3.0, 4.0],
+                    [4.0, 5.0],
+                    [5.0, 6.0],
+                    [6.0, 7.0],
+                ],
+                dtype=float,
+            ),
+            False,
+        )
 
     bertopic_module = cast(Any, ModuleType("bertopic"))
     bertopic_module.BERTopic = FakeBERTopicExact
@@ -597,6 +647,74 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
         force_mode="classic",
     )
 
-    assert reduce_topics_calls == [5]
+    assert reduce_topics_calls == [6]
     assert result["meta"]["topic_size_mode"] == "exact"
     assert result["meta"]["topic_size_value"] == 5
+    assert result["meta"]["raw_total_topics"] == 6
+    assert result["artifacts"]["version"] == 2
+    assert result["artifacts"]["exact_reduction_artifact_path"].endswith(
+        "exact_test_exact_reduction.pkl"
+    )
+
+
+def test_reaggregate_exact_topic_modeling_result_counts_outlier_in_reduce_target(
+    monkeypatch,
+):
+    reduce_topics_calls: list[int] = []
+
+    class FakeTopicModel:
+        def __init__(self):
+            self.topics_ = [0, 1, 1, -1]
+            self.c_tf_idf_ = np.array([[1.0, 0.5], [0.4, 0.8], [0.1, 0.2]], dtype=float)
+            self.topic_embeddings_ = np.array(
+                [[0.2, 0.4], [0.5, 0.6], [0.1, 0.3]], dtype=float
+            )
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, 1, -1], "Count": [1, 2, 1]})
+
+        def get_topics(self):
+            return {
+                -1: [],
+                0: [("alpha", 0.9)],
+                1: [("beta", 0.8)],
+            }
+
+        def reduce_topics(self, docs, nr_topics):
+            assert docs == ["doc one", "doc two", "doc three", "doc four"]
+            reduce_topics_calls.append(nr_topics)
+
+    monkeypatch.setattr(
+        worker_tasks_topic,
+        "_load_exact_reduction_artifact",
+        lambda _path: {
+            "topic_model": FakeTopicModel(),
+            "all_docs": ["doc one", "doc two", "doc three", "doc four"],
+            "corpus_sizes": [4],
+            "active_corpora_indices": [[0, 1, 2, 3]],
+        },
+    )
+    monkeypatch.setattr(
+        worker_tasks_topic,
+        "_build_topic_result_payload",
+        lambda **_kwargs: {"topics": [], "corpus_sizes": [4], "meta": {}},
+    )
+
+    result = worker_tasks_topic.reaggregate_exact_topic_modeling_result(
+        artifact_path="/tmp/exact.pkl",
+        existing_artifacts={},
+        node_infos=[
+            {
+                "node_id": "n1",
+                "node_name": "N1",
+                "text_column": "t",
+                "original_columns": [],
+            }
+        ],
+        topic_size_value=2,
+        representative_words_count=10,
+        random_seed=42,
+    )
+
+    assert reduce_topics_calls == [3]
+    assert result["meta"]["raw_total_topics"] == 2

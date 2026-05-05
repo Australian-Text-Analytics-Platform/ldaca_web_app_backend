@@ -70,11 +70,12 @@ class TopicModelingRequest(BaseAnalysisRequest):
         description=(
             "'target': min_topic_size = max(2, n_eff // (topic_size_value * 10)). "
             "'min': topic_size_value used directly as min_topic_size. "
-            "'exact': min_topic_size = max(2, n_eff // (topic_size_value * 15)), "
+            "'exact': min_topic_size = max(5, int(target_min_topic_size * 0.75)) "
+            "where target_min_topic_size = max(2, n_eff // (topic_size_value * 10)), "
             "then reduce_topics(nr_topics=topic_size_value) post-fit."
         ),
     )
     topic_size_value: int | None = Field(
-        50,
+        25,
         description="Numeric parameter interpreted according to topic_size_mode.",
     )

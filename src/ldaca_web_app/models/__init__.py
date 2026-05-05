@@ -947,7 +947,7 @@ class TopicModelingRequest(BaseModel):
     sample_fractions: Optional[List[Optional[float]]] = None
     # Topic size mode: controls how min_topic_size is derived
     topic_size_mode: Optional[Literal["target", "min", "exact"]] = "target"
-    topic_size_value: Optional[int] = 50
+    topic_size_value: Optional[int] = 25
 
     # Pydantic v2 model config
     model_config = ConfigDict(
@@ -959,7 +959,7 @@ class TopicModelingRequest(BaseModel):
                 "representative_words_count": 5,
                 "sample_fractions": [0.2, 0.5],
                 "topic_size_mode": "target",
-                "topic_size_value": 50,
+                "topic_size_value": 25,
             }
         }
     )

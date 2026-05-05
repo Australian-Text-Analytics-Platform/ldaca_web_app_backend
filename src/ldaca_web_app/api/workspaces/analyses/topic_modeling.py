@@ -18,7 +18,9 @@ from ....analysis.implementations.topic_modeling import (
 )
 from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
+from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
     TopicModelingData,
@@ -395,6 +397,130 @@ async def topic_modeling_task_result(
         state="failed",
         message="Topic Modeling analysis failed",
         data=None,
+        metadata={"task_id": task_id},
+    )
+
+
+@router.post(
+    "/topic-modeling/tasks/{task_id}/result",
+    response_model=TopicModelingResponse,
+)
+async def update_topic_modeling_task_result(
+    task_id: str,
+    updates: dict | None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Re-aggregate a completed exact topic-modeling task without refitting."""
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if not workspace_id:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    task_manager = get_task_manager(user_id)
+    task = await ensure_task_synced(user_id, workspace_id, task_id, task_manager)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != AnalysisStatus.COMPLETED or not task.result:
+        raise HTTPException(
+            status_code=409,
+            detail="Topic modeling task is not completed",
+        )
+
+    request_payload = task.request.model_dump()
+    if request_payload.get("topic_size_mode") != "exact":
+        raise HTTPException(
+            status_code=409,
+            detail="Only exact topic modeling results can be re-aggregated",
+        )
+
+    requested_topic_count = updates.get("topic_size_value") if isinstance(updates, dict) else None
+    if isinstance(requested_topic_count, bool) or not isinstance(requested_topic_count, int):
+        raise HTTPException(
+            status_code=400,
+            detail="topic_size_value must be an integer",
+        )
+
+    payload = _task_result_payload(task)
+    artifacts = _topic_artifacts_from_task(task)
+    exact_artifact_path = artifacts.get("exact_reduction_artifact_path")
+    if not isinstance(exact_artifact_path, str) or not exact_artifact_path:
+        raise HTTPException(
+            status_code=409,
+            detail="This exact topic-modeling result cannot be re-aggregated",
+        )
+
+    node_artifacts = artifacts.get("nodes") or []
+    node_infos = [
+        {
+            "node_id": node_payload.get("node_id"),
+            "node_name": node_payload.get("node_name"),
+            "text_column": node_payload.get("text_column"),
+            "original_columns": node_payload.get("original_columns") or [],
+        }
+        for node_payload in node_artifacts
+        if isinstance(node_payload, dict)
+    ]
+    if len(node_infos) != len(node_artifacts):
+        raise HTTPException(
+            status_code=500,
+            detail="Topic modeling artifact manifest is invalid",
+        )
+
+    try:
+        updated_payload = reaggregate_exact_topic_modeling_result(
+            artifact_path=exact_artifact_path,
+            existing_artifacts=artifacts,
+            node_infos=node_infos,
+            topic_size_value=requested_topic_count,
+            representative_words_count=int(
+                request_payload.get("representative_words_count") or 5
+            ),
+            random_seed=int(request_payload.get("random_seed") or 42),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to re-aggregate exact topic model: {exc}",
+        ) from exc
+
+    existing_meta = cast(
+        dict[str, object], payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    )
+    updated_meta = cast(
+        dict[str, object],
+        updated_payload.get("meta") if isinstance(updated_payload.get("meta"), dict) else {},
+    )
+    payload.update(
+        {
+            "topics": updated_payload.get("topics", []),
+            "corpus_sizes": updated_payload.get("corpus_sizes", []),
+            "per_corpus_topic_counts": updated_payload.get(
+                "per_corpus_topic_counts", []
+            ),
+            "artifacts": updated_payload.get("artifacts", artifacts),
+            "meta": {
+                **existing_meta,
+                **updated_meta,
+                "topic_size_mode": "exact",
+                "topic_size_value": requested_topic_count,
+                "representative_words_count": int(
+                    request_payload.get("representative_words_count") or 5
+                ),
+            },
+        }
+    )
+
+    request_payload["topic_size_value"] = requested_topic_count
+    task.request = AnalysisTopicModelingRequest(**request_payload)
+    task.result = GenericAnalysisResult(payload)
+    task_manager.save_task(task)
+
+    return TopicModelingResponse(
+        state="successful",
+        message="Topic Modeling analysis updated",
+        data=TopicModelingData.model_validate(payload),
         metadata={"task_id": task_id},
     )
 

@@ -284,7 +284,7 @@ def topic_modeling_task(
     n_clusters: int | None = None,
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
-    topic_size_value: int | None = 50,
+    topic_size_value: int | None = 25,
 ) -> Dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(

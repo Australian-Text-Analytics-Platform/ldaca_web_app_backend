@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import pickle
 import random
 from typing import Any, Callable, Dict, Optional, cast
 
@@ -54,9 +55,10 @@ def _compute_min_topic_size(
     if topic_size_mode == "min":
         return max(2, int(topic_size_value))
     if topic_size_mode == "exact":
-        # Use a smaller min_topic_size so BERTopic produces more than enough
-        # topics before reduction; reduce_topics() merges down to the exact count.
-        return max(2, n_eff // (int(topic_size_value) * 15))
+        # Start from the target-mode heuristic, then reduce it so BERTopic is
+        # more likely to produce enough raw topics before exact post-fit merging.
+        target_min_topic_size = max(2, n_eff // (int(topic_size_value) * 10))
+        return max(5, int(target_min_topic_size * 0.75))
     # "target" (default)
     return max(2, n_eff // (int(topic_size_value) * 10))
 
@@ -158,6 +160,412 @@ def _get_embedder(model_id: str):
 
     _EMBEDDER_CACHE[model_id] = embedder
     return embedder
+
+
+def _persist_exact_reduction_artifact(
+    artifact_path: str,
+    *,
+    topic_model: Any,
+    all_docs: list[str],
+    corpus_sizes: list[int],
+    active_corpora_indices: list[list[int]],
+) -> None:
+    artifact_payload: dict[str, Any] = {
+        "all_docs": all_docs,
+        "corpus_sizes": corpus_sizes,
+        "active_corpora_indices": active_corpora_indices,
+    }
+    if hasattr(topic_model, "save"):
+        model_path = f"{artifact_path}.bertopic"
+        try:
+            topic_model.save(
+                model_path,
+                serialization="pickle",
+                save_embedding_model=False,
+            )
+        except TypeError:
+            topic_model.save(model_path, serialization="pickle")
+        artifact_payload["model_path"] = model_path
+    else:
+        artifact_payload["topic_model"] = topic_model
+    with open(artifact_path, "wb") as artifact_file:
+        pickle.dump(artifact_payload, artifact_file)
+
+
+def _load_exact_reduction_artifact(artifact_path: str) -> dict[str, Any]:
+    with open(artifact_path, "rb") as artifact_file:
+        loaded = pickle.load(artifact_file)
+    if not isinstance(loaded, dict):
+        raise ValueError("Exact topic reduction artifact is invalid")
+    model_path = loaded.get("model_path")
+    if isinstance(model_path, str) and model_path:
+        from bertopic import BERTopic
+
+        loaded["topic_model"] = BERTopic.load(model_path)
+    return loaded
+
+
+def _count_non_outlier_topics(topic_model: Any) -> int:
+    import numpy as np
+
+    topic_freq_pd = topic_model.get_topic_freq()
+    if topic_freq_pd is None or "Topic" not in topic_freq_pd:
+        return 0
+    return sum(
+        1
+        for topic_id in topic_freq_pd["Topic"].tolist()
+        if isinstance(topic_id, (int, np.integer)) and int(topic_id) != -1
+    )
+
+
+def _has_outlier_topic(topic_model: Any) -> bool:
+    import numpy as np
+
+    topic_freq_pd = topic_model.get_topic_freq()
+    if topic_freq_pd is None or "Topic" not in topic_freq_pd:
+        return False
+    return any(
+        isinstance(topic_id, (int, np.integer)) and int(topic_id) == -1
+        for topic_id in topic_freq_pd["Topic"].tolist()
+    )
+
+
+def _resolve_exact_reduce_topics_target(
+    topic_model: Any, requested_topic_count: int
+) -> int:
+    """Map a requested non-outlier topic count to BERTopic's reduction target.
+
+    BERTopic retains the outlier topic (`-1`) in `nr_topics` accounting, but the
+    UI and the rest of this worker expose only non-outlier topics. When an
+    outlier bucket exists, ask BERTopic for one extra topic so the visible topic
+    count matches the user's exact selection.
+    """
+
+    has_outlier_topic = _has_outlier_topic(topic_model)
+    current_total = _count_non_outlier_topics(topic_model) + int(has_outlier_topic)
+    requested_total = int(requested_topic_count) + int(has_outlier_topic)
+    return min(current_total, requested_total)
+
+
+def _build_topic_result_payload(
+    *,
+    topic_model: Any,
+    node_infos: list[Dict[str, Any]],
+    all_docs: list[str],
+    corpus_sizes: list[int],
+    active_corpora_indices: list[list[int]],
+    max_representative_words: int,
+    random_state: int,
+    assigned_topics: list[int] | None = None,
+    artifact_prefix: str | None = None,
+    artifact_root: Any | None = None,
+    existing_artifacts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from pathlib import Path
+
+    import numpy as np
+    import polars as pl
+    from bertopic._utils import select_topic_representation
+
+    if existing_artifacts is None:
+        if artifact_prefix is None or artifact_root is None:
+            raise ValueError("artifact_prefix and artifact_root are required")
+        artifact_root_path = Path(artifact_root)
+        topic_meanings_path = artifact_root_path / f"{artifact_prefix}_topic_meanings.parquet"
+        existing_node_artifacts: list[dict[str, Any]] = []
+    else:
+        topic_meanings_path = Path(
+            str(existing_artifacts.get("topic_meanings_parquet_path") or "")
+        )
+        if not str(topic_meanings_path):
+            raise ValueError("Topic meanings artifact path is missing")
+        node_payloads = existing_artifacts.get("nodes")
+        if not isinstance(node_payloads, list):
+            raise ValueError("Topic assignment artifacts are missing")
+        existing_node_artifacts = [
+            payload for payload in node_payloads if isinstance(payload, dict)
+        ]
+        if len(existing_node_artifacts) != len(node_infos):
+            raise ValueError("Topic assignment artifacts do not match the request")
+
+    if assigned_topics is None:
+        assigned_topics = list(getattr(topic_model, "topics_", []))
+    if len(assigned_topics) != len(all_docs):
+        raise ValueError("Topic assignments do not match the document count")
+
+    assignments: list[list[int]] = []
+    node_artifacts: list[dict[str, Any]] = []
+    offset = 0
+    for idx, size in enumerate(corpus_sizes):
+        end = offset + size
+        corpus_topics = assigned_topics[offset:end]
+        normalized_topics = [
+            int(topic_id) if isinstance(topic_id, (int, np.integer)) else -1
+            for topic_id in corpus_topics
+        ]
+        assignments.append(normalized_topics)
+
+        if existing_artifacts is None:
+            node_id = str(node_infos[idx]["node_id"])
+            node_name = str(node_infos[idx].get("node_name") or node_id)
+            text_column = str(node_infos[idx].get("text_column") or "")
+            original_columns = list(node_infos[idx].get("original_columns") or [])
+            assignments_path = artifact_root_path / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
+        else:
+            existing_node = existing_node_artifacts[idx]
+            node_id = str(existing_node.get("node_id") or node_infos[idx]["node_id"])
+            node_name = str(existing_node.get("node_name") or node_infos[idx].get("node_name") or node_id)
+            text_column = str(existing_node.get("text_column") or node_infos[idx].get("text_column") or "")
+            original_columns = list(
+                existing_node.get("original_columns")
+                or node_infos[idx].get("original_columns")
+                or []
+            )
+            assignments_path = Path(
+                str(existing_node.get("assignments_parquet_path") or "")
+            )
+            if not str(assignments_path):
+                raise ValueError("Topic assignment artifact path is missing")
+
+        pl.DataFrame(
+            {
+                "__row_nr__": active_corpora_indices[idx],
+                TOPIC_COLUMN: normalized_topics,
+            }
+        ).with_columns(
+            [
+                pl.col("__row_nr__").cast(pl.Int64),
+                pl.col(TOPIC_COLUMN).cast(pl.Int64),
+            ]
+        ).lazy().sink_parquet(assignments_path)
+        node_artifacts.append(
+            {
+                "node_id": node_id,
+                "node_name": node_name,
+                "text_column": text_column,
+                "original_columns": original_columns,
+                "assignments_parquet_path": str(assignments_path),
+            }
+        )
+        offset = end
+
+    per_corpus_topic_counts: list[dict[int, int]] = []
+    for corpus_topics in assignments:
+        counts: dict[int, int] = {}
+        for topic_id in corpus_topics:
+            counts[topic_id] = counts.get(topic_id, 0) + 1
+        per_corpus_topic_counts.append(counts)
+
+    topic_freq_pd = topic_model.get_topic_freq()
+    topic_freq = (
+        cast(pl.DataFrame, pl.from_pandas(topic_freq_pd))
+        if topic_freq_pd is not None
+        else pl.DataFrame(schema={"Topic": pl.Int64})
+    )
+
+    topic_ids: list[int] = []
+    if "Topic" in topic_freq.columns and not topic_freq.is_empty():
+        topic_series = topic_freq.get_column("Topic")
+        topic_ids = [
+            int(topic_id)
+            for topic_id in topic_series.to_list()
+            if isinstance(topic_id, (int, np.integer)) and int(topic_id) != -1
+        ]
+
+    topics_by_id = cast(dict[int, list[tuple[str, float]]], topic_model.get_topics())
+    representative_words_by_topic: list[list[str]] = []
+    labels: list[str] = []
+    for topic_id in topic_ids:
+        words = topics_by_id.get(topic_id, [])
+        top_words = [
+            word
+            for word, _score in words[:max_representative_words]
+            if isinstance(word, str) and word
+        ]
+        representative_words_by_topic.append(top_words)
+        labels.append(" | ".join(top_words) if top_words else f"Topic {topic_id}")
+
+    all_topics_sorted = sorted(topics_by_id.keys())
+    indices = (
+        np.array([all_topics_sorted.index(topic_id) for topic_id in topic_ids])
+        if topic_ids
+        else np.array([])
+    )
+
+    embeddings, c_tfidf_used = select_topic_representation(
+        topic_model.c_tf_idf_,
+        topic_model.topic_embeddings_,
+        output_ndarray=True,
+    )
+    if len(indices) > 0:
+        embeddings = embeddings[indices]
+    else:
+        embeddings = np.zeros((0, 2))
+
+    if embeddings.shape[0] == 0:
+        coords = embeddings
+    elif embeddings.shape[0] == 1:
+        coords = np.array([[0.0, 0.0]])
+    elif embeddings.shape[0] <= 15:
+        from sklearn.decomposition import PCA
+
+        comps = min(2, embeddings.shape[1])
+        projected = PCA(n_components=comps, random_state=random_state).fit_transform(
+            embeddings
+        )
+        if comps == 1:
+            coords = np.column_stack([projected[:, 0], np.zeros_like(projected[:, 0])])
+        else:
+            coords = projected
+    else:
+        try:
+            from umap import UMAP
+
+            n_samples = embeddings.shape[0]
+            n_neighbors = max(2, min(15, n_samples - 2))
+            if c_tfidf_used:
+                from sklearn.preprocessing import MinMaxScaler
+
+                normalized = MinMaxScaler().fit_transform(embeddings)
+                coords = UMAP(
+                    n_neighbors=n_neighbors,
+                    n_components=2,
+                    metric="hellinger",
+                    random_state=random_state,
+                ).fit_transform(normalized)
+            else:
+                coords = UMAP(
+                    n_neighbors=n_neighbors,
+                    n_components=2,
+                    metric="cosine",
+                    random_state=random_state,
+                ).fit_transform(embeddings)
+        except (
+            ImportError,
+            ModuleNotFoundError,
+            TypeError,
+            ValueError,
+            RuntimeError,
+        ) as umap_error:
+            logger.warning(
+                "[Worker %d] UMAP failed: %s. Falling back to PCA.",
+                os.getpid(),
+                umap_error,
+            )
+            from sklearn.decomposition import PCA
+
+            comps = min(2, embeddings.shape[1])
+            projected = PCA(n_components=comps, random_state=random_state).fit_transform(
+                embeddings
+            )
+            if comps == 1:
+                coords = np.column_stack([projected[:, 0], np.zeros_like(projected[:, 0])])
+            else:
+                coords = projected
+
+    topic_payloads = []
+    for i, topic_id in enumerate(topic_ids):
+        per_sizes = [
+            per_corpus_topic_counts[j].get(topic_id, 0)
+            for j in range(len(per_corpus_topic_counts))
+        ]
+        topic_payloads.append(
+            {
+                "id": topic_id,
+                "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
+                "representative_words": representative_words_by_topic[i]
+                if i < len(representative_words_by_topic)
+                else [],
+                "size": per_sizes,
+                "total_size": int(sum(per_sizes)),
+                "x": float(coords[i, 0]) if i < len(coords) else 0.0,
+                "y": float(coords[i, 1]) if i < len(coords) else 0.0,
+            }
+        )
+
+    pl.DataFrame(
+        {
+            TOPIC_COLUMN: topic_ids,
+            TOPIC_MEANING_COLUMN: representative_words_by_topic,
+        },
+        schema={
+            TOPIC_COLUMN: pl.Int64,
+            TOPIC_MEANING_COLUMN: pl.List(pl.String),
+        },
+    ).lazy().sink_parquet(topic_meanings_path)
+
+    artifacts: dict[str, Any] = {
+        "version": 1,
+        "topic_meanings_parquet_path": str(topic_meanings_path),
+        "nodes": node_artifacts,
+    }
+    if existing_artifacts is not None:
+        exact_artifact_path = existing_artifacts.get("exact_reduction_artifact_path")
+        if isinstance(exact_artifact_path, str) and exact_artifact_path:
+            artifacts["exact_reduction_artifact_path"] = exact_artifact_path
+            artifacts["version"] = max(2, int(existing_artifacts.get("version") or 1))
+
+    return {
+        "topics": topic_payloads,
+        "corpus_sizes": corpus_sizes,
+        "per_corpus_topic_counts": per_corpus_topic_counts,
+        "artifacts": artifacts,
+        "meta": {
+            "embeddings_from_ctfidf": bool(c_tfidf_used),
+            "total_topics_incl_outlier": int(topic_freq.height),
+        },
+    }
+
+
+def reaggregate_exact_topic_modeling_result(
+    *,
+    artifact_path: str,
+    existing_artifacts: dict[str, Any],
+    node_infos: list[Dict[str, Any]],
+    topic_size_value: int,
+    representative_words_count: int,
+    random_seed: int,
+) -> dict[str, Any]:
+    stored = _load_exact_reduction_artifact(artifact_path)
+    topic_model = stored.get("topic_model")
+    all_docs = stored.get("all_docs")
+    corpus_sizes = stored.get("corpus_sizes")
+    active_corpora_indices = stored.get("active_corpora_indices")
+
+    if topic_model is None or not isinstance(all_docs, list):
+        raise ValueError("Exact topic reduction artifact is incomplete")
+    if not isinstance(corpus_sizes, list) or not isinstance(active_corpora_indices, list):
+        raise ValueError("Exact topic reduction artifact is missing corpus metadata")
+
+    raw_total_topics = _count_non_outlier_topics(topic_model)
+    requested_topic_count = int(topic_size_value)
+    if raw_total_topics < 2:
+        raise ValueError("Exact topic reduction requires at least two raw topics")
+    if requested_topic_count < 2 or requested_topic_count > raw_total_topics:
+        raise ValueError(
+            f"Exact topic count must be between 2 and {raw_total_topics}"
+        )
+
+    topic_model.reduce_topics(
+        all_docs,
+        nr_topics=_resolve_exact_reduce_topics_target(topic_model, requested_topic_count),
+    )
+    payload = _build_topic_result_payload(
+        topic_model=topic_model,
+        node_infos=node_infos,
+        all_docs=all_docs,
+        corpus_sizes=[int(size) for size in corpus_sizes],
+        active_corpora_indices=[list(map(int, indices)) for indices in active_corpora_indices],
+        max_representative_words=max(1, int(representative_words_count)),
+        random_state=int(random_seed),
+        existing_artifacts=existing_artifacts,
+    )
+    payload_meta = payload.get("meta")
+    if not isinstance(payload_meta, dict):
+        payload_meta = {}
+    payload_meta["raw_total_topics"] = raw_total_topics
+    payload["meta"] = payload_meta
+    return payload
 
 
 def _encode_embeddings_in_chunks(
@@ -316,7 +724,7 @@ def run_topic_modeling_task(
     n_clusters: int | None = None,
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
-    topic_size_value: int | None = 50,
+    topic_size_value: int | None = 25,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -504,7 +912,7 @@ def run_topic_modeling_task(
 
             n_eff = len(all_docs)
             effective_min_topic_size = _compute_min_topic_size(
-                n_eff, topic_size_mode or "target", topic_size_value or 50
+                n_eff, topic_size_mode or "target", topic_size_value or 25
             )
 
             # Determine pipeline mode before embedding so progress fractions
@@ -554,241 +962,58 @@ def run_topic_modeling_task(
 
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
 
+            raw_total_topics = None
+            exact_reduction_artifact_path: str | None = None
+
             if (topic_size_mode or "target") == "exact" and topic_size_value:
+                raw_total_topics = _count_non_outlier_topics(topic_model)
+                exact_reduction_artifact_path = str(
+                    artifact_root / f"{artifact_prefix}_exact_reduction.pkl"
+                )
+                _persist_exact_reduction_artifact(
+                    exact_reduction_artifact_path,
+                    topic_model=topic_model,
+                    all_docs=all_docs,
+                    corpus_sizes=corpus_sizes,
+                    active_corpora_indices=active_corpora_indices,
+                )
                 if progress_callback:
                     progress_callback(
                         cluster_frac,
                         f"Reducing topics to exactly {topic_size_value}...",
                     )
-                topic_model.reduce_topics(all_docs, nr_topics=int(topic_size_value))
+                topic_model.reduce_topics(
+                    all_docs,
+                    nr_topics=_resolve_exact_reduce_topics_target(
+                        topic_model, int(topic_size_value)
+                    ),
+                )
                 assigned_topics = list(topic_model.topics_)
-
-            assignments: list[list[int]] = []
-            node_artifacts: list[dict[str, Any]] = []
-            offset = 0
-            for idx, corpus in enumerate(active_corpora):
-                size = len(corpus)
-                end = offset + size
-                corpus_topics = assigned_topics[offset:end]
-                normalized_topics = [
-                    int(topic_id) if isinstance(topic_id, (int, np.integer)) else -1
-                    for topic_id in corpus_topics
-                ]
-                assignments.append(normalized_topics)
-
-                node_id = str(node_infos[idx]["node_id"])
-                node_name = str(node_infos[idx].get("node_name") or node_id)
-                text_column = str(node_infos[idx].get("text_column") or "")
-                original_columns = list(node_infos[idx].get("original_columns") or [])
-                assignments_path = (
-                    artifact_root
-                    / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
-                )
-                pl.DataFrame(
-                    {
-                        "__row_nr__": active_corpora_indices[idx],
-                        TOPIC_COLUMN: normalized_topics,
-                    }
-                ).with_columns(
-                    [
-                        pl.col("__row_nr__").cast(pl.Int64),
-                        pl.col(TOPIC_COLUMN).cast(pl.Int64),
-                    ]
-                ).lazy().sink_parquet(assignments_path)
-                node_artifacts.append(
-                    {
-                        "node_id": node_id,
-                        "node_name": node_name,
-                        "text_column": text_column,
-                        "original_columns": original_columns,
-                        "assignments_parquet_path": str(assignments_path),
-                    }
-                )
-                offset = end
-
-            per_corpus_topic_counts: list[dict[int, int]] = []
-            for corpus_topics in assignments:
-                counts: dict[int, int] = {}
-                for topic_id in corpus_topics:
-                    counts[topic_id] = counts.get(topic_id, 0) + 1
-                per_corpus_topic_counts.append(counts)
-
-            # External BERTopic output is pandas; convert to polars before processing.
-            topic_freq_pd = topic_model.get_topic_freq()
-            topic_freq = (
-                cast(pl.DataFrame, pl.from_pandas(topic_freq_pd))
-                if topic_freq_pd is not None
-                else pl.DataFrame(schema={"Topic": pl.Int64})
+            payload = _build_topic_result_payload(
+                topic_model=topic_model,
+                node_infos=node_infos,
+                all_docs=all_docs,
+                corpus_sizes=corpus_sizes,
+                active_corpora_indices=active_corpora_indices,
+                max_representative_words=max_representative_words,
+                random_state=random_state,
+                assigned_topics=assigned_topics,
+                artifact_prefix=artifact_prefix,
+                artifact_root=artifact_root,
             )
-
-            topic_ids: list[int] = []
-            if "Topic" in topic_freq.columns and not topic_freq.is_empty():
-                topic_series = topic_freq.get_column("Topic")
-                topic_ids = [
-                    int(topic_id)
-                    for topic_id in topic_series.to_list()
-                    if isinstance(topic_id, (int, np.integer)) and int(topic_id) != -1
-                ]
-
-            topics_by_id = cast(
-                dict[int, list[tuple[str, float]]], topic_model.get_topics()
-            )
-            representative_words_by_topic: list[list[str]] = []
-            labels: list[str] = []
-            for topic_id in topic_ids:
-                words = topics_by_id.get(topic_id, [])
-                top_words = [
-                    word
-                    for word, _score in words[:max_representative_words]
-                    if isinstance(word, str) and word
-                ]
-                representative_words_by_topic.append(top_words)
-                labels.append(
-                    " | ".join(top_words) if top_words else f"Topic {topic_id}"
-                )
-
-            all_topics_sorted = sorted(topics_by_id.keys())
-            indices = (
-                np.array([all_topics_sorted.index(topic_id) for topic_id in topic_ids])
-                if topic_ids
-                else np.array([])
-            )
-
-            embeddings, c_tfidf_used = select_topic_representation(
-                topic_model.c_tf_idf_,
-                topic_model.topic_embeddings_,
-                output_ndarray=True,
-            )
-            if len(indices) > 0:
-                embeddings = embeddings[indices]
-            else:
-                embeddings = np.zeros((0, 2))
-
-            if embeddings.shape[0] == 0:
-                coords = embeddings
-            elif embeddings.shape[0] == 1:
-                coords = np.array([[0.0, 0.0]])
-            elif embeddings.shape[0] <= 15:
-                from sklearn.decomposition import PCA
-
-                comps = min(2, embeddings.shape[1])
-                projected = PCA(
-                    n_components=comps, random_state=random_state
-                ).fit_transform(embeddings)
-                if comps == 1:
-                    coords = np.column_stack(
-                        [
-                            projected[:, 0],
-                            np.zeros_like(projected[:, 0]),
-                        ]
-                    )
-                else:
-                    coords = projected
-            else:
-                try:
-                    from umap import UMAP
-
-                    n_samples = embeddings.shape[0]
-                    n_neighbors = max(2, min(15, n_samples - 2))
-                    if c_tfidf_used:
-                        from sklearn.preprocessing import MinMaxScaler
-
-                        normalized = MinMaxScaler().fit_transform(embeddings)
-                        coords = UMAP(
-                            n_neighbors=n_neighbors,
-                            n_components=2,
-                            metric="hellinger",
-                            random_state=random_state,
-                        ).fit_transform(normalized)
-                    else:
-                        coords = UMAP(
-                            n_neighbors=n_neighbors,
-                            n_components=2,
-                            metric="cosine",
-                            random_state=random_state,
-                        ).fit_transform(embeddings)
-                except (
-                    ImportError,
-                    ModuleNotFoundError,
-                    TypeError,
-                    ValueError,
-                    RuntimeError,
-                ) as umap_error:
-                    logger.warning(
-                        "[Worker %d] UMAP failed: %s. Falling back to PCA.",
-                        os.getpid(),
-                        umap_error,
-                    )
-                    from sklearn.decomposition import PCA
-
-                    comps = min(2, embeddings.shape[1])
-                    projected = PCA(
-                        n_components=comps, random_state=random_state
-                    ).fit_transform(embeddings)
-                    if comps == 1:
-                        coords = np.column_stack(
-                            [
-                                projected[:, 0],
-                                np.zeros_like(projected[:, 0]),
-                            ]
-                        )
-                    else:
-                        coords = projected
-
-            topic_payloads = []
-            for i, topic_id in enumerate(topic_ids):
-                per_sizes = [
-                    per_corpus_topic_counts[j].get(topic_id, 0)
-                    for j in range(len(per_corpus_topic_counts))
-                ]
-                topic_payloads.append(
-                    {
-                        "id": topic_id,
-                        "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
-                        "representative_words": representative_words_by_topic[i]
-                        if i < len(representative_words_by_topic)
-                        else [],
-                        "size": per_sizes,
-                        "total_size": int(sum(per_sizes)),
-                        "x": float(coords[i, 0]) if i < len(coords) else 0.0,
-                        "y": float(coords[i, 1]) if i < len(coords) else 0.0,
-                    }
-                )
-
-            topic_meanings_path = (
-                artifact_root / f"{artifact_prefix}_topic_meanings.parquet"
-            )
-            pl.DataFrame(
+            payload_meta = payload.get("meta")
+            if not isinstance(payload_meta, dict):
+                payload_meta = {}
+            payload_meta.update(
                 {
-                    TOPIC_COLUMN: topic_ids,
-                    TOPIC_MEANING_COLUMN: representative_words_by_topic,
-                },
-                schema={
-                    TOPIC_COLUMN: pl.Int64,
-                    TOPIC_MEANING_COLUMN: pl.List(pl.String),
-                },
-            ).lazy().sink_parquet(topic_meanings_path)
-
-            return {
-                "topics": topic_payloads,
-                "corpus_sizes": corpus_sizes,
-                "per_corpus_topic_counts": per_corpus_topic_counts,
-                "artifacts": {
-                    "version": 1,
-                    "topic_meanings_parquet_path": str(topic_meanings_path),
-                    "nodes": node_artifacts,
-                },
-                "meta": {
                     "native": True,
                     "engine": "bertopic",
                     "embedding_model": embedding_model_name,
                     "embedding_backend": embedding_backend,
-                    "embeddings_from_ctfidf": bool(c_tfidf_used),
                     "min_topic_size": effective_min_topic_size,
                     "topic_size_mode": topic_size_mode or "target",
                     "topic_size_value": topic_size_value,
                     "representative_words_count": max_representative_words,
-                    "total_topics_incl_outlier": int(topic_freq.height),
                     "random_state": random_state,
                     "pipeline_mode": pipeline_mode,
                     **({"n_clusters": actual_k} if actual_k is not None else {}),
@@ -800,8 +1025,16 @@ def run_topic_modeling_task(
                         if sample_fractions is not None
                         else {}
                     ),
-                },
-            }
+                }
+            )
+            if raw_total_topics is not None:
+                payload_meta["raw_total_topics"] = raw_total_topics
+            payload["meta"] = payload_meta
+            payload_artifacts = payload.get("artifacts")
+            if isinstance(payload_artifacts, dict) and exact_reduction_artifact_path:
+                payload_artifacts["exact_reduction_artifact_path"] = exact_reduction_artifact_path
+                payload_artifacts["version"] = 2
+            return payload
 
         tv = _compute_topics()
 
