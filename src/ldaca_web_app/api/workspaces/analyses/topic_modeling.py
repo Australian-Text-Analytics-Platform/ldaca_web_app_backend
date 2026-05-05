@@ -88,6 +88,103 @@ def _topic_artifacts_from_task(task: AnalysisTask) -> dict:
     return artifacts
 
 
+def _task_request_payload(task: AnalysisTask) -> dict[str, object]:
+    request = task.request
+    if request is None:
+        return {}
+    if hasattr(request, "model_dump"):
+        payload = request.model_dump()
+    elif hasattr(request, "dict"):
+        payload = request.dict()
+    elif isinstance(request, dict):
+        payload = request
+    else:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _format_sampling_scalar(value: float | int) -> str:
+    return str(value).replace(".", "_")
+
+
+def _build_sampling_auto_node_name(
+    *,
+    base_name: str,
+    sample_fraction: float,
+    random_seed: int | None,
+) -> str:
+    sample_token = f"fr_{_format_sampling_scalar(sample_fraction)}"
+    seed_token = (
+        f"_rs_{random_seed}"
+        if isinstance(random_seed, int) and random_seed >= 0
+        else ""
+    )
+    return f"{base_name}_sampled_{sample_token}{seed_token}"
+
+
+def _topic_sampling_details_for_node(
+    task: AnalysisTask,
+    node_id: str,
+) -> tuple[float | None, int]:
+    request_payload = _task_request_payload(task)
+    random_seed = request_payload.get("random_seed")
+    if isinstance(random_seed, bool):
+        seed = int(random_seed)
+    elif isinstance(random_seed, int | float | str):
+        try:
+            seed = int(random_seed)
+        except ValueError:
+            seed = 42
+    else:
+        seed = 42
+
+    node_ids = request_payload.get("node_ids")
+    sample_fractions = request_payload.get("sample_fractions")
+    if not isinstance(node_ids, list) or not isinstance(sample_fractions, list):
+        return None, seed
+
+    node_index = next(
+        (index for index, value in enumerate(node_ids) if str(value) == node_id),
+        None,
+    )
+    if node_index is None or node_index >= len(sample_fractions):
+        return None, seed
+
+    sample_fraction = sample_fractions[node_index]
+    if sample_fraction is None:
+        return None, seed
+    if isinstance(sample_fraction, bool):
+        fraction_value = float(sample_fraction)
+    elif isinstance(sample_fraction, int | float | str):
+        try:
+            fraction_value = float(sample_fraction)
+        except ValueError:
+            return None, seed
+    else:
+        return None, seed
+
+    if not (0.0 < fraction_value < 1.0):
+        return None, seed
+    return fraction_value, seed
+
+
+def _default_topic_detach_node_name(
+    task: AnalysisTask,
+    artifact_payload: dict,
+    node_id: str,
+) -> str:
+    raw_base_name = str(artifact_payload.get("node_name") or node_id).strip() or "node"
+    base_name = f"{raw_base_name}_topic"
+    sample_fraction, seed = _topic_sampling_details_for_node(task, node_id)
+    if sample_fraction is None:
+        return base_name
+    return _build_sampling_auto_node_name(
+        base_name=base_name,
+        sample_fraction=sample_fraction,
+        random_seed=seed,
+    )
+
+
 @router.delete("/topic-modeling")
 async def clear_topic_modeling_results(
     current_user: dict = Depends(get_current_user),
@@ -690,12 +787,10 @@ async def detach_topic_modeling(
         assignments_lf = pl.scan_parquet(assignments_path)
 
         # Filter assignments to selected topics if topic_ids specified
-        join_how = "left"
         if selected_topic_ids:
             assignments_lf = assignments_lf.filter(
                 pl.col(TOPIC_COLUMN).is_in(selected_topic_ids)
             )
-            join_how = "inner"
 
         source_node = ws.nodes[node_id]
         source_data = source_node.data
@@ -721,8 +816,11 @@ async def detach_topic_modeling(
         )
 
         output_lf = (
-            source_data.with_row_index("__row_nr__")
-            .join(assignments_lf, on="__row_nr__", how=join_how)
+            assignments_lf.join(
+                source_data.with_row_index("__row_nr__"),
+                on="__row_nr__",
+                how="inner",
+            )
             .select(
                 [pl.col(col) for col in selected_columns]
                 + [pl.col(TOPIC_COLUMN).alias(topic_column_name)]
@@ -734,7 +832,7 @@ async def detach_topic_modeling(
             (request.new_node_names or {}).get(node_id)
             if request.new_node_names
             else None
-        ) or f"{artifact_payload.get('node_name') or node_id}_topic_detach"
+        ) or _default_topic_detach_node_name(task, artifact_payload, node_id)
 
         new_node = Node(
             data=output_lf,
