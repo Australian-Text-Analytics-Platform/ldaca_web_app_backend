@@ -252,7 +252,7 @@ async def cilogon_login(request: Request):
             "response_type": "code",
             "client_id": settings.cilogon_client_id,
             "redirect_uri": redirect_uri,
-            "scope": "openid email profile",
+            "scope": "openid email profile org.cilogon.userinfo",
             "state": state,
         }
     )
@@ -286,7 +286,10 @@ async def cilogon_callback(
     """
     if error:
         detail = error_description or error
-        logger.warning(f"CILogon returned error: {error} — {error_description}")
+        logger.error(
+            "CILogon callback error — error=%r error_description=%r all_params=%s",
+            error, error_description, dict(request.query_params),
+        )
         raise HTTPException(400, f"CILogon authentication failed: {detail}")
 
     if not code or not state:
