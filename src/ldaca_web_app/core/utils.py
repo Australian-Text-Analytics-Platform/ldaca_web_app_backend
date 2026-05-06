@@ -69,6 +69,18 @@ def get_user_workspace_folder(user_id: str) -> Path:
     return workspace_folder
 
 
+def get_user_cache_folder(user_id: str) -> Path:
+    """Return the user's internal cache folder, creating it if missing.
+
+    Lives outside `user_data` so it never appears in the file-tree endpoint
+    that backs the data-loader UI. Subdirectories (e.g. `embeddings/`) keep
+    different cache kinds separate so each can be cleared independently.
+    """
+    cache_folder = _user_root_folder(user_id) / "user_cache"
+    cache_folder.mkdir(parents=True, exist_ok=True)
+    return cache_folder
+
+
 def validate_workspace_name(name: str) -> tuple[bool, str]:
     """Validate workspace names for safe, portable folder usage.
 

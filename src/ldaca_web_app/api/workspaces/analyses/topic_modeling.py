@@ -30,7 +30,7 @@ from ....models import (
     TopicModelingRequest,
     TopicModelingResponse,
 )
-from ....core.utils import get_user_data_folder
+from ....core.utils import get_user_cache_folder, get_user_data_folder
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
@@ -218,30 +218,90 @@ async def clear_topic_modeling_results(
     }
 
 
+def _embedding_cache_dirs(user_id: str) -> list[Path]:
+    """Return all embedding-cache directories that may hold parquet entries.
+
+    Includes the canonical location (`user_cache/embeddings`) and the legacy
+    `user_data/embedding_cache` so a Clear sweeps both during the migration
+    window. Only directories that actually exist are returned.
+    """
+    candidates = [
+        get_user_cache_folder(user_id) / "embeddings",
+        get_user_data_folder(user_id) / "embedding_cache",
+    ]
+    return [d for d in candidates if d.exists() and d.is_dir()]
+
+
+def _measure_embedding_cache(user_id: str) -> dict:
+    """Compute total size and file count across all embedding-cache parquets."""
+    bytes_total = 0
+    file_count = 0
+    for cache_dir in _embedding_cache_dirs(user_id):
+        for entry in cache_dir.glob("*.parquet"):
+            try:
+                bytes_total += entry.stat().st_size
+                file_count += 1
+            except OSError:
+                continue
+    return {"bytes": bytes_total, "files": file_count}
+
+
+@router.get("/topic-modeling/embedding-cache/size")
+async def get_topic_modeling_embedding_cache_size(
+    current_user: dict = Depends(get_current_user),
+):
+    """Report current embedding-cache size and file count for the user.
+
+    Used by the frontend Clear-cache confirmation dialog so the user can see
+    "X MB will be freed" before they confirm.
+    """
+    return {
+        "state": "successful",
+        "data": _measure_embedding_cache(current_user["id"]),
+    }
+
+
 @router.delete("/topic-modeling/embedding-cache")
 async def clear_topic_modeling_embedding_cache(
     current_user: dict = Depends(get_current_user),
 ):
-    """Delete the on-disk embedding cache for the current user.
+    """Delete every parquet entry in the user's embedding cache.
 
-    The cache is shared across all workspaces for a given user and model.
-    Clearing it forces the next topic-modelling run to re-encode all documents
-    from scratch.  Useful after a model upgrade or to reclaim disk space.
+    Sweeps the canonical `user_cache/embeddings/` directory and the legacy
+    `user_data/embedding_cache/` directory (one-time migration cleanup).
+    Returns total bytes and file count freed so the UI can confirm the
+    reclaim. Clearing forces the next topic-modelling run to re-encode all
+    documents from scratch.
     """
-    from ....core.embedding_cache import EmbeddingCache
-    from ....core.mps_embedder import get_active_provider_id
-    from ....core.worker_tasks_topic import _TOPIC_EMBEDDER_REPO_ID
-
     user_id = current_user["id"]
-    cache_dir = get_user_data_folder(user_id) / "embedding_cache"
-
-    cache = EmbeddingCache(
-        cache_dir=cache_dir,
-        model_id=_TOPIC_EMBEDDER_REPO_ID,
-        provider_id=get_active_provider_id(),
-    )
-    cache.clear()
-    return {"state": "successful", "message": "Embedding cache cleared."}
+    measured = _measure_embedding_cache(user_id)
+    bytes_freed = 0
+    files_removed = 0
+    for cache_dir in _embedding_cache_dirs(user_id):
+        for entry in cache_dir.glob("*.parquet"):
+            try:
+                size = entry.stat().st_size
+                entry.unlink()
+            except OSError as exc:
+                logger.debug("Failed to remove %s: %s", entry, exc)
+                continue
+            bytes_freed += size
+            files_removed += 1
+        # Drop the legacy folder once empty so the file tree stays clean.
+        if cache_dir.parent == get_user_data_folder(user_id):
+            try:
+                cache_dir.rmdir()
+            except OSError:
+                pass
+    return {
+        "state": "successful",
+        "message": "Embedding cache cleared.",
+        "data": {
+            "bytes_freed": bytes_freed,
+            "files_removed": files_removed,
+            "measured_before": measured,
+        },
+    }
 
 
 @router.post("/topic-modeling", response_model=TopicModelingResponse)
@@ -349,7 +409,7 @@ async def run_topic_modeling(
                 "random_seed": request.random_seed,
                 "representative_words_count": request.representative_words_count,
                 "embedding_cache_dir": str(
-                    get_user_data_folder(user_id) / "embedding_cache"
+                    get_user_cache_folder(user_id) / "embeddings"
                 ),
                 "force_mode": request.force_mode,
                 "n_clusters": request.n_clusters,
