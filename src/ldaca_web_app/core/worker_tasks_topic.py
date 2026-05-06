@@ -47,13 +47,26 @@ def _make_reagg_path(old_path: Path) -> Path:
 def _sample_corpus(
     docs: list[str], fraction: float, seed: int
 ) -> tuple[list[str], list[int]]:
-    """Return a reproducible random sample of docs and their original indices."""
-    import random as _random
-    rng = _random.Random(seed)
-    k = max(1, round(len(docs) * fraction))
-    if k >= len(docs):
+    """Return a reproducible random sample of docs and their original indices.
+
+    Uses the same Polars expression as the preprocessing slice tool
+    (`pl.int_range(...).sample(fraction=..., seed=...)`) so identical
+    `(seed, fraction)` parameters select identical rows across tools.
+    Operates on an in-memory integer Series; no parquet artifact is created.
+    """
+    import polars as pl
+    if fraction >= 1.0:
         return docs, list(range(len(docs)))
-    indices = sorted(rng.sample(range(len(docs)), k))
+    indices = (
+        pl.int_range(len(docs), eager=True)
+        .sample(fraction=fraction, seed=seed)
+        .sort()
+        .to_list()
+    )
+    if not indices:
+        # Polars floors fraction*N, so a tiny corpus with very small fraction
+        # can yield zero rows. Topic modelling needs at least one document.
+        return [docs[0]], [0]
     return [docs[i] for i in indices], indices
 
 
