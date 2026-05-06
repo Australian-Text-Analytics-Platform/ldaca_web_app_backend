@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.2.5"
+version = "0.2.8"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -25,6 +25,8 @@ classifiers = [
 dependencies = [
     "aiosqlite>=0.21.0",
     "bertopic>=0.17.3",
+    "onnxruntime>=1.18.0",
+    "tokenizers>=0.21.0",
     "fastapi-users[sqlalchemy]>=14.0.1",        # Includes fastapi, python-multipart, sqlalchemy
     "fastapi[standard]>=0.135.0",               # Includes uvicorn, pydantic, starlette
     "fastexcel>=0.18.0",
@@ -53,6 +55,12 @@ dependencies = [
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
     "spacy>=3.7.0",
+    # bertopic requires `sentence-transformers` with no version floor.  On
+    # Python 3.14 uv's resolver backtracks to the ancient 2.2.2 sdist, which
+    # imports the removed `cached_download` symbol from huggingface_hub and
+    # crashes on first use.  3.0.0 is the first release that uses the
+    # modern hf_hub_download API.
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

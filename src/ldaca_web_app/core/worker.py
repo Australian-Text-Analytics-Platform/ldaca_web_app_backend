@@ -279,6 +279,12 @@ def topic_modeling_task(
     representative_words_count: int = 5,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
+    embedding_cache_dir: str | None = None,
+    force_mode: str | None = None,
+    n_clusters: int | None = None,
+    sample_fractions: list[float | None] | None = None,
+    topic_size_mode: str | None = "target",
+    topic_size_value: int | None = 25,
 ) -> Dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(
@@ -294,6 +300,12 @@ def topic_modeling_task(
         random_seed=random_seed,
         representative_words_count=representative_words_count,
         progress_callback=cb,
+        embedding_cache_dir=embedding_cache_dir,
+        force_mode=force_mode,
+        n_clusters=n_clusters,
+        sample_fractions=sample_fractions,
+        topic_size_mode=topic_size_mode,
+        topic_size_value=topic_size_value,
     )
 
 
@@ -322,6 +334,21 @@ def token_frequencies_task(
         stop_words=stop_words,
         progress_callback=cb,
     )
+
+
+def _pid_reporting_wrapper(task_func: Any, **kwargs: Any) -> Any:
+    """Wrapper executed inside the worker process.
+
+    Sends the worker's own PID as the first message on the progress queue so
+    the main process can terminate it if the user requests cancellation.
+    """
+    pq = kwargs.get("progress_queue")
+    if pq is not None:
+        try:
+            pq.put_nowait({"type": "pid", "pid": os.getpid()})
+        except Exception:
+            pass
+    return task_func(**kwargs)
 
 
 TASK_REGISTRY: Dict[str, Any] = {
@@ -363,7 +390,7 @@ class WorkerTaskManager:
             self.start()
 
         assert self.executor is not None
-        return self.executor.submit(task_func, **kwargs)
+        return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
         if self.executor is None:

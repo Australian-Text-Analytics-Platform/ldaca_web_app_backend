@@ -18,7 +18,9 @@ from ....analysis.implementations.topic_modeling import (
 )
 from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
+from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
     TopicModelingData,
@@ -28,6 +30,7 @@ from ....models import (
     TopicModelingRequest,
     TopicModelingResponse,
 )
+from ....core.utils import get_user_data_folder
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
@@ -85,6 +88,103 @@ def _topic_artifacts_from_task(task: AnalysisTask) -> dict:
     return artifacts
 
 
+def _task_request_payload(task: AnalysisTask) -> dict[str, object]:
+    request = task.request
+    if request is None:
+        return {}
+    if hasattr(request, "model_dump"):
+        payload = request.model_dump()
+    elif hasattr(request, "dict"):
+        payload = request.dict()
+    elif isinstance(request, dict):
+        payload = request
+    else:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _format_sampling_scalar(value: float | int) -> str:
+    return str(value).replace(".", "_")
+
+
+def _build_sampling_auto_node_name(
+    *,
+    base_name: str,
+    sample_fraction: float,
+    random_seed: int | None,
+) -> str:
+    sample_token = f"fr_{_format_sampling_scalar(sample_fraction)}"
+    seed_token = (
+        f"_rs_{random_seed}"
+        if isinstance(random_seed, int) and random_seed >= 0
+        else ""
+    )
+    return f"{base_name}_sampled_{sample_token}{seed_token}"
+
+
+def _topic_sampling_details_for_node(
+    task: AnalysisTask,
+    node_id: str,
+) -> tuple[float | None, int]:
+    request_payload = _task_request_payload(task)
+    random_seed = request_payload.get("random_seed")
+    if isinstance(random_seed, bool):
+        seed = int(random_seed)
+    elif isinstance(random_seed, int | float | str):
+        try:
+            seed = int(random_seed)
+        except ValueError:
+            seed = 42
+    else:
+        seed = 42
+
+    node_ids = request_payload.get("node_ids")
+    sample_fractions = request_payload.get("sample_fractions")
+    if not isinstance(node_ids, list) or not isinstance(sample_fractions, list):
+        return None, seed
+
+    node_index = next(
+        (index for index, value in enumerate(node_ids) if str(value) == node_id),
+        None,
+    )
+    if node_index is None or node_index >= len(sample_fractions):
+        return None, seed
+
+    sample_fraction = sample_fractions[node_index]
+    if sample_fraction is None:
+        return None, seed
+    if isinstance(sample_fraction, bool):
+        fraction_value = float(sample_fraction)
+    elif isinstance(sample_fraction, int | float | str):
+        try:
+            fraction_value = float(sample_fraction)
+        except ValueError:
+            return None, seed
+    else:
+        return None, seed
+
+    if not (0.0 < fraction_value < 1.0):
+        return None, seed
+    return fraction_value, seed
+
+
+def _default_topic_detach_node_name(
+    task: AnalysisTask,
+    artifact_payload: dict,
+    node_id: str,
+) -> str:
+    raw_base_name = str(artifact_payload.get("node_name") or node_id).strip() or "node"
+    base_name = f"{raw_base_name}_topic"
+    sample_fraction, seed = _topic_sampling_details_for_node(task, node_id)
+    if sample_fraction is None:
+        return base_name
+    return _build_sampling_auto_node_name(
+        base_name=base_name,
+        sample_fraction=sample_fraction,
+        random_seed=seed,
+    )
+
+
 @router.delete("/topic-modeling")
 async def clear_topic_modeling_results(
     current_user: dict = Depends(get_current_user),
@@ -116,6 +216,32 @@ async def clear_topic_modeling_results(
         "state": "successful",
         "message": "Topic modeling analysis results have been cleared.",
     }
+
+
+@router.delete("/topic-modeling/embedding-cache")
+async def clear_topic_modeling_embedding_cache(
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete the on-disk embedding cache for the current user.
+
+    The cache is shared across all workspaces for a given user and model.
+    Clearing it forces the next topic-modelling run to re-encode all documents
+    from scratch.  Useful after a model upgrade or to reclaim disk space.
+    """
+    from ....core.embedding_cache import EmbeddingCache
+    from ....core.mps_embedder import get_active_provider_id
+    from ....core.worker_tasks_topic import _TOPIC_EMBEDDER_REPO_ID
+
+    user_id = current_user["id"]
+    cache_dir = get_user_data_folder(user_id) / "embedding_cache"
+
+    cache = EmbeddingCache(
+        cache_dir=cache_dir,
+        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        provider_id=get_active_provider_id(),
+    )
+    cache.clear()
+    return {"state": "successful", "message": "Embedding cache cleared."}
 
 
 @router.post("/topic-modeling", response_model=TopicModelingResponse)
@@ -222,6 +348,14 @@ async def run_topic_modeling(
                 "min_topic_size": request.min_topic_size,
                 "random_seed": request.random_seed,
                 "representative_words_count": request.representative_words_count,
+                "embedding_cache_dir": str(
+                    get_user_data_folder(user_id) / "embedding_cache"
+                ),
+                "force_mode": request.force_mode,
+                "n_clusters": request.n_clusters,
+                "sample_fractions": request.sample_fractions,
+                "topic_size_mode": request.topic_size_mode,
+                "topic_size_value": request.topic_size_value,
             },
             task_name="Topic Modeling",
         )
@@ -243,6 +377,11 @@ async def run_topic_modeling(
         min_topic_size=min_topic_size,
         random_seed=random_seed,
         representative_words_count=representative_words_count,
+        force_mode=request.force_mode,
+        n_clusters=request.n_clusters,
+        sample_fractions=request.sample_fractions,
+        topic_size_mode=request.topic_size_mode,
+        topic_size_value=request.topic_size_value,
     )
     analysis_tm.save_task(
         AnalysisTask(
@@ -355,6 +494,130 @@ async def topic_modeling_task_result(
         state="failed",
         message="Topic Modeling analysis failed",
         data=None,
+        metadata={"task_id": task_id},
+    )
+
+
+@router.post(
+    "/topic-modeling/tasks/{task_id}/result",
+    response_model=TopicModelingResponse,
+)
+async def update_topic_modeling_task_result(
+    task_id: str,
+    updates: dict | None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Re-aggregate a completed exact topic-modeling task without refitting."""
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if not workspace_id:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    task_manager = get_task_manager(user_id)
+    task = await ensure_task_synced(user_id, workspace_id, task_id, task_manager)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != AnalysisStatus.COMPLETED or not task.result:
+        raise HTTPException(
+            status_code=409,
+            detail="Topic modeling task is not completed",
+        )
+
+    request_payload = task.request.model_dump()
+    if request_payload.get("topic_size_mode") != "exact":
+        raise HTTPException(
+            status_code=409,
+            detail="Only exact topic modeling results can be re-aggregated",
+        )
+
+    requested_topic_count = updates.get("topic_size_value") if isinstance(updates, dict) else None
+    if isinstance(requested_topic_count, bool) or not isinstance(requested_topic_count, int):
+        raise HTTPException(
+            status_code=400,
+            detail="topic_size_value must be an integer",
+        )
+
+    payload = _task_result_payload(task)
+    artifacts = _topic_artifacts_from_task(task)
+    exact_artifact_path = artifacts.get("exact_reduction_artifact_path")
+    if not isinstance(exact_artifact_path, str) or not exact_artifact_path:
+        raise HTTPException(
+            status_code=409,
+            detail="This exact topic-modeling result cannot be re-aggregated",
+        )
+
+    node_artifacts = artifacts.get("nodes") or []
+    node_infos = [
+        {
+            "node_id": node_payload.get("node_id"),
+            "node_name": node_payload.get("node_name"),
+            "text_column": node_payload.get("text_column"),
+            "original_columns": node_payload.get("original_columns") or [],
+        }
+        for node_payload in node_artifacts
+        if isinstance(node_payload, dict)
+    ]
+    if len(node_infos) != len(node_artifacts):
+        raise HTTPException(
+            status_code=500,
+            detail="Topic modeling artifact manifest is invalid",
+        )
+
+    try:
+        updated_payload = reaggregate_exact_topic_modeling_result(
+            artifact_path=exact_artifact_path,
+            existing_artifacts=artifacts,
+            node_infos=node_infos,
+            topic_size_value=requested_topic_count,
+            representative_words_count=int(
+                request_payload.get("representative_words_count") or 5
+            ),
+            random_seed=int(request_payload.get("random_seed") or 42),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to re-aggregate exact topic model: {exc}",
+        ) from exc
+
+    existing_meta = cast(
+        dict[str, object], payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+    )
+    updated_meta = cast(
+        dict[str, object],
+        updated_payload.get("meta") if isinstance(updated_payload.get("meta"), dict) else {},
+    )
+    payload.update(
+        {
+            "topics": updated_payload.get("topics", []),
+            "corpus_sizes": updated_payload.get("corpus_sizes", []),
+            "per_corpus_topic_counts": updated_payload.get(
+                "per_corpus_topic_counts", []
+            ),
+            "artifacts": updated_payload.get("artifacts", artifacts),
+            "meta": {
+                **existing_meta,
+                **updated_meta,
+                "topic_size_mode": "exact",
+                "topic_size_value": requested_topic_count,
+                "representative_words_count": int(
+                    request_payload.get("representative_words_count") or 5
+                ),
+            },
+        }
+    )
+
+    request_payload["topic_size_value"] = requested_topic_count
+    task.request = AnalysisTopicModelingRequest(**request_payload)
+    task.result = GenericAnalysisResult(payload)
+    task_manager.save_task(task)
+
+    return TopicModelingResponse(
+        state="successful",
+        message="Topic Modeling analysis updated",
+        data=TopicModelingData.model_validate(payload),
         metadata={"task_id": task_id},
     )
 
@@ -524,12 +787,10 @@ async def detach_topic_modeling(
         assignments_lf = pl.scan_parquet(assignments_path)
 
         # Filter assignments to selected topics if topic_ids specified
-        join_how = "left"
         if selected_topic_ids:
             assignments_lf = assignments_lf.filter(
                 pl.col(TOPIC_COLUMN).is_in(selected_topic_ids)
             )
-            join_how = "inner"
 
         source_node = ws.nodes[node_id]
         source_data = source_node.data
@@ -555,8 +816,11 @@ async def detach_topic_modeling(
         )
 
         output_lf = (
-            source_data.with_row_index("__row_nr__")
-            .join(assignments_lf, on="__row_nr__", how=join_how)
+            assignments_lf.join(
+                source_data.with_row_index("__row_nr__"),
+                on="__row_nr__",
+                how="inner",
+            )
             .select(
                 [pl.col(col) for col in selected_columns]
                 + [pl.col(TOPIC_COLUMN).alias(topic_column_name)]
@@ -568,7 +832,7 @@ async def detach_topic_modeling(
             (request.new_node_names or {}).get(node_id)
             if request.new_node_names
             else None
-        ) or f"{artifact_payload.get('node_name') or node_id}_topic_detach"
+        ) or _default_topic_detach_node_name(task, artifact_payload, node_id)
 
         new_node = Node(
             data=output_lf,

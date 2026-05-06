@@ -96,6 +96,26 @@ async def clear_tasks(
     }
 
 
+@router.post("/cancel")
+async def cancel_task(
+    task_id: str = Query(...),
+    current_user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Stop a running task and mark it as cancelled.
+
+    Unlike ``/tasks/clear``, the task record is kept so the user can see the
+    cancelled state in the task list and explicitly clear it afterwards.
+    """
+    user_id = current_user["id"]
+    tm = workspace_manager.get_task_manager(user_id)
+    stopped = await tm.stop_task(task_id)
+    return {
+        "state": "successful",
+        "data": {"stopped": stopped},
+        "message": "Task cancelled." if stopped else "Task not found or already finished.",
+    }
+
+
 async def _get_stream_user(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = Query(None),

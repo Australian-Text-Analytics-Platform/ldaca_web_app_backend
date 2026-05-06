@@ -108,8 +108,13 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     source_node = Node(
         data=pl.DataFrame(
             {
-                "document": ["alpha beta", "beta gamma"],
-                "source": ["a", "b"],
+                "document": [
+                    "alpha beta",
+                    "beta gamma",
+                    "gamma delta",
+                    "delta epsilon",
+                ],
+                "source": ["a", "b", "c", "d"],
             }
         ).lazy(),
         name="topic_source",
@@ -122,8 +127,8 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     assignments_path = tmp_path / "assignments.parquet"
     pl.DataFrame(
         {
-            "__row_nr__": [0, 1],
-            "TOPIC_topic": [0, 0],
+            "__row_nr__": [1, 3],
+            "TOPIC_topic": [0, 1],
         },
         schema={"__row_nr__": pl.Int64, "TOPIC_topic": pl.Int64},
     ).write_parquet(assignments_path)
@@ -179,6 +184,7 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
                 min_topic_size=5,
                 random_seed=42,
                 representative_words_count=5,
+                sample_fractions=[0.5],
             ),
             status=AnalysisStatus.COMPLETED,
             result=GenericAnalysisResult(payload),
@@ -208,6 +214,12 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     )
     assert detached_node_id
     assert topic_meanings_node_id
+
+    detached_workspace_node = workspace.nodes[detached_node_id]
+    detached_df = detached_workspace_node.data.collect().sort("document")
+    assert detached_workspace_node.name == "topic_source_topic_sampled_fr_0_5_rs_42"
+    assert detached_df["document"].to_list() == ["beta gamma", "delta epsilon"]
+    assert detached_df["TOPIC_topic"].to_list() == [0, 1]
 
     graph_response = await authenticated_client.get("/api/workspaces/graph")
     assert graph_response.status_code == 200, graph_response.text
