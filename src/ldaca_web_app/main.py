@@ -158,7 +158,7 @@ async def root():
         "version": "3.0.0",
         "description": "Multi-user text analysis platform with workspace management",
         "features": {
-            "authentication": "Google OAuth 2.0",
+            "authentication": "OIDC (Google OAuth 2.0 / CILogon)",
             "workspaces": "Multi-user workspace management with node operations",
             "file_management": "Upload, preview, download with type detection",
             "text_analysis": "polars-text integration",
@@ -333,6 +333,7 @@ def _mount_frontend(target_app: FastAPI) -> None:
             "__BASE_PATH__": base_path,
             "__GOOGLE_CLIENT_ID__": settings.google_client_id or "",
             "__MULTI_USER__": settings.multi_user,
+            "__CILOGON_CLIENT_ID__": settings.cilogon_client_id or "",
         }
         assignments = ";".join(
             f"window.{key}={json.dumps(value)}"

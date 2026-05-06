@@ -50,8 +50,9 @@ def _parse_args(argv: list[str] | None = None):
         "--multi-user",
         action="store_true",
         help=(
-            "Enable multi-user mode with Google OAuth login. "
-            "Requires the GOOGLE_CLIENT_ID environment variable to be set."
+            "Enable multi-user mode with OAuth/OIDC login. "
+            "Requires GOOGLE_CLIENT_ID (Google OAuth) or CILOGON_CLIENT_ID (CILogon OIDC) "
+            "to be set in the environment."
         ),
     )
     return parser.parse_args(argv)
@@ -124,10 +125,13 @@ def main(argv: list[str] | None = None):
         import os
 
         os.environ["MULTI_USER"] = "true"
-        if not os.environ.get("GOOGLE_CLIENT_ID", "").strip():
+        has_google = bool(os.environ.get("GOOGLE_CLIENT_ID", "").strip())
+        has_cilogon = bool(os.environ.get("CILOGON_CLIENT_ID", "").strip())
+        if not has_google and not has_cilogon:
             logger.error(
-                "Multi-user mode requires the GOOGLE_CLIENT_ID environment variable. "
-                "Start with: GOOGLE_CLIENT_ID=<your-client-id> ldaca-web-app --multi-user"
+                "Multi-user mode requires an OAuth/OIDC provider. "
+                "Set GOOGLE_CLIENT_ID for Google OAuth or "
+                "CILOGON_CLIENT_ID + CILOGON_CLIENT_SECRET for CILogon OIDC."
             )
             sys.exit(2)
 

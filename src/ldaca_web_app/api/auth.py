@@ -3,10 +3,12 @@ Unified authentication endpoints following Single Source of Truth principle
 """
 
 import logging
+import secrets
 from typing import Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Query, Request
 from google.auth.transport import requests as grequests
 from google.oauth2 import id_token
 from starlette.responses import RedirectResponse
@@ -192,6 +194,185 @@ async def google_auth_callback(
 
     redirect_url = f"/?{urlencode({'auth_token': token})}"
     return RedirectResponse(url=redirect_url, status_code=303)
+
+
+# ---------------------------------------------------------------------------
+# CILogon OIDC helpers
+# ---------------------------------------------------------------------------
+
+_cilogon_config_cache: dict | None = None
+
+
+async def _get_cilogon_config() -> dict:
+    """Fetch (and cache for the process lifetime) the CILogon discovery document."""
+    global _cilogon_config_cache
+    if _cilogon_config_cache is not None:
+        return _cilogon_config_cache
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(settings.cilogon_discovery_url, timeout=10)
+        resp.raise_for_status()
+        _cilogon_config_cache = resp.json()
+    return _cilogon_config_cache
+
+
+def _cilogon_redirect_uri(request: Request) -> str:
+    """Return the registered callback URL, falling back to auto-detection."""
+    if settings.cilogon_redirect_uri:
+        return settings.cilogon_redirect_uri
+    # Auto-detect: scheme + host + /api/auth/cilogon/callback
+    # Works for local dev; production deployments should set CILOGON_REDIRECT_URI.
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/auth/cilogon/callback"
+
+
+# ---------------------------------------------------------------------------
+# CILogon OIDC endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/cilogon/login")
+async def cilogon_login(request: Request):
+    """Redirect the browser to the CILogon authorization endpoint.
+
+    Generates a random ``state`` for CSRF protection (stored as a short-lived
+    cookie), builds the OIDC authorization URL from the discovery document,
+    and redirects the user to CILogon to authenticate.
+    """
+    if not settings.multi_user:
+        raise HTTPException(400, "CILogon not available in single-user mode")
+    if not settings.cilogon_client_id:
+        raise HTTPException(500, "CILogon not configured (missing CILOGON_CLIENT_ID)")
+
+    config = await _get_cilogon_config()
+    state = secrets.token_urlsafe(32)
+    redirect_uri = _cilogon_redirect_uri(request)
+
+    params = urlencode(
+        {
+            "response_type": "code",
+            "client_id": settings.cilogon_client_id,
+            "redirect_uri": redirect_uri,
+            "scope": "openid email profile org.cilogon.userinfo",
+            "state": state,
+        }
+    )
+    auth_url = f"{config['authorization_endpoint']}?{params}"
+
+    response = RedirectResponse(url=auth_url, status_code=302)
+    response.set_cookie(
+        "cilogon_state",
+        state,
+        max_age=600,  # 10 minutes — enough for the user to complete login
+        httponly=True,
+        samesite="lax",
+    )
+    return response
+
+
+@router.get("/cilogon/callback")
+async def cilogon_callback(
+    request: Request,
+    code: Optional[str] = Query(None),
+    state: Optional[str] = Query(None),
+    error: Optional[str] = Query(None),
+    error_description: Optional[str] = Query(None),
+):
+    """Handle the CILogon authorization code callback.
+
+    CILogon redirects here after the user authenticates. We verify the CSRF
+    ``state``, exchange the authorization code for tokens, fetch the user's
+    profile from the userinfo endpoint, provision a local session, and
+    redirect back to the SPA with the access token in the URL query string.
+    """
+    if error:
+        detail = error_description or error
+        logger.error(
+            "CILogon callback error — error=%r error_description=%r all_params=%s",
+            error, error_description, dict(request.query_params),
+        )
+        raise HTTPException(400, f"CILogon authentication failed: {detail}")
+
+    if not code or not state:
+        raise HTTPException(400, "Missing code or state parameter")
+
+    # CSRF check
+    stored_state = request.cookies.get("cilogon_state")
+    if not stored_state or stored_state != state:
+        raise HTTPException(403, "State mismatch — possible CSRF")
+
+    if not settings.multi_user:
+        raise HTTPException(400, "CILogon not available in single-user mode")
+    if not settings.cilogon_client_id:
+        raise HTTPException(500, "CILogon not configured")
+
+    config = await _get_cilogon_config()
+    redirect_uri = _cilogon_redirect_uri(request)
+
+    # Exchange authorization code for tokens
+    async with httpx.AsyncClient() as client:
+        try:
+            token_resp = await client.post(
+                config["token_endpoint"],
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": settings.cilogon_client_id,
+                    "client_secret": settings.cilogon_client_secret,
+                },
+                timeout=15,
+            )
+            token_resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.error(f"CILogon token exchange failed: {exc.response.text}")
+            raise HTTPException(502, "Token exchange with CILogon failed")
+
+        tokens = token_resp.json()
+        access_token = tokens.get("access_token")
+        if not access_token:
+            raise HTTPException(502, "No access_token in CILogon token response")
+
+        # Fetch user profile from userinfo endpoint
+        try:
+            userinfo_resp = await client.get(
+                config["userinfo_endpoint"],
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            userinfo_resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            logger.error(f"CILogon userinfo fetch failed: {exc.response.text}")
+            raise HTTPException(502, "Fetching user info from CILogon failed")
+
+    userinfo = userinfo_resp.json()
+    logger.info(f"CILogon auth successful for: {userinfo.get('email')}")
+
+    if not userinfo.get("email_verified", True):
+        raise HTTPException(400, "Email not verified by CILogon")
+
+    # Resolve display name: prefer 'name', fall back to given + family
+    name = userinfo.get("name") or (
+        f"{userinfo.get('given_name', '')} {userinfo.get('family_name', '')}".strip()
+    ) or userinfo.get("email", "Unknown")
+
+    user = await get_or_create_user(
+        email=userinfo.get("email"),
+        name=name,
+        picture=userinfo.get("picture"),
+        google_id=userinfo.get("sub"),  # reuse google_id column for OIDC sub
+    )
+    user_folders = setup_user_folders(user["id"])
+    from ..db import update_user_folder_path
+
+    await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
+
+    session = await create_user_session(user["id"])
+    token = session["access_token"]
+
+    redirect_url = f"/?{urlencode({'auth_token': token})}"
+    response = RedirectResponse(url=redirect_url, status_code=303)
+    response.delete_cookie("cilogon_state")
+    return response
 
 
 @router.get("/me", response_model=UserResponse)

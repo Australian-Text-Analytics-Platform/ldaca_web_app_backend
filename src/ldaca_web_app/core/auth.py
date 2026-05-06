@@ -81,4 +81,7 @@ def get_available_auth_methods() -> list:
     if settings.multi_user and settings.google_client_id:
         methods.append({"name": "google", "display_name": "Google", "enabled": True})
 
+    if settings.multi_user and settings.cilogon_client_id:
+        methods.append({"name": "cilogon", "display_name": "CILogon", "enabled": True})
+
     return methods

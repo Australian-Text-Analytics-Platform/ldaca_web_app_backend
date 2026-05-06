@@ -41,7 +41,7 @@ def _make_windows_probe():
     import ctypes
     from ctypes import wintypes
 
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore
 
     open_process = kernel32.OpenProcess
     open_process.restype = wintypes.HANDLE
@@ -66,7 +66,7 @@ def _make_windows_probe():
         """
         handle = open_process(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
-            err = ctypes.get_last_error()
+            err = ctypes.get_last_error()  # type: ignore
             # ERROR_INVALID_PARAMETER (87) is what we get when the pid simply
             # doesn't exist — that's the only signal we trust as "dead".
             # Anything else (ACCESS_DENIED 5, etc.) is "couldn't tell" and we

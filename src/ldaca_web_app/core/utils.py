@@ -12,7 +12,7 @@ import zipfile
 from contextlib import nullcontext
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Union
+from typing import Any, Dict, Iterable, Optional, Union, overload
 
 import polars as pl
 
@@ -67,6 +67,18 @@ def get_user_workspace_folder(user_id: str) -> Path:
     workspace_folder = _user_root_folder(user_id) / "user_workspaces"
     workspace_folder.mkdir(parents=True, exist_ok=True)
     return workspace_folder
+
+
+def get_user_cache_folder(user_id: str) -> Path:
+    """Return the user's internal cache folder, creating it if missing.
+
+    Lives outside `user_data` so it never appears in the file-tree endpoint
+    that backs the data-loader UI. Subdirectories (e.g. `embeddings/`) keep
+    different cache kinds separate so each can be cleared independently.
+    """
+    cache_folder = _user_root_folder(user_id) / "user_cache"
+    cache_folder.mkdir(parents=True, exist_ok=True)
+    return cache_folder
 
 
 def validate_workspace_name(name: str) -> tuple[bool, str]:
@@ -420,6 +432,12 @@ def validate_file_path(file_path: Path, user_folder: Path) -> bool:
 _JS_MAX_SAFE_INTEGER = 2**53 - 1
 
 
+@overload
+def stringify_unsafe_integers(data: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+@overload
+def stringify_unsafe_integers(
+    data: list[list[dict[str, Any]]],
+) -> list[list[dict[str, Any]]]: ...
 def stringify_unsafe_integers(
     data: list[dict[str, Any]] | list[list[dict[str, Any]]],
 ) -> list[dict[str, Any]] | list[list[dict[str, Any]]]:

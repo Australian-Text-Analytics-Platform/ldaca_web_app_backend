@@ -6,18 +6,25 @@ import logging
 import os
 import pickle
 import random
+import re
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional, cast
+from uuid import uuid4
 
 from ..api.workspaces.analyses.generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
 )
 
+
 logger = logging.getLogger(__name__)
 
-_EMBEDDER_CACHE: dict[str, Any] = {}
+_EMBEDDER_CACHE: dict[tuple[str, str], Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+# Pinned revision of the embedder. Update via scripts/check_model_updates.py
+# at release time so the question of bumping is deliberate, not implicit.
+_TOPIC_EMBEDDER_REVISION = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
 
 # Auto-engagement of the online pipeline is disabled: sampling handles large
 # corpora by default.  These thresholds are set to effectively unreachable
@@ -27,16 +34,42 @@ _ONLINE_THRESHOLD_DOCS = 10_000_000
 _ONLINE_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
 
 
+def _make_reagg_path(old_path: Path) -> Path:
+    """Return a fresh unique path beside `old_path` for a re-aggregation rewrite.
+
+    Re-aggregation must not overwrite `old_path` because previously-detached
+    workspace nodes hold lazy `scan_parquet(old_path)` references. We keep
+    the original directory and the original "base" stem (stripping any prior
+    `_r<hex>` suffix from earlier re-aggregations to keep names compact) and
+    append a fresh short hex suffix.
+    """
+    base_stem = re.sub(r"(_r[0-9a-f]+)+$", "", old_path.stem)
+    return old_path.parent / f"{base_stem}_r{uuid4().hex[:8]}{old_path.suffix}"
+
+
 def _sample_corpus(
     docs: list[str], fraction: float, seed: int
 ) -> tuple[list[str], list[int]]:
-    """Return a reproducible random sample of docs and their original indices."""
-    import random as _random
-    rng = _random.Random(seed)
-    k = max(1, round(len(docs) * fraction))
-    if k >= len(docs):
+    """Return a reproducible random sample of docs and their original indices.
+
+    Uses the same Polars expression as the preprocessing slice tool
+    (`pl.int_range(...).sample(fraction=..., seed=...)`) so identical
+    `(seed, fraction)` parameters select identical rows across tools.
+    Operates on an in-memory integer Series; no parquet artifact is created.
+    """
+    import polars as pl
+    if fraction >= 1.0:
         return docs, list(range(len(docs)))
-    indices = sorted(rng.sample(range(len(docs)), k))
+    indices = (
+        pl.int_range(len(docs), eager=True)
+        .sample(fraction=fraction, seed=seed)
+        .sort()
+        .to_list()
+    )
+    if not indices:
+        # Polars floors fraction*N, so a tiny corpus with very small fraction
+        # can yield zero rows. Topic modelling needs at least one document.
+        return [docs[0]], [0]
     return [docs[i] for i in indices], indices
 
 
@@ -143,7 +176,8 @@ def _get_embedder(model_id: str):
     throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
     26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
     """
-    embedder = _EMBEDDER_CACHE.get(model_id)
+    cache_key = (model_id, _TOPIC_EMBEDDER_REVISION)
+    embedder = _EMBEDDER_CACHE.get(cache_key)
     if embedder is not None:
         return embedder
 
@@ -152,13 +186,13 @@ def _get_embedder(model_id: str):
     if is_mps_available():
         from .mps_embedder import MpsEmbedder
 
-        embedder = MpsEmbedder.from_pretrained(model_id)
+        embedder = MpsEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
     else:
         from .onnx_embedder import OnnxEmbedder
 
-        embedder = OnnxEmbedder.from_pretrained(model_id)
+        embedder = OnnxEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
 
-    _EMBEDDER_CACHE[model_id] = embedder
+    _EMBEDDER_CACHE[cache_key] = embedder
     return embedder
 
 
@@ -267,6 +301,14 @@ def _build_topic_result_payload(
     import polars as pl
     from bertopic._utils import select_topic_representation
 
+    # Tracks parquet paths that this call is replacing during re-aggregation.
+    # Previously-detached workspace nodes still hold lazy references to the
+    # superseded paths, so we keep the old files on disk and only record them
+    # in the manifest. The existing task-cleanup helper walks the manifest
+    # tree to delete every `*_path` / `*_parquet_path` key it finds, so listing
+    # them here under `superseded_artifacts` lets cleanup reclaim the disk
+    # whenever the task is finally cleared.
+    newly_superseded: list[dict[str, str]] = []
     if existing_artifacts is None:
         if artifact_prefix is None or artifact_root is None:
             raise ValueError("artifact_prefix and artifact_root are required")
@@ -274,11 +316,17 @@ def _build_topic_result_payload(
         topic_meanings_path = artifact_root_path / f"{artifact_prefix}_topic_meanings.parquet"
         existing_node_artifacts: list[dict[str, Any]] = []
     else:
-        topic_meanings_path = Path(
+        old_topic_meanings_path = Path(
             str(existing_artifacts.get("topic_meanings_parquet_path") or "")
         )
-        if not str(topic_meanings_path):
+        if not str(old_topic_meanings_path):
             raise ValueError("Topic meanings artifact path is missing")
+        # Re-aggregation must not overwrite the meanings parquet — the previous
+        # detach's `topic_meanings` node scans it lazily.
+        topic_meanings_path = _make_reagg_path(old_topic_meanings_path)
+        newly_superseded.append(
+            {"topic_meanings_parquet_path": str(old_topic_meanings_path)}
+        )
         node_payloads = existing_artifacts.get("nodes")
         if not isinstance(node_payloads, list):
             raise ValueError("Topic assignment artifacts are missing")
@@ -321,11 +369,17 @@ def _build_topic_result_payload(
                 or node_infos[idx].get("original_columns")
                 or []
             )
-            assignments_path = Path(
+            old_assignments_path = Path(
                 str(existing_node.get("assignments_parquet_path") or "")
             )
-            if not str(assignments_path):
+            if not str(old_assignments_path):
                 raise ValueError("Topic assignment artifact path is missing")
+            # Re-aggregation must not overwrite the assignments parquet — the
+            # previous detach's lazy plan still scans it.
+            assignments_path = _make_reagg_path(old_assignments_path)
+            newly_superseded.append(
+                {"assignments_parquet_path": str(old_assignments_path)}
+            )
 
         pl.DataFrame(
             {
@@ -504,6 +558,17 @@ def _build_topic_result_payload(
         if isinstance(exact_artifact_path, str) and exact_artifact_path:
             artifacts["exact_reduction_artifact_path"] = exact_artifact_path
             artifacts["version"] = max(2, int(existing_artifacts.get("version") or 1))
+        # Carry forward paths superseded by earlier re-aggregations so they
+        # remain in the manifest tree and are reclaimed by task cleanup.
+        prior_superseded = existing_artifacts.get("superseded_artifacts")
+        carried = (
+            [item for item in prior_superseded if isinstance(item, dict)]
+            if isinstance(prior_superseded, list)
+            else []
+        )
+        combined = carried + newly_superseded
+        if combined:
+            artifacts["superseded_artifacts"] = combined
 
     return {
         "topics": topic_payloads,
@@ -641,7 +706,9 @@ def _embed_with_cache(
 
     cache = EmbeddingCache(
         cache_dir=Path(cache_dir),
-        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        # Include revision in the cache key so a bumped embedder version
+        # writes to a fresh cache file rather than reusing stale embeddings.
+        model_id=f"{_TOPIC_EMBEDDER_REPO_ID}@{_TOPIC_EMBEDDER_REVISION[:8]}",
         provider_id=getattr(embedder, "provider", "cpu"),
     )
 

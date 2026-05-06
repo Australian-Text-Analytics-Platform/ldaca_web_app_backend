@@ -167,11 +167,14 @@ class OnnxEmbedder:
         return np.concatenate(chunks, axis=0) if len(chunks) > 1 else chunks[0]
 
     @classmethod
-    def from_pretrained(cls, model_id: str) -> "OnnxEmbedder":
+    def from_pretrained(
+        cls, model_id: str, *, revision: str | None = None
+    ) -> "OnnxEmbedder":
         """Download (or load from HF cache) an ONNX model and return an embedder.
 
         Provider selection and model-file choice are both done here so the
-        caller only needs to pass the HuggingFace repo ID.
+        caller only needs to pass the HuggingFace repo ID. Pass a `revision`
+        SHA to pin to a specific upstream commit.
         """
         from huggingface_hub import hf_hub_download
 
@@ -179,7 +182,9 @@ class OnnxEmbedder:
         onnx_filename = _select_onnx_filename(providers)
         try:
             model_path = Path(
-                hf_hub_download(repo_id=model_id, filename=onnx_filename)
+                hf_hub_download(
+                    repo_id=model_id, filename=onnx_filename, revision=revision
+                )
             )
         except Exception:
             logger.warning(
@@ -188,11 +193,17 @@ class OnnxEmbedder:
                 model_id,
             )
             model_path = Path(
-                hf_hub_download(repo_id=model_id, filename="onnx/model.onnx")
+                hf_hub_download(
+                    repo_id=model_id,
+                    filename="onnx/model.onnx",
+                    revision=revision,
+                )
             )
 
         tokenizer_path = Path(
-            hf_hub_download(repo_id=model_id, filename="tokenizer.json")
+            hf_hub_download(
+                repo_id=model_id, filename="tokenizer.json", revision=revision
+            )
         )
 
         return cls(model_path=model_path, tokenizer_path=tokenizer_path)
