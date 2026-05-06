@@ -6,12 +6,16 @@ import logging
 import os
 import pickle
 import random
+import re
+from pathlib import Path
 from typing import Any, Callable, Dict, Optional, cast
+from uuid import uuid4
 
 from ..api.workspaces.analyses.generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +29,19 @@ _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
 # explicitly passes force_mode="online".
 _ONLINE_THRESHOLD_DOCS = 10_000_000
 _ONLINE_THRESHOLD_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
+
+
+def _make_reagg_path(old_path: Path) -> Path:
+    """Return a fresh unique path beside `old_path` for a re-aggregation rewrite.
+
+    Re-aggregation must not overwrite `old_path` because previously-detached
+    workspace nodes hold lazy `scan_parquet(old_path)` references. We keep
+    the original directory and the original "base" stem (stripping any prior
+    `_r<hex>` suffix from earlier re-aggregations to keep names compact) and
+    append a fresh short hex suffix.
+    """
+    base_stem = re.sub(r"(_r[0-9a-f]+)+$", "", old_path.stem)
+    return old_path.parent / f"{base_stem}_r{uuid4().hex[:8]}{old_path.suffix}"
 
 
 def _sample_corpus(
@@ -267,6 +284,14 @@ def _build_topic_result_payload(
     import polars as pl
     from bertopic._utils import select_topic_representation
 
+    # Tracks parquet paths that this call is replacing during re-aggregation.
+    # Previously-detached workspace nodes still hold lazy references to the
+    # superseded paths, so we keep the old files on disk and only record them
+    # in the manifest. The existing task-cleanup helper walks the manifest
+    # tree to delete every `*_path` / `*_parquet_path` key it finds, so listing
+    # them here under `superseded_artifacts` lets cleanup reclaim the disk
+    # whenever the task is finally cleared.
+    newly_superseded: list[dict[str, str]] = []
     if existing_artifacts is None:
         if artifact_prefix is None or artifact_root is None:
             raise ValueError("artifact_prefix and artifact_root are required")
@@ -274,11 +299,17 @@ def _build_topic_result_payload(
         topic_meanings_path = artifact_root_path / f"{artifact_prefix}_topic_meanings.parquet"
         existing_node_artifacts: list[dict[str, Any]] = []
     else:
-        topic_meanings_path = Path(
+        old_topic_meanings_path = Path(
             str(existing_artifacts.get("topic_meanings_parquet_path") or "")
         )
-        if not str(topic_meanings_path):
+        if not str(old_topic_meanings_path):
             raise ValueError("Topic meanings artifact path is missing")
+        # Re-aggregation must not overwrite the meanings parquet — the previous
+        # detach's `topic_meanings` node scans it lazily.
+        topic_meanings_path = _make_reagg_path(old_topic_meanings_path)
+        newly_superseded.append(
+            {"topic_meanings_parquet_path": str(old_topic_meanings_path)}
+        )
         node_payloads = existing_artifacts.get("nodes")
         if not isinstance(node_payloads, list):
             raise ValueError("Topic assignment artifacts are missing")
@@ -321,11 +352,17 @@ def _build_topic_result_payload(
                 or node_infos[idx].get("original_columns")
                 or []
             )
-            assignments_path = Path(
+            old_assignments_path = Path(
                 str(existing_node.get("assignments_parquet_path") or "")
             )
-            if not str(assignments_path):
+            if not str(old_assignments_path):
                 raise ValueError("Topic assignment artifact path is missing")
+            # Re-aggregation must not overwrite the assignments parquet — the
+            # previous detach's lazy plan still scans it.
+            assignments_path = _make_reagg_path(old_assignments_path)
+            newly_superseded.append(
+                {"assignments_parquet_path": str(old_assignments_path)}
+            )
 
         pl.DataFrame(
             {
@@ -504,6 +541,17 @@ def _build_topic_result_payload(
         if isinstance(exact_artifact_path, str) and exact_artifact_path:
             artifacts["exact_reduction_artifact_path"] = exact_artifact_path
             artifacts["version"] = max(2, int(existing_artifacts.get("version") or 1))
+        # Carry forward paths superseded by earlier re-aggregations so they
+        # remain in the manifest tree and are reclaimed by task cleanup.
+        prior_superseded = existing_artifacts.get("superseded_artifacts")
+        carried = (
+            [item for item in prior_superseded if isinstance(item, dict)]
+            if isinstance(prior_superseded, list)
+            else []
+        )
+        combined = carried + newly_superseded
+        if combined:
+            artifacts["superseded_artifacts"] = combined
 
     return {
         "topics": topic_payloads,
