@@ -40,13 +40,54 @@ def _prefetch_spacy_model() -> None:
 
 
 def _prefetch_topic_embedder_mps() -> None:
-    """Download the SentenceTransformer model weights for MPS inference.
+    """Ensure the SentenceTransformer model weights are cached for MPS inference.
 
     On Apple Silicon, the worker uses SentenceTransformer + PyTorch MPS rather
-    than the ONNX path.  This prefetch loads the model on CPU (safe from a
-    daemon thread) which populates the HuggingFace disk cache; the worker then
-    loads from cache with device="mps".
+    than the ONNX path. This prefetch first probes the HuggingFace cache with
+    `local_files_only=True` — if the key files are already on disk, we skip the
+    network entirely (matches the ONNX prefetch pattern). Only when the cache
+    is incomplete do we instantiate `SentenceTransformer` to download.
     """
+    try:
+        from huggingface_hub import hf_hub_download
+        from huggingface_hub.errors import LocalEntryNotFoundError
+    except Exception:
+        logger.warning(
+            "[prefetch] huggingface_hub not importable; MPS embedder prefetch skipped",
+            exc_info=True,
+        )
+        return
+
+    # Probe key files — config + tokenizer + weights (safetensors preferred,
+    # pytorch_model.bin fallback). If all are cached, skip network entirely.
+    try:
+        hf_hub_download(
+            repo_id=_TOPIC_EMBEDDER_REPO_ID,
+            filename="config.json",
+            local_files_only=True,
+        )
+        hf_hub_download(
+            repo_id=_TOPIC_EMBEDDER_REPO_ID,
+            filename="tokenizer.json",
+            local_files_only=True,
+        )
+        try:
+            hf_hub_download(
+                repo_id=_TOPIC_EMBEDDER_REPO_ID,
+                filename="model.safetensors",
+                local_files_only=True,
+            )
+        except LocalEntryNotFoundError:
+            hf_hub_download(
+                repo_id=_TOPIC_EMBEDDER_REPO_ID,
+                filename="pytorch_model.bin",
+                local_files_only=True,
+            )
+        logger.info("[prefetch] MPS embedder model already cached")
+        return
+    except (LocalEntryNotFoundError, Exception):
+        pass
+
     try:
         from sentence_transformers import SentenceTransformer
 
