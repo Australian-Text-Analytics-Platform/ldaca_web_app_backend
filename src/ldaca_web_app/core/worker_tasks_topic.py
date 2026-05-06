@@ -19,9 +19,12 @@ from ..api.workspaces.analyses.generated_columns import (
 
 logger = logging.getLogger(__name__)
 
-_EMBEDDER_CACHE: dict[str, Any] = {}
+_EMBEDDER_CACHE: dict[tuple[str, str], Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 _TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+# Pinned revision of the embedder. Update via scripts/check_model_updates.py
+# at release time so the question of bumping is deliberate, not implicit.
+_TOPIC_EMBEDDER_REVISION = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
 
 # Auto-engagement of the online pipeline is disabled: sampling handles large
 # corpora by default.  These thresholds are set to effectively unreachable
@@ -173,7 +176,8 @@ def _get_embedder(model_id: str):
     throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
     26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
     """
-    embedder = _EMBEDDER_CACHE.get(model_id)
+    cache_key = (model_id, _TOPIC_EMBEDDER_REVISION)
+    embedder = _EMBEDDER_CACHE.get(cache_key)
     if embedder is not None:
         return embedder
 
@@ -182,13 +186,13 @@ def _get_embedder(model_id: str):
     if is_mps_available():
         from .mps_embedder import MpsEmbedder
 
-        embedder = MpsEmbedder.from_pretrained(model_id)
+        embedder = MpsEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
     else:
         from .onnx_embedder import OnnxEmbedder
 
-        embedder = OnnxEmbedder.from_pretrained(model_id)
+        embedder = OnnxEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
 
-    _EMBEDDER_CACHE[model_id] = embedder
+    _EMBEDDER_CACHE[cache_key] = embedder
     return embedder
 
 
@@ -702,7 +706,9 @@ def _embed_with_cache(
 
     cache = EmbeddingCache(
         cache_dir=Path(cache_dir),
-        model_id=_TOPIC_EMBEDDER_REPO_ID,
+        # Include revision in the cache key so a bumped embedder version
+        # writes to a fresh cache file rather than reusing stale embeddings.
+        model_id=f"{_TOPIC_EMBEDDER_REPO_ID}@{_TOPIC_EMBEDDER_REVISION[:8]}",
         provider_id=getattr(embedder, "provider", "cpu"),
     )
 

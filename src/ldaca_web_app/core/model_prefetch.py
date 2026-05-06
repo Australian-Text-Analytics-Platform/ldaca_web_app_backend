@@ -11,11 +11,12 @@ from __future__ import annotations
 import logging
 import threading
 
-logger = logging.getLogger(__name__)
+from .worker_tasks_topic import (
+    _TOPIC_EMBEDDER_REPO_ID,
+    _TOPIC_EMBEDDER_REVISION,
+)
 
-# ONNX model + tokenizer used by topic modelling (BERTopic embeddings). Must
-# stay in sync with _TOPIC_EMBEDDER_REPO_ID in worker_tasks_topic.py.
-_TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
+logger = logging.getLogger(__name__)
 
 
 
@@ -59,31 +60,39 @@ def _prefetch_topic_embedder_mps() -> None:
         return
 
     # Probe key files — config + tokenizer + weights (safetensors preferred,
-    # pytorch_model.bin fallback). If all are cached, skip network entirely.
+    # pytorch_model.bin fallback). If all are cached at the pinned revision,
+    # skip network entirely.
     try:
         hf_hub_download(
             repo_id=_TOPIC_EMBEDDER_REPO_ID,
             filename="config.json",
+            revision=_TOPIC_EMBEDDER_REVISION,
             local_files_only=True,
         )
         hf_hub_download(
             repo_id=_TOPIC_EMBEDDER_REPO_ID,
             filename="tokenizer.json",
+            revision=_TOPIC_EMBEDDER_REVISION,
             local_files_only=True,
         )
         try:
             hf_hub_download(
                 repo_id=_TOPIC_EMBEDDER_REPO_ID,
                 filename="model.safetensors",
+                revision=_TOPIC_EMBEDDER_REVISION,
                 local_files_only=True,
             )
         except LocalEntryNotFoundError:
             hf_hub_download(
                 repo_id=_TOPIC_EMBEDDER_REPO_ID,
                 filename="pytorch_model.bin",
+                revision=_TOPIC_EMBEDDER_REVISION,
                 local_files_only=True,
             )
-        logger.info("[prefetch] MPS embedder model already cached")
+        logger.info(
+            "[prefetch] MPS embedder model already cached (revision %s)",
+            _TOPIC_EMBEDDER_REVISION[:8],
+        )
         return
     except (LocalEntryNotFoundError, Exception):
         pass
@@ -92,10 +101,15 @@ def _prefetch_topic_embedder_mps() -> None:
         from sentence_transformers import SentenceTransformer
 
         logger.info(
-            "[prefetch] Downloading SentenceTransformer model %s for MPS...",
+            "[prefetch] Downloading SentenceTransformer model %s @ %s for MPS...",
             _TOPIC_EMBEDDER_REPO_ID,
+            _TOPIC_EMBEDDER_REVISION[:8],
         )
-        SentenceTransformer(_TOPIC_EMBEDDER_REPO_ID, device="cpu")
+        SentenceTransformer(
+            _TOPIC_EMBEDDER_REPO_ID,
+            device="cpu",
+            revision=_TOPIC_EMBEDDER_REVISION,
+        )
         logger.info("[prefetch] SentenceTransformer model ready")
     except Exception:
         logger.warning("[prefetch] MPS model prefetch failed", exc_info=True)
@@ -124,19 +138,24 @@ def _prefetch_topic_embedder_onnx() -> None:
     providers = _select_providers()
     onnx_filename = _select_onnx_filename(providers)
 
-    # Probe primary files — if both are cached we're done.
+    # Probe primary files — if both are cached at the pinned revision we're done.
     try:
         hf_hub_download(
             repo_id=_TOPIC_EMBEDDER_REPO_ID,
             filename=onnx_filename,
+            revision=_TOPIC_EMBEDDER_REVISION,
             local_files_only=True,
         )
         hf_hub_download(
             repo_id=_TOPIC_EMBEDDER_REPO_ID,
             filename="tokenizer.json",
+            revision=_TOPIC_EMBEDDER_REVISION,
             local_files_only=True,
         )
-        logger.info("[prefetch] topic embedder ONNX files already cached")
+        logger.info(
+            "[prefetch] topic embedder ONNX files already cached (revision %s)",
+            _TOPIC_EMBEDDER_REVISION[:8],
+        )
         return
     except (LocalEntryNotFoundError, Exception):
         pass
@@ -147,13 +166,18 @@ def _prefetch_topic_embedder_onnx() -> None:
         files_to_fetch.append("onnx/model.onnx")
 
     logger.info(
-        "[prefetch] Downloading ONNX topic embedder %s...",
+        "[prefetch] Downloading ONNX topic embedder %s @ %s...",
         _TOPIC_EMBEDDER_REPO_ID,
+        _TOPIC_EMBEDDER_REVISION[:8],
     )
     try:
         for filename in files_to_fetch:
             try:
-                hf_hub_download(repo_id=_TOPIC_EMBEDDER_REPO_ID, filename=filename)
+                hf_hub_download(
+                    repo_id=_TOPIC_EMBEDDER_REPO_ID,
+                    filename=filename,
+                    revision=_TOPIC_EMBEDDER_REVISION,
+                )
                 logger.info("[prefetch] downloaded %s", filename)
             except Exception as exc:
                 logger.warning("[prefetch] could not download %s: %s", filename, exc)

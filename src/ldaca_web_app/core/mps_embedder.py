@@ -57,14 +57,19 @@ class MpsEmbedder:
 
     provider: str = "MPS"
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, *, revision: str | None = None) -> None:
         import torch
         from sentence_transformers import SentenceTransformer
 
         device = "mps" if torch.backends.mps.is_available() else "cpu"
-        self._model = SentenceTransformer(model_id, device=device)
+        self._model = SentenceTransformer(model_id, device=device, revision=revision)
         self.provider = "MPS" if device == "mps" else "CPU-ST"
-        logger.info("[MpsEmbedder] device=%s model=%s", device, model_id)
+        logger.info(
+            "[MpsEmbedder] device=%s model=%s revision=%s",
+            device,
+            model_id,
+            (revision or "main")[:8],
+        )
 
     def encode(
         self,
@@ -86,5 +91,5 @@ class MpsEmbedder:
         )
 
     @classmethod
-    def from_pretrained(cls, model_id: str) -> "MpsEmbedder":
-        return cls(model_id)
+    def from_pretrained(cls, model_id: str, *, revision: str | None = None) -> "MpsEmbedder":
+        return cls(model_id, revision=revision)

@@ -261,7 +261,7 @@ def _patched_from_pretrained(tmp_path, monkeypatch, *, platform_machine="x86_64"
         lambda: ["CPUExecutionProvider"],
     )
 
-    def fake_hf_download(repo_id, filename):
+    def fake_hf_download(repo_id, filename, **kwargs):
         downloaded.append(filename)
         p = tmp_path / filename.replace("/", "_")
         p.write_bytes(b"fake")
@@ -294,7 +294,7 @@ def test_from_pretrained_falls_back_to_fp32_on_missing_quantized(tmp_path, monke
         lambda: ["CPUExecutionProvider"],
     )
 
-    def fake_hf_download(repo_id, filename):
+    def fake_hf_download(repo_id, filename, **kwargs):
         if filename == "onnx/model_quint8_avx2.onnx":
             raise FileNotFoundError("not found")
         p = tmp_path / filename.replace("/", "_")
@@ -326,7 +326,7 @@ def test_from_pretrained_uses_arm64_quantized_even_when_coreml_available(tmp_pat
     )
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
 
-    def fake_hf_download(repo_id, filename):
+    def fake_hf_download(repo_id, filename, **kwargs):
         downloaded.append(filename)
         p = tmp_path / filename.replace("/", "_")
         p.write_bytes(b"fake")
