@@ -37,6 +37,7 @@ from .concordance_core import (
     DEFAULT_CONCORDANCE_PAGE_SIZE,
     build_concordance_response,
     normalize_saved_request,
+    read_dispersion_bins,
 )
 from .current_tasks import get_current_task_ids_for_analysis
 
@@ -225,6 +226,52 @@ async def concordance_task_request(
         raise HTTPException(status_code=404, detail="Task not found")
     request = task.request
     return request.model_dump()
+
+
+@router.get("/concordance/tasks/{task_id}/bins")
+async def concordance_task_dispersion_bins(
+    task_id: str,
+    node_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Return 100-bucket dispersion histogram for one materialised concordance node.
+
+    Used by:
+    - Frontend dispersion summary plot, when a node has been materialised by
+      "Process All". The frontend re-aggregates these 100 buckets into a
+      smaller number of display bins (4, 5, 10, 20, 25, 50, 100) without
+      another network round-trip.
+
+    Why:
+    - Server-side pre-binning collapses the response from one row per hit
+      (potentially tens of MB on large blocks) to ~100 rows per matched-text
+      term, regardless of corpus size.
+    """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if not workspace_id:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+    task_manager = get_task_manager(user_id)
+    task = task_manager.get_task(task_id)
+    if task is None or not task.request:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    materialized_paths = getattr(task.request, "materialized_paths", None) or {}
+    path = materialized_paths.get(node_id)
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No materialised concordance for node {node_id}",
+        )
+
+    node_columns = getattr(task.request, "node_columns", None) or {}
+    document_column = node_columns.get(node_id)
+
+    payload = read_dispersion_bins(path, document_column=document_column)
+    return {
+        "node_id": node_id,
+        **payload,
+    }
 
 
 @router.get("/concordance/tasks/{task_id}/result")

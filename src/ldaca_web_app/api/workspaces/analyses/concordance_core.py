@@ -17,6 +17,7 @@ from .generated_columns import (
     CONC_LEFT_CONTEXT_COLUMN,
     CONC_MATCHED_TEXT_COLUMN,
     CONC_RIGHT_CONTEXT_COLUMN,
+    CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
     MATERIALIZED_CONCORDANCE_COLUMNS,
     concordance_struct_projection,
@@ -479,6 +480,72 @@ def compute_materialized_page(
             "descending": descending,
         },
         "materialized": True,
+    }
+
+
+DISPERSION_BIN_COUNT = 100
+
+
+def read_dispersion_bins(
+    materialized_path: str,
+    document_column: Optional[str] = None,
+) -> dict[str, Any]:
+    """Pre-bin a materialised concordance parquet into 100 fixed buckets.
+
+    Used by:
+    - `concordance.concordance_task_dispersion_bins`
+
+    Why:
+    - The dispersion summary plot needs counts of hits across relative positions
+      in each document. By aggregating to 100 (1 %-wide) bins server-side we
+      ship a payload of size `O(distinct_matched_texts × 100)` instead of one
+      row per hit, which scales to materialised parquets with millions of rows.
+      The frontend can then re-aggregate to any display bin count whose value
+      divides 100 (4, 5, 10, 20, 25, 50, 100) without another round trip.
+    """
+    lf = pl.scan_parquet(materialized_path)
+    schema = lf.collect_schema()
+
+    has_matched_text = CONC_MATCHED_TEXT_COLUMN in schema
+    has_start_idx = CONC_START_IDX_COLUMN in schema
+    doc_col = document_column if document_column and document_column in schema else None
+
+    if not has_matched_text or not has_start_idx or doc_col is None:
+        return {
+            "total_hits": 0,
+            "document_column": document_column,
+            "bin_count": DISPERSION_BIN_COUNT,
+            "rows": [],
+        }
+
+    doc_length_expr = (
+        pl.col(doc_col).cast(pl.Utf8, strict=False).str.len_chars().cast(pl.Int64)
+    )
+    start_idx_expr = pl.col(CONC_START_IDX_COLUMN).cast(pl.Int64, strict=False)
+    bin_idx_expr = (
+        (start_idx_expr.cast(pl.Float64) / doc_length_expr.cast(pl.Float64) * DISPERSION_BIN_COUNT)
+        .floor()
+        .cast(pl.Int64)
+        .clip(0, DISPERSION_BIN_COUNT - 1)
+    )
+
+    binned = (
+        lf.filter(doc_length_expr > 0)
+        .filter(start_idx_expr.is_not_null())
+        .with_columns(bin_idx_expr.alias("bin_idx"))
+        .group_by([CONC_MATCHED_TEXT_COLUMN, "bin_idx"])
+        .len()
+        .rename({"len": "count", CONC_MATCHED_TEXT_COLUMN: "matched_text"})
+        .sort(["matched_text", "bin_idx"])
+    )
+    df = cast(pl.DataFrame, binned.collect())
+
+    total_hits = int(df["count"].sum()) if df.height > 0 else 0
+    return {
+        "total_hits": total_hits,
+        "document_column": doc_col,
+        "bin_count": DISPERSION_BIN_COUNT,
+        "rows": stringify_unsafe_integers(df.to_dicts()),
     }
 
 
