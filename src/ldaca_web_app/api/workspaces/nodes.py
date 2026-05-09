@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional, cast
 
 import polars as pl
@@ -125,6 +125,37 @@ def _is_string_list_dtype(dtype: Any) -> bool:
     return dtype == pl.List(pl.String) or dtype == pl.List(pl.Utf8)
 
 
+def _make_temporal_literal(value: datetime, column_dtype: Any) -> pl.Expr:
+    """Build a polars literal that matches the column's datetime dtype.
+
+    The frontend sends ISO strings with an explicit ``+00:00`` offset, so
+    ``_parse_temporal`` produces tz-aware ``datetime`` objects. ``pl.lit``
+    on a tz-aware ``datetime`` yields ``Datetime("us", "UTC")``. If the
+    target column is tz-naive (e.g. ``Datetime("ns")`` from a Reddit/Twitter
+    dump where timestamps are conceptually UTC but stored without a tz),
+    polars refuses the comparison with a dtype-mismatch error.
+
+    Casting the literal to the column's exact dtype keeps the comparison
+    valid in both tz-naive-column and tz-aware-column cases.
+    """
+    if isinstance(column_dtype, pl.Datetime):
+        column_tz = getattr(column_dtype, "time_zone", None)
+        if column_tz is None and value.tzinfo is not None:
+            # Column is naive: drop the tz offset. We treat the user's
+            # picked wall-clock time as already being in the column's frame,
+            # which matches how naive ns columns from social-data dumps are
+            # stored and read.
+            value = value.replace(tzinfo=None)
+        elif column_tz is not None and value.tzinfo is None:
+            # Column has a tz but user value is naive: assume UTC.
+            value = value.replace(tzinfo=timezone.utc)
+        return pl.lit(value).cast(column_dtype)
+    if isinstance(column_dtype, pl.Date):
+        # Date-only columns: drop time component to keep cast unambiguous.
+        return pl.lit(value.date()).cast(column_dtype)
+    return pl.lit(value)
+
+
 def _build_filter_expression(
     request: FilterRequest,
     column_dtypes: Optional[dict[str, Any]] = None,
@@ -153,7 +184,11 @@ def _build_filter_expression(
             "lte",
         }:
             value = _coerce_scalar(_parse_temporal(raw_value))
-            lit_val = pl.lit(value) if isinstance(value, datetime) else value
+            lit_val = (
+                _make_temporal_literal(value, column_dtype)
+                if isinstance(value, datetime)
+                else value
+            )
             if op in {"eq", "equals"}:
                 expr = column_expr == lit_val
             elif op == "ne":
@@ -231,17 +266,17 @@ def _build_filter_expression(
                 )
                 if start_val is not None and end_val is not None:
                     if isinstance(start_val, datetime):
-                        start_val = pl.lit(start_val)
+                        start_val = _make_temporal_literal(start_val, column_dtype)
                     if isinstance(end_val, datetime):
-                        end_val = pl.lit(end_val)
+                        end_val = _make_temporal_literal(end_val, column_dtype)
                     expr = column_expr.is_between(start_val, end_val, closed="both")
                 elif start_val is not None:
                     if isinstance(start_val, datetime):
-                        start_val = pl.lit(start_val)
+                        start_val = _make_temporal_literal(start_val, column_dtype)
                     expr = column_expr >= start_val
                 elif end_val is not None:
                     if isinstance(end_val, datetime):
-                        end_val = pl.lit(end_val)
+                        end_val = _make_temporal_literal(end_val, column_dtype)
                     expr = column_expr <= end_val
         else:
             expr = column_expr.str.contains(str(raw_value))
