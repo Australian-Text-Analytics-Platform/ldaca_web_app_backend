@@ -225,9 +225,11 @@ async def delete_node_column(
 
     node = ws.nodes[node_id]
 
-    dropped_node = node.drop(column_name)
+    node.data = node.data.drop(column_name)
+    if node.document == column_name:
+        node.document = None
     update_workspace(user_id, workspace_id, best_effort=True)
-    return dropped_node.info()
+    return node.info()
 
 
 @router.put("/nodes/{node_id}/columns/{column_name}")
