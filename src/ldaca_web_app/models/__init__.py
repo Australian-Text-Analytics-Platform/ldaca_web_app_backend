@@ -656,7 +656,7 @@ class FilterRequest(BaseModel):
 
 
 class SliceRequest(BaseModel):
-    mode: Literal["slice", "random_sample"] = "slice"
+    mode: Literal["slice", "random_sample", "shuffle"] = "slice"
     offset: int = Field(default=0, ge=0)
     length: Optional[int] = Field(default=None, ge=0)
     sample_size: Optional[float] = Field(default=None, gt=0)

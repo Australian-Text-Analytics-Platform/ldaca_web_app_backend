@@ -281,6 +281,20 @@ def _build_slice_or_sample_lazy(
     node_name: str,
     request: SliceRequest,
 ) -> tuple[pl.LazyFrame, str, str]:
+    if request.mode == "shuffle":
+        seed_args = f", seed={request.random_seed}" if request.random_seed is not None else ""
+        shuffle_indices = pl.int_range(pl.len()).sample(
+            fraction=1.0,
+            shuffle=True,
+            seed=request.random_seed,
+        )
+        shuffled_data = lazy_data.select(pl.all().gather(shuffle_indices))
+        return (
+            shuffled_data,
+            f"{node_name}_shuffled",
+            f"shuffle({node_name}{seed_args})",
+        )
+
     if request.mode == "random_sample":
         if request.sample_size is None:
             raise HTTPException(
