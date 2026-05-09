@@ -146,6 +146,7 @@ def concordance_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
@@ -166,6 +167,7 @@ def concordance_detach_task(
         new_node_name,
         include_document_column=include_document_column,
         extra_columns_data=extra_columns_data,
+        extra_columns_dtypes=extra_columns_dtypes,
         materialized_path=materialized_path,
         progress_callback=cb,
     )
@@ -186,6 +188,7 @@ def concordance_materialize_task(
     whole_word: bool,
     case_sensitive: bool,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -204,6 +207,7 @@ def concordance_materialize_task(
         whole_word,
         case_sensitive,
         extra_columns_data=extra_columns_data,
+        extra_columns_dtypes=extra_columns_dtypes,
         progress_callback=cb,
     )
 
@@ -219,6 +223,7 @@ def quotation_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
@@ -234,6 +239,7 @@ def quotation_detach_task(
         new_node_name,
         include_document_column=include_document_column,
         extra_columns_data=extra_columns_data,
+        extra_columns_dtypes=extra_columns_dtypes,
         materialized_path=materialized_path,
         progress_callback=cb,
     )

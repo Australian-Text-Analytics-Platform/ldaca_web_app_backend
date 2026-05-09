@@ -18,6 +18,7 @@ def _build_quotation_occurrence_dataframe(
     document_column: str,
     include_document_column: bool,
     extra_columns_data: Optional[Dict[str, list]],
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
 ):
     """Extract quotation occurrences from a corpus. Returns (df, output_columns)."""
     import polars as pl
@@ -51,6 +52,14 @@ def _build_quotation_occurrence_dataframe(
             output_columns.append(col_name)
 
     input_df = pl.DataFrame(data)
+    if extra_columns_dtypes:
+        cast_exprs = [
+            pl.col(col).cast(dtype)
+            for col, dtype in extra_columns_dtypes.items()
+            if col in input_df.columns and input_df.schema[col] != dtype
+        ]
+        if cast_exprs:
+            input_df = input_df.with_columns(cast_exprs)
     quote_df = quotation_groups_via_quote_extractor(input_df, source_column_name)
     quote_df = flatten_grouped_quotation_dataframe(quote_df)
     generated_columns = [
@@ -76,6 +85,7 @@ def run_quotation_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
@@ -152,6 +162,7 @@ def run_quotation_detach_task(
             document_column=document_column,
             include_document_column=include_document_column,
             extra_columns_data=extra_columns_data,
+            extra_columns_dtypes=extra_columns_dtypes,
         )
 
         if progress_callback:

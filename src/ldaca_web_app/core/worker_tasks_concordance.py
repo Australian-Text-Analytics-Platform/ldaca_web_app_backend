@@ -31,6 +31,7 @@ def _build_concordance_occurrence_dataframe(
     case_sensitive: bool,
     include_document_column: bool,
     extra_columns_data: Optional[Dict[str, list]],
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
 ):
     """Compute flattened occurrence rows for one corpus. Returns (df, output_columns)."""
     import polars as pl
@@ -58,6 +59,14 @@ def _build_concordance_occurrence_dataframe(
             output_columns.append(col_name)
 
     df = pl.DataFrame(data)
+    if extra_columns_dtypes:
+        cast_exprs = [
+            pl.col(col).cast(dtype)
+            for col, dtype in extra_columns_dtypes.items()
+            if col in df.columns and df.schema[col] != dtype
+        ]
+        if cast_exprs:
+            df = df.with_columns(cast_exprs)
     search_pattern, use_regex = build_concordance_search_pattern(
         search_word,
         regex=regex,
@@ -104,6 +113,7 @@ def run_concordance_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
@@ -202,6 +212,7 @@ def run_concordance_detach_task(
             case_sensitive=case_sensitive,
             include_document_column=include_document_column,
             extra_columns_data=extra_columns_data,
+            extra_columns_dtypes=extra_columns_dtypes,
         )
 
         # Compute frequency columns (same as materialize) so detach always
@@ -273,6 +284,7 @@ def run_concordance_materialize_task(
     whole_word: bool,
     case_sensitive: bool,
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Run full concordance extraction and persist the flattened parquet.
@@ -304,6 +316,7 @@ def run_concordance_materialize_task(
             case_sensitive=case_sensitive,
             include_document_column=True,
             extra_columns_data=extra_columns_data,
+            extra_columns_dtypes=extra_columns_dtypes,
         )
 
         import polars as pl

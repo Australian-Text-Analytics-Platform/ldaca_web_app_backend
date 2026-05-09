@@ -528,8 +528,11 @@ async def detach_quotation(
         for value in corpus_df.get_column(request.column).to_list()
     ]
     extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
     for col in columns_to_select:
-        extra_columns_data[col] = corpus_df.get_column(col).to_list()
+        series = corpus_df.get_column(col)
+        extra_columns_data[col] = series.to_list()
+        extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -549,6 +552,7 @@ async def detach_quotation(
                 "new_node_name": request.new_node_name,
                 "include_document_column": include_document_column,
                 "extra_columns_data": extra_columns_data or None,
+                "extra_columns_dtypes": extra_columns_dtypes or None,
                 "materialized_path": request.materialized_path,
             },
             task_name="Detach Quotation",

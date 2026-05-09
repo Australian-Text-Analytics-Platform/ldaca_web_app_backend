@@ -407,9 +407,12 @@ async def detach_concordance(
     ]
 
     extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
     for col in columns_to_select:
         if col != request.column:
-            extra_columns_data[col] = corpus_df.get_column(col).to_list()
+            series = corpus_df.get_column(col)
+            extra_columns_data[col] = series.to_list()
+            extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -435,6 +438,9 @@ async def detach_concordance(
                 "include_document_column": include_document_column,
                 "extra_columns_data": extra_columns_data
                 if extra_columns_data
+                else None,
+                "extra_columns_dtypes": extra_columns_dtypes
+                if extra_columns_dtypes
                 else None,
                 "materialized_path": request.materialized_path,
             },
@@ -504,11 +510,14 @@ async def materialize_concordance(
     ]
 
     extra_columns_data: dict[str, list] | None = None
+    extra_columns_dtypes: dict[str, Any] | None = None
     if extra_source_columns:
-        extra_columns_data = {
-            col: corpus_df.get_column(col).to_list()
-            for col in extra_source_columns
-        }
+        extra_columns_data = {}
+        extra_columns_dtypes = {}
+        for col in extra_source_columns:
+            series = corpus_df.get_column(col)
+            extra_columns_data[col] = series.to_list()
+            extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -532,6 +541,7 @@ async def materialize_concordance(
                 "whole_word": request.whole_word,
                 "case_sensitive": request.case_sensitive,
                 "extra_columns_data": extra_columns_data,
+                "extra_columns_dtypes": extra_columns_dtypes,
             },
         )
         return {
