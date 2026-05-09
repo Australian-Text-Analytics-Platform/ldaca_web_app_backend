@@ -757,19 +757,20 @@ class TestWorkspaceAPI:
             # Verify the node data was updated (mock_node.data should be modified)
             assert mock_node.data is not None
 
-    async def test_delete_node_column_delegates_to_node_drop(
+    async def test_delete_node_column_drops_in_place(
         self, authenticated_client
     ):
-        """Delete-column endpoint should delegate to Node.drop and return child info."""
+        """Delete-column endpoint should drop the column in-place and return updated node info."""
         mock_node = Mock()
-        dropped_node = Mock()
-        dropped_node.info.return_value = {
-            "id": "new-node-id",
-            "name": "drop_original",
-            "operation": "drop",
+        mock_data = Mock()
+        mock_node.data = mock_data
+        mock_node.document = None
+        mock_node.info.return_value = {
+            "id": "node-1",
+            "name": "original",
+            "operation": None,
             "columns": ["text"],
         }
-        mock_node.drop.return_value = dropped_node
 
         mock_workspace = Mock()
         mock_workspace.nodes = {"node-1": mock_node}
@@ -795,8 +796,9 @@ class TestWorkspaceAPI:
 
         assert response.status_code == 200
         body = response.json()
-        assert body["id"] == "new-node-id"
-        mock_node.drop.assert_called_once_with("value")
+        assert body["id"] == "node-1"
+        mock_data.drop.assert_called_once_with("value")
+        assert mock_node.data is mock_data.drop.return_value
 
     async def test_delete_node_column_missing_node_propagates_keyerror(
         self, authenticated_client

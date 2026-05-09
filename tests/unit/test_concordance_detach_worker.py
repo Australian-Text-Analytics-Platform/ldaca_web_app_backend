@@ -24,6 +24,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         new_node_name,
         include_document_column=False,
         extra_columns_data=None,
+        extra_columns_dtypes=None,
         materialized_path=None,
         progress_callback=None,
     ):
