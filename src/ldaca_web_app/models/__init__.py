@@ -342,6 +342,7 @@ class JoinRequest(BaseModel):
 
 class ConcatPreviewRequest(BaseModel):
     node_ids: List[str] = Field(..., min_length=2)
+    deduplicate: bool = True
 
 
 class ConcatRequest(ConcatPreviewRequest):

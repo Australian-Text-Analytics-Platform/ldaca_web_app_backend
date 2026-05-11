@@ -669,8 +669,11 @@ async def update_topic_modeling_task_result(
         }
     )
 
-    request_payload["topic_size_value"] = requested_topic_count
-    task.request = AnalysisTopicModelingRequest(**request_payload)
+    # Leave `task.request.topic_size_value` as the original rerun target —
+    # the post-fit slider is a display-only re-aggregation, decoupled from
+    # the "Target Topic Number" parameter that drives rerun. The new value
+    # is recorded in `payload.meta.topic_size_value` (above) so the frontend
+    # can restore the slider position on reload.
     task.result = GenericAnalysisResult(payload)
     task_manager.save_task(task)
 
@@ -819,11 +822,6 @@ async def detach_topic_modeling(
     selected_topic_ids = sorted(
         {int(topic_id) for topic_id in (request.topic_ids or [])}
     )
-    filtered_meanings_lf = (
-        meanings_lf.filter(pl.col(TOPIC_COLUMN).is_in(selected_topic_ids))
-        if selected_topic_ids
-        else meanings_lf
-    ).select(pl.col(TOPIC_COLUMN), pl.col(TOPIC_MEANING_COLUMN))
 
     target_node_ids = request.node_ids or list(assignments_by_node_id.keys())
     if not target_node_ids:
@@ -851,6 +849,26 @@ async def detach_topic_modeling(
             assignments_lf = assignments_lf.filter(
                 pl.col(TOPIC_COLUMN).is_in(selected_topic_ids)
             )
+
+        # Per-corpus meanings must match the topic IDs actually present in
+        # this corpus's filtered assignments — with two corpora, the global
+        # selected set can include topic IDs absent from one corpus, which
+        # previously produced a topic_meanings block that wasn't a subset of
+        # the associated detached topics block.
+        corpus_topic_ids = sorted(
+            int(value)
+            for value in assignments_lf.select(pl.col(TOPIC_COLUMN))
+            .unique()
+            .collect()
+            .get_column(TOPIC_COLUMN)
+            .drop_nulls()
+            .to_list()
+        )
+        filtered_meanings_lf = (
+            meanings_lf.filter(pl.col(TOPIC_COLUMN).is_in(corpus_topic_ids))
+            if corpus_topic_ids
+            else meanings_lf.filter(pl.lit(False))
+        ).select(pl.col(TOPIC_COLUMN), pl.col(TOPIC_MEANING_COLUMN))
 
         source_node = ws.nodes[node_id]
         source_data = source_node.data

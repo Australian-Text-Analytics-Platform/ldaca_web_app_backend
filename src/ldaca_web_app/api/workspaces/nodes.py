@@ -236,7 +236,8 @@ def _build_filter_expression(
             pattern = str(raw_value)
             case_sensitive = bool(getattr(condition, "case_sensitive", False))
             if getattr(condition, "regex", False):
-                expr = column_expr.str.contains(pattern)
+                effective_pattern = pattern if case_sensitive else f"(?i){pattern}"
+                expr = column_expr.str.contains(effective_pattern)
             elif case_sensitive:
                 expr = column_expr.str.contains(pl.lit(pattern), literal=True)
             else:
@@ -1104,7 +1105,11 @@ async def concat_nodes_preview(
         nodes = _get_concat_nodes(user_id, request.node_ids)
         aligned_frames, columns, dtypes = _validate_and_align_concat_nodes(nodes)
         concat_lazy = pl.concat(aligned_frames, how="vertical")
-        total_rows = _calculate_concat_row_count(aligned_frames)
+        if request.deduplicate:
+            concat_lazy = concat_lazy.unique(maintain_order=True)
+        total_rows = (
+            None if request.deduplicate else _calculate_concat_row_count(aligned_frames)
+        )
 
         normalized_page_size = page_size
         if total_rows is not None:
@@ -1167,6 +1172,8 @@ async def concat_nodes(
         nodes = _get_concat_nodes(user_id, request.node_ids)
         aligned_frames, _, _ = _validate_and_align_concat_nodes(nodes)
         concat_lazy = pl.concat(aligned_frames, how="vertical")
+        if request.deduplicate:
+            concat_lazy = concat_lazy.unique(maintain_order=True)
         node_name = _derive_concat_node_name(nodes, request.new_node_name)
         labels = [node.name for node in nodes]
         parent_nodes: list[Node | str] = list(nodes)
@@ -1174,7 +1181,8 @@ async def concat_nodes(
             operation_args = ", ".join(labels[:3]) + ", ..."
         else:
             operation_args = ", ".join(labels)
-        operation_label = f"concat({operation_args})"
+        op_name = "concat_unique" if request.deduplicate else "concat"
+        operation_label = f"{op_name}({operation_args})"
         workspace = _require_current_workspace(user_id)
         workspace_id = workspace.id
         new_node = Node(
