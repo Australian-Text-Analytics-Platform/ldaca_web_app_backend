@@ -912,8 +912,21 @@ async def detach_topic_modeling(
             else None
         ) or _default_topic_detach_node_name(task, artifact_payload, node_id)
 
+        # Materialize the detached outputs into workspace-owned parquet files
+        # so the new nodes are self-contained. The originals live under
+        # `data/artifacts/` which gets cleaned by the next analysis submit
+        # (clear_previous_completed_analysis_task) and by workspace unload —
+        # a detached node that still scanned them would silently corrupt on
+        # the next run. The top-level workspace data dir is protected by
+        # `_garbage_collect_workspace_data` (deletes only unreferenced files).
+        workspace_data_dir = Path(ws.ws_root_dir) / "data"
+        workspace_data_dir.mkdir(parents=True, exist_ok=True)
+        new_node_id = str(uuid4())
+        new_node_parquet = workspace_data_dir / f"topic_detach_{new_node_id}.parquet"
+        cast(pl.DataFrame, output_lf.collect()).write_parquet(new_node_parquet)
         new_node = Node(
-            data=output_lf,
+            data=pl.scan_parquet(new_node_parquet),
+            id=new_node_id,
             name=node_name,
             workspace=ws,
             operation="topic_modeling_detach",
@@ -934,8 +947,16 @@ async def detach_topic_modeling(
                 )
 
         meanings_node_name = f"{node_name}_topic_meanings"
+        meanings_node_id = str(uuid4())
+        meanings_node_parquet = (
+            workspace_data_dir / f"topic_meanings_detach_{meanings_node_id}.parquet"
+        )
+        cast(pl.DataFrame, filtered_meanings_lf.collect()).write_parquet(
+            meanings_node_parquet
+        )
         meanings_node = Node(
-            data=filtered_meanings_lf,
+            data=pl.scan_parquet(meanings_node_parquet),
+            id=meanings_node_id,
             name=meanings_node_name,
             workspace=ws,
             operation="topic_modeling_meanings_detach",

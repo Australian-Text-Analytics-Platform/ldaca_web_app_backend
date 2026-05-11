@@ -246,3 +246,108 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     assert support_schema["TOPIC_topic_meaning"] in {"list_string", "List(String)"}
     assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}
     assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}
+
+
+@pytest.mark.anyio
+async def test_topic_modeling_detach_survives_artifact_cleanup(
+    authenticated_client, workspace_id, tmp_path
+):
+    """Regression: detached topic nodes must not depend on transient task artifacts.
+
+    Prior to materialising the detach output into a workspace-owned parquet,
+    the detached node's LazyFrame still scanned files under
+    `data/artifacts/` that get wiped by `clear_previous_completed_analysis_task`
+    on the next analysis submit (and by `clear_workspace_artifacts_dir` on
+    workspace unload). Wiping those mid-session corrupted every prior detach
+    so the next workspace load showed zero nodes.
+    """
+    user_id = "test"
+    workspace = workspace_manager.get_current_workspace(user_id)
+    assert workspace is not None
+
+    source_node = Node(
+        data=pl.DataFrame(
+            {
+                "document": ["alpha beta", "beta gamma", "gamma delta", "delta epsilon"],
+                "source": ["a", "b", "c", "d"],
+            }
+        ).lazy(),
+        name="topic_source",
+        workspace=workspace,
+        operation="test_setup",
+        parents=[],
+    )
+    workspace.add_node(source_node)
+
+    assignments_path = tmp_path / "assignments.parquet"
+    pl.DataFrame(
+        {"__row_nr__": [1, 3], "TOPIC_topic": [0, 1]},
+        schema={"__row_nr__": pl.Int64, "TOPIC_topic": pl.Int64},
+    ).write_parquet(assignments_path)
+    meanings_path = tmp_path / "topic_meanings.parquet"
+    pl.DataFrame(
+        {"TOPIC_topic": [0, 1], "TOPIC_topic_meaning": [["alpha"], ["delta"]]},
+        schema={"TOPIC_topic": pl.Int64, "TOPIC_topic_meaning": pl.List(pl.String)},
+    ).write_parquet(meanings_path)
+
+    task_id = "completed-topic-task-survives-cleanup"
+    payload = {
+        "topics": [
+            {"id": 0, "label": "alpha", "representative_words": ["alpha"], "size": [1], "total_size": 1, "x": 0.0, "y": 0.0},
+            {"id": 1, "label": "delta", "representative_words": ["delta"], "size": [1], "total_size": 1, "x": 0.0, "y": 0.0},
+        ],
+        "corpus_sizes": [2],
+        "artifacts": {
+            "version": 1,
+            "topic_meanings_parquet_path": str(meanings_path),
+            "nodes": [
+                {
+                    "node_id": source_node.id,
+                    "node_name": source_node.name,
+                    "text_column": "document",
+                    "original_columns": ["document", "source"],
+                    "assignments_parquet_path": str(assignments_path),
+                }
+            ],
+        },
+    }
+    get_task_manager(user_id).save_task(
+        AnalysisTask(
+            task_id=task_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            request=AnalysisTopicModelingRequest(
+                node_ids=[source_node.id],
+                node_columns={source_node.id: "document"},
+                min_topic_size=5,
+                random_seed=42,
+                representative_words_count=5,
+                sample_fractions=[0.5],
+            ),
+            status=AnalysisStatus.COMPLETED,
+            result=GenericAnalysisResult(payload),
+        )
+    )
+
+    detach_response = await authenticated_client.post(
+        f"/api/workspaces/topic-modeling/tasks/{task_id}/detach",
+        json={"node_ids": [source_node.id], "selected_columns": {source_node.id: ["document"]}},
+    )
+    assert detach_response.status_code == 200, detach_response.text
+    detached_node_id = detach_response.json()["data"]["detached_nodes"][0]["new_node_id"]
+    meanings_node_id = detach_response.json()["data"]["detached_nodes"][0]["topic_meanings_node_id"]
+
+    # Simulate the artifact cleanup that runs on the next analysis submit
+    # / on workspace unload: both transient parquet files vanish.
+    assignments_path.unlink()
+    meanings_path.unlink()
+
+    # Both detached nodes' data must still be collectible — i.e. the detach
+    # output is self-contained in workspace-owned parquet files, not
+    # scanning the now-gone artifact paths.
+    detached_df = workspace.nodes[detached_node_id].data.collect().sort("document")
+    assert detached_df["document"].to_list() == ["beta gamma", "delta epsilon"]
+    assert detached_df["TOPIC_topic"].to_list() == [0, 1]
+
+    meanings_df = workspace.nodes[meanings_node_id].data.collect().sort("TOPIC_topic")
+    assert meanings_df["TOPIC_topic"].to_list() == [0, 1]

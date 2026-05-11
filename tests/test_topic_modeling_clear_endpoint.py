@@ -184,4 +184,8 @@ async def test_topic_modeling_result_update_reaggregates_exact_task(
 
     saved_task = task_manager.get_task(task_id)
     assert saved_task is not None
-    assert saved_task.request.topic_size_value == 3
+    # The post-fit re-aggregation slider is decoupled from the "Target Topic
+    # Number" parameter — it persists the new value in `result.meta` only,
+    # leaving `task.request.topic_size_value` (the rerun target) untouched
+    # so the user can still see / edit the original parameter independently.
+    assert saved_task.request.topic_size_value == 5

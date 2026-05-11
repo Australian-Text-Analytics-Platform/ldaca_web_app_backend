@@ -165,6 +165,9 @@ async def test_concat_preview_schema_mismatch(fake_workspace_manager):
 
 @pytest.mark.asyncio
 async def test_concat_creation_happy_path(fake_workspace_manager, sample_nodes):
+    # Default `deduplicate=True` (Stack subtab's default): operation label is
+    # `concat_unique(...)` so the user can tell at a glance whether duplicate
+    # rows were collapsed.
     request = ConcatRequest(node_ids=["node_a", "node_b"], new_node_name="Combined")
 
     result = await nodes_api.concat_nodes(request, current_user={"id": "user"})
@@ -176,9 +179,21 @@ async def test_concat_creation_happy_path(fake_workspace_manager, sample_nodes):
 
     assert len(fake_workspace_manager.add_calls) == 1
     new_node = fake_workspace_manager.add_calls[0]["node"]
-    assert new_node.operation.startswith("concat(")
+    assert new_node.operation.startswith("concat_unique(")
     assert new_node.parents == [sample_nodes["node_a"], sample_nodes["node_b"]]
     collected = new_node.data.collect()
     assert collected.shape == (4, 3)
     assert collected.columns == ["id", "name", "value"]
-    assert collected.columns == ["id", "name", "value"]
+
+
+@pytest.mark.asyncio
+async def test_concat_creation_without_dedup(fake_workspace_manager, sample_nodes):
+    request = ConcatRequest(
+        node_ids=["node_a", "node_b"], new_node_name="Combined", deduplicate=False
+    )
+
+    await nodes_api.concat_nodes(request, current_user={"id": "user"})
+
+    new_node = fake_workspace_manager.add_calls[0]["node"]
+    assert new_node.operation.startswith("concat(")
+    assert not new_node.operation.startswith("concat_unique(")
