@@ -442,6 +442,13 @@ class ConcordanceDispersionDetachRequest(BaseModel):
     parent_task_id: Optional[str] = None
     selected_bins: Optional[list[int]] = None
     total_bins: Optional[int] = None
+    # When the chart legend is filtered, the detach should aggregate only over
+    # hits whose `CONC_matched_text` lands in this set. `None` means "all".
+    # `match_case_insensitive` mirrors the chart's `lowercaseMatches` toggle:
+    # when true, both the column and the candidate set are lowercased before
+    # comparison so the filter agrees with the legend grouping.
+    selected_matched_texts: Optional[list[str]] = None
+    match_case_insensitive: bool = False
 
 
 class ConcordanceMaterializeRequest(BaseModel):

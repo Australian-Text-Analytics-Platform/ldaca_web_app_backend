@@ -96,6 +96,63 @@ def test_aggregate_hits_per_document_filters_by_selected_bins():
     assert agg_second_half.height == 0
 
 
+def test_aggregate_hits_per_document_filters_by_selected_matched_texts():
+    df = _build_hits_df()
+
+    # Only "Hello" and "doc". The two "world" hits should drop. The
+    # "Different doc entirely" row contains a "doc" hit so it survives.
+    agg, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=None,
+        total_bins=None,
+        selected_matched_texts=["Hello", "doc"],
+    )
+    matched_per_doc = {
+        row["document"]: row["CONC_matched_text"]
+        for row in agg.iter_rows(named=True)
+    }
+    # The "Hello world this is a test document" row had two hits ("Hello"
+    # and "world"); only "Hello" survives.
+    assert matched_per_doc["Hello world this is a test document"] == ["Hello"]
+    assert matched_per_doc["Another doc with some content here"] == ["doc"]
+    assert matched_per_doc["Different doc entirely"] == ["doc"]
+
+
+def test_aggregate_hits_per_document_case_insensitive_legend_filter():
+    df = _build_hits_df()
+
+    # Pass lowercase "hello" plus case_insensitive=True — the column has
+    # "Hello" (uppercase H) but should still match.
+    agg, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=None,
+        total_bins=None,
+        selected_matched_texts=["hello"],
+        match_case_insensitive=True,
+    )
+    # Only the "Hello world..." document survives.
+    assert agg.height == 1
+    row = next(iter(agg.iter_rows(named=True)))
+    assert row["document"] == "Hello world this is a test document"
+    assert row["CONC_matched_text"] == ["Hello"]
+
+
+def test_aggregate_hits_per_document_empty_selected_matched_texts_is_zero_rows():
+    """All legend items hidden → zero-row result (no aggregation)."""
+    df = _build_hits_df()
+
+    agg, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=None,
+        total_bins=None,
+        selected_matched_texts=[],
+    )
+    assert agg.height == 0
+
+
 def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
     """Regression for the bin-fetch chain after a no-selection detach.
 

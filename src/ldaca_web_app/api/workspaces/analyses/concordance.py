@@ -560,6 +560,8 @@ async def detach_concordance_dispersion(
                 "materialized_path": request.materialized_path,
                 "selected_bins": request.selected_bins,
                 "total_bins": request.total_bins,
+                "selected_matched_texts": request.selected_matched_texts,
+                "match_case_insensitive": request.match_case_insensitive,
             },
         )
 

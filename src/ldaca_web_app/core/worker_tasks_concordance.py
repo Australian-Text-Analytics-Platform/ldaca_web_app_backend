@@ -284,6 +284,8 @@ def _aggregate_hits_per_document(
     total_bins,
     include_document_column: bool = True,
     extra_metadata_columns: Optional[list[str]] = None,
+    selected_matched_texts: Optional[list[str]] = None,
+    match_case_insensitive: bool = False,
 ):
     """Group per-hit rows by source document and aggregate into list columns.
 
@@ -295,6 +297,11 @@ def _aggregate_hits_per_document(
     When `selected_bins` is provided, hits are filtered to those whose bin
     index (`start_idx / doc_length * total_bins`, floored) is in the selected
     set — the "in-range hits only" semantic from the dispersion chart.
+
+    When `selected_matched_texts` is provided, hits are filtered to those
+    whose ``CONC_matched_text`` is in the set — the "legend filter" semantic
+    from the chart. Set ``match_case_insensitive=True`` to lowercase both
+    sides before comparison (mirrors the chart's ``lowercaseMatches`` toggle).
     """
     import polars as pl
 
@@ -305,6 +312,29 @@ def _aggregate_hits_per_document(
         raise ValueError(
             "Per-document aggregation requires CONC_start_idx and CONC_end_idx columns"
         )
+
+    if selected_matched_texts is not None:
+        if not selected_matched_texts:
+            # All legend entries hidden → empty result. Filter to no rows so
+            # downstream aggregation produces a zero-row dataframe with the
+            # right schema.
+            df = df.filter(pl.lit(False))
+        elif CONC_MATCHED_TEXT_COLUMN in df.columns:
+            if match_case_insensitive:
+                allowed = [str(t).lower() for t in selected_matched_texts]
+                df = df.filter(
+                    pl.col(CONC_MATCHED_TEXT_COLUMN)
+                    .cast(pl.Utf8, strict=False)
+                    .str.to_lowercase()
+                    .is_in(allowed)
+                )
+            else:
+                allowed = [str(t) for t in selected_matched_texts]
+                df = df.filter(
+                    pl.col(CONC_MATCHED_TEXT_COLUMN)
+                    .cast(pl.Utf8, strict=False)
+                    .is_in(allowed)
+                )
 
     df = df.with_columns(
         pl.col(document_column)
@@ -458,6 +488,8 @@ def run_concordance_dispersion_detach_task(
     materialized_path: Optional[str] = None,
     selected_bins: Optional[list[int]] = None,
     total_bins: Optional[int] = None,
+    selected_matched_texts: Optional[list[str]] = None,
+    match_case_insensitive: bool = False,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Aggregate concordance hits per document and detach as a workspace node.
@@ -582,6 +614,8 @@ def run_concordance_dispersion_detach_task(
             total_bins=total_bins,
             include_document_column=include_document_column,
             extra_metadata_columns=extra_metadata_columns,
+            selected_matched_texts=selected_matched_texts,
+            match_case_insensitive=match_case_insensitive,
         )
 
         if progress_callback:

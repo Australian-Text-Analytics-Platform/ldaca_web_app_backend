@@ -195,6 +195,8 @@ def concordance_dispersion_detach_task(
     materialized_path: Optional[str] = None,
     selected_bins: Optional[list[int]] = None,
     total_bins: Optional[int] = None,
+    selected_matched_texts: Optional[list[str]] = None,
+    match_case_insensitive: bool = False,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -219,6 +221,8 @@ def concordance_dispersion_detach_task(
         materialized_path=materialized_path,
         selected_bins=selected_bins,
         total_bins=total_bins,
+        selected_matched_texts=selected_matched_texts,
+        match_case_insensitive=match_case_insensitive,
         progress_callback=cb,
     )
 
