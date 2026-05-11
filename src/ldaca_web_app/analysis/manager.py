@@ -107,6 +107,33 @@ class TaskManager:
         self.store.save_task(task)
 
     def set_current_task(self, tab: str, task_id: str) -> None:
+        """Pin ``task_id`` as the current task for ``tab``.
+
+        When a different task was previously current for the same tab, the
+        displaced task is evicted along with any analysis-cache parquets it
+        owned. This keeps the in-memory task store and the on-disk side-effect
+        caches bounded to "at most one record per tab" — matching the
+        frontend's mental model where rerunning a tool replaces the previous
+        result rather than accumulating.
+        """
+        previous_ids = self.store.get_current_task_ids(tab)
+        previous_id = previous_ids[0] if previous_ids else None
+        if previous_id and previous_id != task_id:
+            displaced = self.store.get_task(previous_id)
+            if displaced is not None:
+                from ..core.analysis_cache import cleanup_task_caches
+
+                try:
+                    cleanup_task_caches(
+                        self.user_id, displaced.workspace_id, previous_id
+                    )
+                except Exception as exc:  # pragma: no cover — defensive
+                    logger.warning(
+                        "Failed to clean caches for displaced task %s: %s",
+                        previous_id,
+                        exc,
+                    )
+            self.store.clear_task(previous_id)
         self.store.set_current_task(tab, task_id)
 
     def get_current_task_ids(self, tab: str) -> List[str]:

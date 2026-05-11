@@ -9,6 +9,7 @@ from ..api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
     QUOTE_QUOTE_COLUMN,
 )
+from .analysis_cache import materialized_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -238,12 +239,14 @@ def run_quotation_materialize_task(
         if progress_callback:
             progress_callback(0.85, "Writing materialized parquet...")
 
-        materialized_dir = os.path.join(workspace_dir, "data")
-        os.makedirs(materialized_dir, exist_ok=True)
-        materialized_path = os.path.join(
-            materialized_dir,
-            f".materialized_quotation_{parent_task_id}_{parent_node_id}.parquet",
+        cache_path = materialized_cache_path(
+            workspace_dir,
+            feature="quotation",
+            task_id=parent_task_id,
+            node_id=parent_node_id,
         )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        materialized_path = str(cache_path)
         quote_df.write_parquet(materialized_path)
 
         import polars as pl

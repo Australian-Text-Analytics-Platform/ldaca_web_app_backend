@@ -131,10 +131,13 @@ def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
     assert payload["unique_documents_with_hits"] >= 1
     assert payload["total_source_documents"] == 2
 
-    # Parquet exists at the standard naming pattern under data/.
+    # Parquet exists at the canonical naming pattern under data/artifacts/.
+    # The artifacts subdir keeps caches out of reach of docworkspace's GC
+    # at `workspace.save()` time — see `core.analysis_cache` for the
+    # rationale.
     materialised_path = Path(payload["materialized_path"])
     assert materialised_path.exists()
-    assert materialised_path.parent == tmp_path / "data"
+    assert materialised_path.parent == tmp_path / "data" / "artifacts"
     assert materialised_path.name == (
         ".materialized_concordance_concordance-task-42_source-node-1.parquet"
     )

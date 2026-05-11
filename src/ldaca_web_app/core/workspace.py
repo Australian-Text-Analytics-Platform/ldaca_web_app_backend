@@ -368,6 +368,15 @@ class WorkspaceManager:
             cws.save(target_dir)
             self._set_cached_path(user_id, cid, target_dir)
         self.clear_workspace_artifacts_dir(user_id, cid)
+        # Sweep analysis-cache parquets BEFORE evicting task records, so the
+        # workspace dir is still resolvable. The sweep is workspace-scoped and
+        # cannot touch another user's data.
+        try:
+            from .analysis_cache import cleanup_workspace_caches
+
+            cleanup_workspace_caches(user_id, cid)
+        except Exception as exc:  # pragma: no cover — defensive
+            logger.debug("Failed to sweep analysis caches on unload: %s", exc)
         self._clear_workspace_tasks(user_id, cid)
         self._current.pop(user_id, None)
         return True
@@ -404,5 +413,4 @@ class WorkspaceManager:
             logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
 
 
-workspace_manager = WorkspaceManager()
 workspace_manager = WorkspaceManager()

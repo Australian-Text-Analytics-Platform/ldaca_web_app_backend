@@ -6,6 +6,7 @@ import logging
 from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
+from .analysis_cache import materialized_cache_path
 from ..api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_L1_COLUMN,
@@ -545,12 +546,14 @@ def run_concordance_dispersion_detach_task(
             # the dispatcher can't route the materialised event back to a
             # specific analysis task).
             if parent_task_id:
-                materialized_dir = os.path.join(workspace_dir, "data")
-                os.makedirs(materialized_dir, exist_ok=True)
-                side_effect_materialized_path = os.path.join(
-                    materialized_dir,
-                    f".materialized_concordance_{parent_task_id}_{parent_node_id}.parquet",
+                cache_path = materialized_cache_path(
+                    workspace_dir,
+                    feature="concordance",
+                    task_id=parent_task_id,
+                    node_id=parent_node_id,
                 )
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                side_effect_materialized_path = str(cache_path)
                 hits_df.write_parquet(side_effect_materialized_path)
                 side_effect_summary = {
                     "record_count": int(len(hits_df)),
@@ -699,12 +702,14 @@ def run_concordance_materialize_task(
         if progress_callback:
             progress_callback(0.85, "Writing materialized parquet...")
 
-        materialized_dir = os.path.join(workspace_dir, "data")
-        os.makedirs(materialized_dir, exist_ok=True)
-        materialized_path = os.path.join(
-            materialized_dir,
-            f".materialized_concordance_{parent_task_id}_{parent_node_id}.parquet",
+        cache_path = materialized_cache_path(
+            workspace_dir,
+            feature="concordance",
+            task_id=parent_task_id,
+            node_id=parent_node_id,
         )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        materialized_path = str(cache_path)
         result.write_parquet(materialized_path)
 
         total_source_documents = len(node_corpus)

@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 from typing import Any, Dict, Optional
 
@@ -16,6 +15,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 
 from ..analysis.manager import get_task_manager as get_analysis_task_manager
+from ..core.analysis_cache import cleanup_task_caches
 from ..core.auth import get_current_user
 from ..core.workspace import workspace_manager
 
@@ -56,28 +56,12 @@ async def clear_tasks(
     analysis_tm = get_analysis_task_manager(user_id)
     analysis_task = analysis_tm.get_task(task_id)
 
-    # Delete any materialized parquet artifacts owned by this analysis task
-    # that never became a detached node. Detach copies the parquet into a
-    # node-owned file, so deleting the original here is safe.
-    materialized_files: list[str] = []
-    if (
-        analysis_task is not None
-        and getattr(analysis_task, "request", None) is not None
-    ):
-        paths_map = getattr(analysis_task.request, "materialized_paths", None)
-        if isinstance(paths_map, dict):
-            materialized_files.extend(
-                str(p) for p in paths_map.values() if isinstance(p, str) and p
-            )
-        single_path = getattr(analysis_task.request, "materialized_path", None)
-        if isinstance(single_path, str) and single_path:
-            materialized_files.append(single_path)
-    for path in materialized_files:
-        try:
-            if os.path.isfile(path):
-                os.unlink(path)
-        except OSError as exc:
-            logger.warning("Failed to delete materialized parquet %s: %s", path, exc)
+    # Delete any analysis-cache parquets owned by this task. Detach already
+    # copies the parquet into a node-owned file, so deleting the original
+    # here is safe. Glob-based lookup catches files even when the task's
+    # request fields are stale (e.g. dispatcher crashed mid-update).
+    if analysis_task is not None:
+        cleanup_task_caches(user_id, analysis_task.workspace_id, task_id)
 
     cleared_worker = await tm.clear_task(task_id)
 
