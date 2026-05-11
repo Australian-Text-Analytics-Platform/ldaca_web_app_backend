@@ -1,0 +1,216 @@
+from pathlib import Path
+from typing import cast
+
+import polars as pl
+from ldaca_web_app.core.worker_tasks_concordance import (
+    _aggregate_hits_per_document,
+    run_concordance_dispersion_detach_task,
+)
+
+
+def _build_hits_df() -> pl.DataFrame:
+    """Mirrors `pt.concordance` output shape: token-bounded contexts with no
+    surrounding whitespace, plus character indices that bound the matched
+    span exclusively (no spaces)."""
+    return pl.DataFrame(
+        {
+            "document": [
+                "Hello world this is a test document",
+                "Another doc with some content here",
+                "Hello world this is a test document",
+                "Different doc entirely",
+            ],
+            "CONC_left_context": ["", "Another", "Hello", "Different"],
+            "CONC_matched_text": ["Hello", "doc", "world", "doc"],
+            "CONC_right_context": ["world this", "with some", "this is", "entirely"],
+            "CONC_start_idx": [0, 8, 6, 10],
+            "CONC_end_idx": [5, 11, 11, 13],
+            "CONC_l1": ["", "Another", "Hello", "Different"],
+            "CONC_r1": ["world", "with", "this", "entirely"],
+            "CONC_l1_freq": [1, 1, 1, 1],
+            "CONC_r1_freq": [1, 1, 1, 1],
+        }
+    )
+
+
+def test_aggregate_hits_per_document_groups_and_renders_extract():
+    df = _build_hits_df()
+
+    agg, output_columns = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=None,
+        total_bins=None,
+    )
+
+    assert output_columns == [
+        "document",
+        "extracted_contents",
+        "CONC_matched_text",
+        "CONC_l1",
+        "CONC_r1",
+        "CONC_l1_freq",
+        "CONC_r1_freq",
+    ]
+    # 3 unique documents — the two "Hello world..." rows collapse.
+    assert agg.height == 3
+    assert agg.schema["extracted_contents"] == pl.Utf8
+    assert agg.schema["CONC_matched_text"] == pl.List(pl.Utf8)
+    assert agg.schema["CONC_l1_freq"] == pl.List(pl.Int64)
+
+    extracted = {
+        row["document"]: row["extracted_contents"]
+        for row in agg.iter_rows(named=True)
+    }
+    # Each line is `* <left_context> <matched> <right_context>` — the full
+    # KWIC window read directly from the source document so spacing matches
+    # the original. Two-hit document picks up two windows, in order.
+    assert (
+        extracted["Hello world this is a test document"]
+        == "* Hello world this\n* Hello world this is"
+    )
+    assert extracted["Another doc with some content here"] == "* Another doc with some"
+
+
+def test_aggregate_hits_per_document_filters_by_selected_bins():
+    df = _build_hits_df()
+
+    # total_bins=2 splits each document in half. start_idx=0 → bin 0,
+    # start_idx=6 in a 35-char doc → ~0.17 → bin 0, start_idx=8 in 34 →
+    # ~0.24 → bin 0, start_idx=10 in 22 → ~0.45 → bin 0. All hits in bin 0.
+    agg_first_half, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=[0],
+        total_bins=2,
+    )
+    assert agg_first_half.height == 3  # all docs survive
+
+    # Second half should drop everything.
+    agg_second_half, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=[1],
+        total_bins=2,
+    )
+    assert agg_second_half.height == 0
+
+
+def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
+    """Regression for the bin-fetch chain after a no-selection detach.
+
+    The dispersion view's "page above / whole data block" dropdown only
+    enables when the bin endpoint successfully returns rows, which in turn
+    requires the slow-path detach to (a) write the flat materialised
+    parquet at the standard location and (b) surface the path back to the
+    dispatcher so it can update `parent_task.request.materialized_paths`.
+    """
+    result = run_concordance_dispersion_detach_task(
+        configure_worker_environment=lambda: None,
+        workspace_dir=str(tmp_path),
+        node_corpus=["alpha beta gamma alpha", "beta gamma alpha"],
+        parent_node_id="source-node-1",
+        document_column="document",
+        search_word="alpha",
+        num_left_tokens=1,
+        num_right_tokens=1,
+        regex=False,
+        whole_word=False,
+        case_sensitive=False,
+        new_node_name="alpha_conc_aggregated",
+        parent_task_id="concordance-task-42",
+    )
+
+    assert result["state"] == "successful", result
+    payload = result["result"]
+    # Slow path with parent_task_id must report materialised_path + counts.
+    assert "materialized_path" in payload
+    assert payload["parent_task_id"] == "concordance-task-42"
+    assert payload["parent_node_id"] == "source-node-1"
+    assert payload["record_count"] >= 0
+    assert payload["unique_documents_with_hits"] >= 1
+    assert payload["total_source_documents"] == 2
+
+    # Parquet exists at the standard naming pattern under data/.
+    materialised_path = Path(payload["materialized_path"])
+    assert materialised_path.exists()
+    assert materialised_path.parent == tmp_path / "data"
+    assert materialised_path.name == (
+        ".materialized_concordance_concordance-task-42_source-node-1.parquet"
+    )
+
+    # Schema must carry the document column + concordance start_idx so the
+    # bin endpoint's `read_dispersion_bins` can compute positions.
+    schema = pl.read_parquet(materialised_path).schema
+    assert "document" in schema
+    assert "CONC_start_idx" in schema
+    assert "CONC_matched_text" in schema
+
+
+def test_dispersion_detach_slow_path_skips_materialise_without_parent_task_id(
+    tmp_path,
+):
+    """No parent_task_id → no side-effect (can't route the analysis event)."""
+    result = run_concordance_dispersion_detach_task(
+        configure_worker_environment=lambda: None,
+        workspace_dir=str(tmp_path),
+        node_corpus=["alpha beta", "beta alpha"],
+        parent_node_id="source-node-1",
+        document_column="document",
+        search_word="alpha",
+        num_left_tokens=1,
+        num_right_tokens=1,
+        regex=False,
+        whole_word=False,
+        case_sensitive=False,
+        new_node_name="alpha_conc_aggregated",
+        parent_task_id=None,
+    )
+
+    assert result["state"] == "successful", result
+    payload = result["result"]
+    assert "materialized_path" not in payload
+    assert "parent_task_id" not in payload
+
+
+def test_run_concordance_dispersion_detach_task_writes_node_payload(tmp_path):
+    progress_updates: list[tuple[float, str]] = []
+
+    result = run_concordance_dispersion_detach_task(
+        configure_worker_environment=lambda: None,
+        workspace_dir=str(tmp_path),
+        node_corpus=["alpha beta gamma alpha", "beta gamma alpha"],
+        parent_node_id="parent-1",
+        document_column="document",
+        search_word="alpha",
+        num_left_tokens=1,
+        num_right_tokens=1,
+        regex=False,
+        whole_word=False,
+        case_sensitive=False,
+        new_node_name="alpha_conc_aggregated",
+        progress_callback=lambda progress, message: progress_updates.append(
+            (progress, message)
+        ),
+    )
+
+    assert result["state"] == "successful", result
+    payload = result["result"]["node_payload"]
+    assert payload["data_path"].startswith("data/")
+
+    data_file = tmp_path / Path(payload["data_path"])
+    assert data_file.exists()
+
+    restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
+    df = cast(pl.DataFrame, restored.collect())
+    assert df.height >= 1
+    # Per-document output shape — extracted_contents is a string, others are
+    # List<T>. The per-hit start/end indices and L/R contexts are dropped.
+    assert df.schema["extracted_contents"] == pl.Utf8
+    assert df.schema["CONC_matched_text"] == pl.List(pl.Utf8)
+    assert "CONC_left_context" not in df.columns
+    assert "CONC_right_context" not in df.columns
+    assert "CONC_start_idx" not in df.columns
+    assert "CONC_end_idx" not in df.columns
+
+    assert progress_updates[-1] == (1.0, "Concordance dispersion detach completed")

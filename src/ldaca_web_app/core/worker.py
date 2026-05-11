@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, Optional
 
 from .worker_tasks_concordance import (
     run_concordance_detach_task,
+    run_concordance_dispersion_detach_task,
     run_concordance_materialize_task,
 )
 from .worker_tasks_download import run_workspace_download_task
@@ -169,6 +170,55 @@ def concordance_detach_task(
         extra_columns_data=extra_columns_data,
         extra_columns_dtypes=extra_columns_dtypes,
         materialized_path=materialized_path,
+        progress_callback=cb,
+    )
+
+
+def concordance_dispersion_detach_task(
+    user_id: str,
+    workspace_id: str,
+    workspace_dir: str,
+    node_corpus: list[str],
+    parent_node_id: str,
+    document_column: str,
+    search_word: str,
+    num_left_tokens: int,
+    num_right_tokens: int,
+    regex: bool,
+    whole_word: bool,
+    case_sensitive: bool,
+    new_node_name: str,
+    parent_task_id: Optional[str] = None,
+    include_document_column: bool = True,
+    extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    materialized_path: Optional[str] = None,
+    selected_bins: Optional[list[int]] = None,
+    total_bins: Optional[int] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_queue: Optional[Any] = None,
+) -> Dict[str, Any]:
+    cb = _build_progress_callback(progress_queue, progress_callback)
+    return run_concordance_dispersion_detach_task(
+        _configure_worker_environment,
+        workspace_dir,
+        node_corpus,
+        parent_node_id,
+        document_column,
+        search_word,
+        num_left_tokens,
+        num_right_tokens,
+        regex,
+        whole_word,
+        case_sensitive,
+        new_node_name,
+        parent_task_id=parent_task_id,
+        include_document_column=include_document_column,
+        extra_columns_data=extra_columns_data,
+        extra_columns_dtypes=extra_columns_dtypes,
+        materialized_path=materialized_path,
+        selected_bins=selected_bins,
+        total_bins=total_bins,
         progress_callback=cb,
     )
 
@@ -361,6 +411,7 @@ TASK_REGISTRY: Dict[str, Any] = {
     "ldaca_import": ldaca_import_task,
     "workspace_download": workspace_download_task,
     "concordance_detach": concordance_detach_task,
+    "concordance_dispersion_detach": concordance_dispersion_detach_task,
     "concordance_materialize": concordance_materialize_task,
     "quotation_detach": quotation_detach_task,
     "quotation_materialize": quotation_materialize_task,

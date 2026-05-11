@@ -7,15 +7,21 @@ from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
 from ..api.workspaces.analyses.generated_columns import (
+    CONC_END_IDX_COLUMN,
     CONC_L1_COLUMN,
     CONC_L1_FREQ_COLUMN,
+    CONC_LEFT_CONTEXT_COLUMN,
     CONC_MATCHED_TEXT_COLUMN,
     CONC_R1_COLUMN,
     CONC_R1_FREQ_COLUMN,
+    CONC_RIGHT_CONTEXT_COLUMN,
+    CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
     MATERIALIZED_CONCORDANCE_COLUMNS,
     concordance_struct_projection,
 )
+
+DISPERSION_EXTRACTED_CONTENTS_COLUMN = "extracted_contents"
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +273,364 @@ def run_concordance_detach_task(
             "state": "failed",
             "error": str(e),
             "message": f"Concordance detach task failed: {str(e)}",
+        }
+
+
+def _aggregate_hits_per_document(
+    hits_df,
+    document_column: str,
+    selected_bins,
+    total_bins,
+    include_document_column: bool = True,
+    extra_metadata_columns: Optional[list[str]] = None,
+):
+    """Group per-hit rows by source document and aggregate into list columns.
+
+    Used by the dispersion-detach task to produce the per-document output shape:
+    one row per document, hits collected into `List<T>` columns plus an
+    `extracted_contents` string column rendering each hit's character slice
+    as an asterisk-bulleted multi-line paragraph in document-flow order.
+
+    When `selected_bins` is provided, hits are filtered to those whose bin
+    index (`start_idx / doc_length * total_bins`, floored) is in the selected
+    set — the "in-range hits only" semantic from the dispersion chart.
+    """
+    import polars as pl
+
+    df = hits_df
+    # The hits frame must carry start/end indices; CONC_left/right_context are
+    # dropped per the dispersion-detach spec.
+    if CONC_START_IDX_COLUMN not in df.columns or CONC_END_IDX_COLUMN not in df.columns:
+        raise ValueError(
+            "Per-document aggregation requires CONC_start_idx and CONC_end_idx columns"
+        )
+
+    df = df.with_columns(
+        pl.col(document_column)
+        .cast(pl.Utf8, strict=False)
+        .str.len_chars()
+        .alias("__doc_len__"),
+    )
+
+    if selected_bins is not None and total_bins:
+        allowed = sorted({int(b) for b in selected_bins})
+        bin_idx = (
+            pl.when(pl.col("__doc_len__") > 0)
+            .then(
+                (
+                    pl.col(CONC_START_IDX_COLUMN).cast(pl.Float64)
+                    / pl.col("__doc_len__").cast(pl.Float64)
+                    * float(total_bins)
+                )
+                .floor()
+                .clip(0, total_bins - 1)
+                .cast(pl.Int64)
+            )
+            .otherwise(pl.lit(None, dtype=pl.Int64))
+        )
+        df = df.with_columns(bin_idx.alias("__bin_idx__"))
+        df = df.filter(pl.col("__bin_idx__").is_in(allowed))
+
+    # Slice the raw window text — from the start of `left_context` to the
+    # end of `right_context` — so the extract preserves the original
+    # whitespace and punctuation between the context tokens and the matched
+    # span. `pt.concordance` returns context strings token-bounded (no
+    # surrounding whitespace), so we assume a single separator char between
+    # each context and the matched span — accurate for whitespace-tokenized
+    # text; off by a small amount only when the separator is multi-char
+    # (e.g. an em-dash or multiple spaces).
+    df = df.with_columns(
+        pl.col(CONC_LEFT_CONTEXT_COLUMN)
+        .fill_null("")
+        .str.len_chars()
+        .alias("__left_len__"),
+        pl.col(CONC_RIGHT_CONTEXT_COLUMN)
+        .fill_null("")
+        .str.len_chars()
+        .alias("__right_len__"),
+    )
+    df = df.with_columns(
+        pl.when(pl.col("__left_len__") > 0)
+        .then(pl.lit(1, dtype=pl.Int64))
+        .otherwise(pl.lit(0, dtype=pl.Int64))
+        .alias("__left_sep__"),
+        pl.when(pl.col("__right_len__") > 0)
+        .then(pl.lit(1, dtype=pl.Int64))
+        .otherwise(pl.lit(0, dtype=pl.Int64))
+        .alias("__right_sep__"),
+    )
+    df = df.with_columns(
+        pl.max_horizontal(
+            pl.lit(0, dtype=pl.Int64),
+            pl.col(CONC_START_IDX_COLUMN)
+            - pl.col("__left_len__")
+            - pl.col("__left_sep__"),
+        ).alias("__window_start__"),
+    )
+    df = df.with_columns(
+        pl.col(document_column)
+        .cast(pl.Utf8, strict=False)
+        .str.slice(
+            pl.col("__window_start__"),
+            pl.col(CONC_END_IDX_COLUMN)
+            + pl.col("__right_len__")
+            + pl.col("__right_sep__")
+            - pl.col("__window_start__"),
+        )
+        .alias("__extract__"),
+    )
+
+    # Sort by document then by hit start so list aggregates land in
+    # document-flow order, then group with `maintain_order=True` so the
+    # outer row order stays stable too.
+    df = df.sort([document_column, CONC_START_IDX_COLUMN])
+
+    available_metadata = [
+        c for c in (extra_metadata_columns or []) if c in df.columns and c != document_column
+    ]
+
+    agg_columns = [
+        pl.col("__extract__").alias("__extracts_list__"),
+        pl.col(CONC_MATCHED_TEXT_COLUMN).alias(CONC_MATCHED_TEXT_COLUMN),
+        pl.col(CONC_L1_COLUMN).alias(CONC_L1_COLUMN),
+        pl.col(CONC_R1_COLUMN).alias(CONC_R1_COLUMN),
+    ]
+    if CONC_L1_FREQ_COLUMN in df.columns:
+        agg_columns.append(pl.col(CONC_L1_FREQ_COLUMN).alias(CONC_L1_FREQ_COLUMN))
+    if CONC_R1_FREQ_COLUMN in df.columns:
+        agg_columns.append(pl.col(CONC_R1_FREQ_COLUMN).alias(CONC_R1_FREQ_COLUMN))
+    # Source metadata is identical for every hit in a document, so take the
+    # first value of each requested column. This yields one value per row in
+    # the per-document output rather than a list aggregation.
+    for col in available_metadata:
+        agg_columns.append(pl.col(col).first().alias(col))
+
+    grouped = df.group_by(document_column, maintain_order=True).agg(agg_columns)
+
+    # Use polars-native list manipulation to prefix each extract with "* "
+    # and join with newlines. The earlier `map_elements` form passed each row
+    # value as a Series, which broke the `items or []` truthiness check.
+    grouped = grouped.with_columns(
+        pl.col("__extracts_list__")
+        .list.eval(pl.lit("* ") + pl.element())
+        .list.join("\n")
+        .alias(DISPERSION_EXTRACTED_CONTENTS_COLUMN)
+    ).drop("__extracts_list__")
+
+    output_columns: list[str] = []
+    if include_document_column:
+        output_columns.append(document_column)
+    output_columns.extend(
+        [
+            DISPERSION_EXTRACTED_CONTENTS_COLUMN,
+            CONC_MATCHED_TEXT_COLUMN,
+            CONC_L1_COLUMN,
+            CONC_R1_COLUMN,
+        ]
+    )
+    if CONC_L1_FREQ_COLUMN in grouped.columns:
+        output_columns.append(CONC_L1_FREQ_COLUMN)
+    if CONC_R1_FREQ_COLUMN in grouped.columns:
+        output_columns.append(CONC_R1_FREQ_COLUMN)
+    output_columns.extend(available_metadata)
+
+    return grouped.select(output_columns), output_columns
+
+
+def run_concordance_dispersion_detach_task(
+    configure_worker_environment,
+    workspace_dir: str,
+    node_corpus: list[str],
+    parent_node_id: str,
+    document_column: str,
+    search_word: str,
+    num_left_tokens: int,
+    num_right_tokens: int,
+    regex: bool,
+    whole_word: bool,
+    case_sensitive: bool,
+    new_node_name: str,
+    parent_task_id: Optional[str] = None,
+    include_document_column: bool = True,
+    extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    materialized_path: Optional[str] = None,
+    selected_bins: Optional[list[int]] = None,
+    total_bins: Optional[int] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+) -> Dict[str, Any]:
+    """Aggregate concordance hits per document and detach as a workspace node.
+
+    Fast path: reads the previously-materialised flat parquet when
+    `materialized_path` is provided; otherwise computes hits from the full
+    source corpus. Always drops left/right context and start/end indices —
+    callers consume `extracted_contents` plus the List<T> aggregates.
+    """
+    configure_worker_environment()
+
+    try:
+        if progress_callback:
+            progress_callback(0.02, "Loading concordance libraries...")
+
+        import os
+        import uuid
+
+        import polars as pl
+
+        from docworkspace import Node
+
+        logger.info(
+            "[Worker %d] Starting concordance dispersion detach task", os.getpid()
+        )
+
+        # Track the materialised parquet path so we can publish an
+        # `analysis_materialized` event back to the dispatcher after the
+        # slow path runs — the user otherwise has to click "Process All"
+        # separately even though we already did the full-corpus work.
+        side_effect_materialized_path: Optional[str] = None
+        side_effect_summary: Optional[Dict[str, Any]] = None
+
+        if materialized_path and os.path.exists(materialized_path):
+            if progress_callback:
+                progress_callback(0.4, "Reusing materialized occurrences...")
+            hits_df = pl.read_parquet(materialized_path)
+        else:
+            if progress_callback:
+                progress_callback(0.25, "Generating concordance matches...")
+            hits_df, _ = _build_concordance_occurrence_dataframe(
+                node_corpus=node_corpus,
+                document_column=document_column,
+                search_word=search_word,
+                num_left_tokens=num_left_tokens,
+                num_right_tokens=num_right_tokens,
+                regex=regex,
+                whole_word=whole_word,
+                case_sensitive=case_sensitive,
+                # Always materialise with the document column so the parquet
+                # is reusable from the fast path next time, regardless of
+                # whether this detach call includes it in its output.
+                include_document_column=True,
+                extra_columns_data=extra_columns_data,
+                extra_columns_dtypes=extra_columns_dtypes,
+            )
+            # Match the materialize path: always include CONC_l1_freq /
+            # CONC_r1_freq so the aggregated list aggregates have something
+            # numeric to collect.
+            if (
+                CONC_L1_COLUMN in hits_df.columns
+                and CONC_L1_FREQ_COLUMN not in hits_df.columns
+            ):
+                l1_freq = (
+                    hits_df.group_by(CONC_L1_COLUMN)
+                    .len()
+                    .rename({"len": CONC_L1_FREQ_COLUMN})
+                )
+                hits_df = hits_df.join(l1_freq, on=CONC_L1_COLUMN, how="left")
+            if (
+                CONC_R1_COLUMN in hits_df.columns
+                and CONC_R1_FREQ_COLUMN not in hits_df.columns
+            ):
+                r1_freq = (
+                    hits_df.group_by(CONC_R1_COLUMN)
+                    .len()
+                    .rename({"len": CONC_R1_FREQ_COLUMN})
+                )
+                hits_df = hits_df.join(r1_freq, on=CONC_R1_COLUMN, how="left")
+
+            # Persist the fully-computed hits as the materialised parquet so
+            # the dispersion view can switch the "page above / whole data
+            # block" dropdown to whole-data-block automatically, and so
+            # subsequent bin-filtered detaches reuse the parquet via the fast
+            # path. Only do this when we know the parent task id (otherwise
+            # the dispatcher can't route the materialised event back to a
+            # specific analysis task).
+            if parent_task_id:
+                materialized_dir = os.path.join(workspace_dir, "data")
+                os.makedirs(materialized_dir, exist_ok=True)
+                side_effect_materialized_path = os.path.join(
+                    materialized_dir,
+                    f".materialized_concordance_{parent_task_id}_{parent_node_id}.parquet",
+                )
+                hits_df.write_parquet(side_effect_materialized_path)
+                side_effect_summary = {
+                    "record_count": int(len(hits_df)),
+                    "unique_documents_with_hits": (
+                        int(
+                            hits_df.select(
+                                pl.col(document_column).n_unique()
+                            ).item()
+                        )
+                        if document_column in hits_df.columns
+                        else 0
+                    ),
+                    "total_source_documents": len(node_corpus),
+                }
+
+        if progress_callback:
+            progress_callback(0.65, "Aggregating hits per document...")
+
+        extra_metadata_columns = (
+            list(extra_columns_data.keys()) if extra_columns_data else []
+        )
+        aggregated, output_columns = _aggregate_hits_per_document(
+            hits_df,
+            document_column=document_column,
+            selected_bins=selected_bins,
+            total_bins=total_bins,
+            include_document_column=include_document_column,
+            extra_metadata_columns=extra_metadata_columns,
+        )
+
+        if progress_callback:
+            progress_callback(0.85, "Serializing detached data block...")
+
+        detach_data_dir = os.path.join(workspace_dir, "data")
+        os.makedirs(detach_data_dir, exist_ok=True)
+        detach_parquet_path = os.path.join(
+            detach_data_dir,
+            f"concordance_dispersion_detach_{uuid.uuid4().hex}.parquet",
+        )
+        aggregated.write_parquet(detach_parquet_path)
+
+        lazy = pl.scan_parquet(detach_parquet_path)
+        detached_node = Node(
+            data=lazy,
+            name=new_node_name,
+            workspace=None,
+            operation="concordance_dispersion_detach",
+            parents=[parent_node_id],
+            document=document_column,
+        )
+        node_payload = detached_node.to_dict(base_dir=workspace_dir)
+
+        if progress_callback:
+            progress_callback(1.0, "Concordance dispersion detach completed")
+
+        result_payload: Dict[str, Any] = {
+            "node_payload": node_payload,
+            "output_columns": output_columns,
+            "record_count": int(len(aggregated)),
+        }
+        # Side-effect: if the slow path produced a materialised parquet,
+        # include the info so the dispatcher can publish an
+        # `analysis_materialized` event back to the frontend.
+        if side_effect_materialized_path and parent_task_id:
+            result_payload["materialized_path"] = side_effect_materialized_path
+            result_payload["parent_task_id"] = parent_task_id
+            result_payload["parent_node_id"] = parent_node_id
+            if side_effect_summary:
+                result_payload.update(side_effect_summary)
+
+        return {
+            "state": "successful",
+            "result": result_payload,
+            "message": "Concordance dispersion detach completed successfully",
+        }
+    except Exception as e:
+        return {
+            "state": "failed",
+            "error": str(e),
+            "message": f"Concordance dispersion detach task failed: {str(e)}",
         }
 
 

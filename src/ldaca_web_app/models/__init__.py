@@ -412,6 +412,38 @@ class ConcordanceDetachRequest(BaseModel):
     materialized_path: Optional[str] = None  # Reuse existing flattened parquet
 
 
+class ConcordanceDispersionDetachRequest(BaseModel):
+    """Detach a per-document aggregation of concordance hits.
+
+    Unlike `ConcordanceDetachRequest` (one row per hit), this produces one row
+    per source document with the hits collected into `List<T>` columns and the
+    raw match-window text rendered as a multi-line `extracted_contents` string.
+
+    `selected_bins` + `total_bins` optionally restrict the aggregation to hits
+    whose `start_idx / doc_length` falls inside one of the selected bins (the
+    chart's "in-range hits only" semantic).
+    """
+
+    column: str
+    search_word: str
+    num_left_tokens: int = 10
+    num_right_tokens: int = 10
+    regex: bool = False
+    whole_word: bool = False
+    case_sensitive: bool = False
+    new_node_name: Optional[str] = None
+    selected_columns: Optional[list[str]] = None
+    materialized_path: Optional[str] = None
+    # When the slow path runs (no materialized_path), the worker also writes
+    # the materialised flat parquet so the user doesn't have to click "Process
+    # All" separately before iterating on bin selections. The parent analysis
+    # task id + this node's id are needed to publish the standard
+    # `analysis_materialized` event back to the frontend.
+    parent_task_id: Optional[str] = None
+    selected_bins: Optional[list[int]] = None
+    total_bins: Optional[int] = None
+
+
 class ConcordanceMaterializeRequest(BaseModel):
     column: str
     search_word: str

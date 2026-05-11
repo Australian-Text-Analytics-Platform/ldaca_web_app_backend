@@ -384,6 +384,7 @@ class WorkerTaskManager:
                 # Handle DETACH tasks (add node to workspace)
                 if task_type in [
                     "concordance_detach",
+                    "concordance_dispersion_detach",
                     "quotation_detach",
                 ]:
                     try:
@@ -446,6 +447,106 @@ class WorkerTaskManager:
                                 "timestamp": time.time(),
                             },
                         )
+
+                        # Dispersion detach has a materialise side-effect: when
+                        # the slow path runs (no client-provided
+                        # `materialized_path`), the worker also writes the
+                        # flat per-hit parquet so subsequent bin-filtered
+                        # detaches reuse it. Surface this to the frontend
+                        # via the same `analysis_materialized` event the
+                        # standalone materialise task emits — the dispersion
+                        # view then auto-switches "page above" to "whole
+                        # data block" without forcing the user to press
+                        # "Process All" again.
+                        if task_type == "concordance_dispersion_detach":
+                            materialized_path = data.get("materialized_path")
+                            parent_task_id = data.get("parent_task_id")
+                            parent_node_id_for_mat = data.get("parent_node_id")
+                            if (
+                                materialized_path
+                                and parent_task_id
+                                and parent_node_id_for_mat
+                            ):
+                                try:
+                                    from ..analysis.manager import (
+                                        get_task_manager,
+                                    )
+
+                                    task_manager = get_task_manager(user_id)
+                                    parent_task = task_manager.get_task(
+                                        parent_task_id
+                                    )
+                                    if parent_task is not None:
+                                        materialize_summary = {
+                                            "record_count": data.get(
+                                                "record_count"
+                                            ),
+                                            "unique_documents_with_hits": data.get(
+                                                "unique_documents_with_hits"
+                                            ),
+                                            "total_source_documents": data.get(
+                                                "total_source_documents"
+                                            ),
+                                        }
+                                        existing = (
+                                            getattr(
+                                                parent_task.request,
+                                                "materialized_paths",
+                                                None,
+                                            )
+                                            or {}
+                                        )
+                                        updated = dict(existing)
+                                        updated[str(parent_node_id_for_mat)] = (
+                                            str(materialized_path)
+                                        )
+                                        parent_task.request.materialized_paths = (
+                                            updated
+                                        )
+
+                                        existing_summaries = (
+                                            getattr(
+                                                parent_task.request,
+                                                "materialize_summaries",
+                                                None,
+                                            )
+                                            or {}
+                                        )
+                                        updated_summaries = dict(
+                                            existing_summaries
+                                        )
+                                        updated_summaries[
+                                            str(parent_node_id_for_mat)
+                                        ] = materialize_summary
+                                        parent_task.request.materialize_summaries = (
+                                            updated_summaries
+                                        )
+
+                                        parent_task.updated_at = datetime.now()
+                                        task_manager.save_task(parent_task)
+
+                                        await self.emit(
+                                            user_id,
+                                            workspace_id,
+                                            {
+                                                "type": "analysis_materialized",
+                                                "task_type": task_type,
+                                                "task_id": task_info.id,
+                                                "parent_task_id": parent_task_id,
+                                                "parent_node_id": parent_node_id_for_mat,
+                                                "materialized_path": materialized_path,
+                                                "timestamp": time.time(),
+                                            },
+                                        )
+                                except Exception as side_err:
+                                    # Don't fail the whole detach if the
+                                    # materialise side-effect can't be
+                                    # recorded — the workspace node is
+                                    # already created.
+                                    logger.warning(
+                                        "Failed to record dispersion-detach materialisation: %s",
+                                        side_err,
+                                    )
 
                     except Exception as detach_err:
                         logger.error(

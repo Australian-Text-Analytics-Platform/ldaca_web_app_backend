@@ -27,6 +27,7 @@ from ....models import (
     ConcordanceDetachNodeOption,
     ConcordanceDetachOptionsResponse,
     ConcordanceDetachRequest,
+    ConcordanceDispersionDetachRequest,
     ConcordanceMaterializeRequest,
 )
 from ..utils import update_workspace
@@ -456,6 +457,122 @@ async def detach_concordance(
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Error submitting detach task: {exc}"
+        )
+
+
+@router.post("/nodes/{node_id}/concordance/dispersion-detach")
+async def detach_concordance_dispersion(
+    node_id: str,
+    request: ConcordanceDispersionDetachRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Submit a per-document aggregated detach (dispersion view).
+
+    Output shape differs from the per-hit detach: one row per source document,
+    matched-text/L1/R1/freq columns become `List<T>`, plus an `extracted_contents`
+    string column that joins each hit's character slice with newline + asterisk
+    bullets in document-flow order. Used by the dispersion summary chart so the
+    user can pull a per-document view (optionally limited to bin-filtered hits)
+    into the workspace as a new data block.
+    """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+    tm = workspace_manager.get_task_manager(user_id)
+    node = ws.nodes[node_id]
+    node_data = node.data
+
+    # Source columns to project — same shape as the per-hit detach so the
+    # caller can opt-in to metadata columns and opt-out of the document
+    # column.
+    include_document_column = False
+    columns_to_select: list[str] = []
+    if request.selected_columns:
+        for col in request.selected_columns:
+            if col == request.column:
+                include_document_column = True
+                continue
+            columns_to_select.append(col)
+
+    corpus_df = (
+        node_data.select(
+            [pl.col(request.column)] + [pl.col(c) for c in columns_to_select]
+        )
+        .filter(
+            pl.col(request.column)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0
+        )
+        .collect()
+    )
+    node_corpus = [
+        str(value) if value is not None else ""
+        for value in corpus_df.get_column(request.column).to_list()
+    ]
+
+    extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
+    for col in columns_to_select:
+        if col != request.column:
+            series = corpus_df.get_column(col)
+            extra_columns_data[col] = series.to_list()
+            extra_columns_dtypes[col] = series.dtype
+
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    if request.selected_bins is not None and (
+        request.total_bins is None or request.total_bins <= 0
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="total_bins must be a positive integer when selected_bins is provided",
+        )
+
+    try:
+        task_info = await tm.submit_task(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            task_type="concordance_dispersion_detach",
+            task_name=request.new_node_name or None,
+            task_args={
+                "workspace_dir": str(workspace_dir),
+                "node_corpus": node_corpus,
+                "parent_node_id": node_id,
+                "parent_task_id": request.parent_task_id,
+                "document_column": request.column,
+                "search_word": request.search_word,
+                "num_left_tokens": request.num_left_tokens,
+                "num_right_tokens": request.num_right_tokens,
+                "regex": request.regex,
+                "whole_word": request.whole_word,
+                "case_sensitive": request.case_sensitive,
+                "new_node_name": request.new_node_name,
+                "include_document_column": include_document_column,
+                "extra_columns_data": extra_columns_data or None,
+                "extra_columns_dtypes": extra_columns_dtypes or None,
+                "materialized_path": request.materialized_path,
+                "selected_bins": request.selected_bins,
+                "total_bins": request.total_bins,
+            },
+        )
+
+        return {
+            "state": "running",
+            "message": "Concordance dispersion detach started",
+            "data": None,
+            "metadata": {"task_id": task_info.id},
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error submitting dispersion detach task: {exc}",
         )
 
 
