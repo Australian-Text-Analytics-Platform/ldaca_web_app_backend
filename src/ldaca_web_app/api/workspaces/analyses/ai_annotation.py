@@ -474,23 +474,36 @@ async def detach_ai_annotation(
         }
     )
 
-    artifact_dir = workspace_manager.ensure_workspace_artifacts_dir(
-        user_id, workspace_id
-    )
-    if artifact_dir is None:
+    # Detach output must live in the workspace-owned top-level `data/`
+    # directory, NOT in `data/artifacts/`. Artifacts get wiped on workspace
+    # unload (`clear_workspace_artifacts_dir`) and on every new analysis
+    # submit (`clear_previous_completed_analysis_task`), so a detached node
+    # scanning an artifact path would silently corrupt on next reload. The
+    # workspace GC (`_garbage_collect_workspace_data`) keeps top-level
+    # parquets alive while they're referenced by any node's plbin.
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
-
-    artifact_path = artifact_dir / f"ai_annotation_detach_{uuid4().hex}.parquet"
-    result_df.write_parquet(str(artifact_path))
+    workspace_data_dir = workspace_dir / "data"
+    workspace_data_dir.mkdir(parents=True, exist_ok=True)
+    detach_parquet_path = (
+        workspace_data_dir / f"ai_annotation_detach_{uuid4().hex}.parquet"
+    )
+    result_df.write_parquet(str(detach_parquet_path))
 
     from docworkspace import Node as DwNode
 
     new_name = request.new_node_name or f"{getattr(node, 'name', node_id)}_annotated"
-    lazy_result = pl.scan_parquet(str(artifact_path))
-    new_node = DwNode(data=lazy_result, name=new_name)
+    lazy_result = pl.scan_parquet(str(detach_parquet_path))
+    new_node = DwNode(
+        data=lazy_result,
+        name=new_name,
+        operation="ai_annotation_detach",
+        parents=[node],
+    )
 
     try:
-        ws.add_node(new_node, parent=node_id)
+        ws.add_node(new_node)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -540,14 +553,21 @@ async def save_ai_annotation(
 
     df = df.with_columns(pl.Series(annotation_col, annotations))
 
-    artifact_dir = workspace_manager.ensure_workspace_artifacts_dir(
-        user_id, workspace_id
-    )
-    if artifact_dir is None:
+    # Same rationale as `detach_ai_annotation`: the updated node's data
+    # must live under the workspace-owned `data/` dir, not the transient
+    # `data/artifacts/` dir. Reassigning `node.data` to a scan of a
+    # to-be-deleted artifact would corrupt the existing node on the next
+    # workspace unload or analysis submit.
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    artifact_path = artifact_dir / f"ai_annotation_save_{uuid4().hex}.parquet"
-    df.write_parquet(str(artifact_path))
-    node.data = pl.scan_parquet(str(artifact_path))
+    workspace_data_dir = workspace_dir / "data"
+    workspace_data_dir.mkdir(parents=True, exist_ok=True)
+    save_parquet_path = (
+        workspace_data_dir / f"ai_annotation_save_{uuid4().hex}.parquet"
+    )
+    df.write_parquet(str(save_parquet_path))
+    node.data = pl.scan_parquet(str(save_parquet_path))
 
     update_workspace(user_id, workspace_id, best_effort=True)
 

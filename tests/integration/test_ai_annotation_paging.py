@@ -1,5 +1,8 @@
+import shutil
+
 import pytest
 from ldaca_web_app.analysis.manager import get_task_manager
+from ldaca_web_app.core.workspace import workspace_manager
 
 
 @pytest.mark.anyio
@@ -81,3 +84,149 @@ async def test_ai_annotation_recomputes_pages_without_persisting_results(
         refreshed_task.result.to_json() if refreshed_task.result is not None else {}
     )
     assert "node_results" not in refreshed_result
+
+
+@pytest.mark.anyio
+async def test_ai_annotation_detach_survives_artifact_cleanup(
+    authenticated_client,
+    workspace_id,
+    sample_node_id,
+    monkeypatch,
+):
+    """Regression: detached AI-annotation node must not depend on the artifacts dir.
+
+    Previously the detach handler wrote `result_df` into `data/artifacts/`
+    and pointed the new node's LazyFrame at it. `clear_workspace_artifacts_dir`
+    (workspace unload) and `clear_previous_completed_analysis_task` (next
+    analysis submit) wipe that directory, silently corrupting the detached
+    node — the same failure mode that affected topic-modeling detach.
+    """
+
+    async def fake_classify_texts(*, texts, text_column_name="text", **_kwargs):
+        return [
+            {
+                "row_index": index,
+                text_column_name: text,
+                "classification": f"label-{index}",
+                "error": None,
+            }
+            for index, text in enumerate(texts)
+        ]
+
+    monkeypatch.setattr(
+        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
+        fake_classify_texts,
+    )
+
+    detach_response = await authenticated_client.post(
+        f"/api/workspaces/nodes/{sample_node_id}/ai-annotation/detach",
+        json={
+            "column": "document",
+            "new_node_name": "annotated_sample",
+            "annotation_column": "ai_annotation",
+            "classes": [
+                {"name": "support", "description": "Supportive tone"},
+                {"name": "critical", "description": "Critical tone"},
+            ],
+            "model": "gpt-4o-mini",
+        },
+    )
+    assert detach_response.status_code == 200, detach_response.text
+
+    # Simulate the artifact cleanup that runs on workspace unload / next
+    # analysis submit: wipe everything under `data/artifacts/`.
+    workspace_dir = workspace_manager.get_workspace_dir("test", workspace_id)
+    assert workspace_dir is not None
+    artifacts_dir = workspace_dir / "data" / "artifacts"
+    if artifacts_dir.exists():
+        shutil.rmtree(artifacts_dir)
+
+    # Locate the newly added detached node and confirm its data still
+    # collects — i.e. the parquet lives under workspace-owned `data/`, not
+    # the transient artifacts dir.
+    ws = workspace_manager.get_current_workspace("test")
+    assert ws is not None
+    detached = next(
+        node for node in ws.nodes.values() if node.name == "annotated_sample"
+    )
+    collected = detached.data.collect()
+    assert "ai_annotation" in collected.columns
+    assert len(collected) > 0
+
+
+@pytest.mark.anyio
+async def test_ai_annotation_save_survives_artifact_cleanup(
+    authenticated_client,
+    workspace_id,
+    sample_node_id,
+    monkeypatch,
+):
+    """Regression: saving AI annotations must not point the node at the artifacts dir.
+
+    `save_ai_annotation` mutates an existing node's `.data` — if it scans
+    a transient artifact parquet, the next workspace unload corrupts the
+    user's data. This used to be the case before the fix.
+    """
+
+    async def fake_classify_texts(*, texts, text_column_name="text", **_kwargs):
+        return [
+            {
+                "row_index": index,
+                text_column_name: text,
+                "classification": f"label-{index}",
+                "error": None,
+            }
+            for index, text in enumerate(texts)
+        ]
+
+    monkeypatch.setattr(
+        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
+        fake_classify_texts,
+    )
+
+    detach_response = await authenticated_client.post(
+        f"/api/workspaces/nodes/{sample_node_id}/ai-annotation/detach",
+        json={
+            "column": "document",
+            "new_node_name": "annotated_for_save",
+            "annotation_column": "ai_annotation",
+            "classes": [
+                {"name": "support", "description": "Supportive tone"},
+                {"name": "critical", "description": "Critical tone"},
+            ],
+            "model": "gpt-4o-mini",
+        },
+    )
+    assert detach_response.status_code == 200, detach_response.text
+
+    ws = workspace_manager.get_current_workspace("test")
+    assert ws is not None
+    detached = next(
+        node for node in ws.nodes.values() if node.name == "annotated_for_save"
+    )
+    detached_id = detached.id
+
+    save_response = await authenticated_client.post(
+        f"/api/workspaces/nodes/{detached_id}/ai-annotation/save",
+        json={
+            "annotation_column": "ai_annotation",
+            "edits": [
+                {"row_index": 0, "provider": "test", "annotation": "edited"}
+            ],
+        },
+    )
+    assert save_response.status_code == 200, save_response.text
+
+    workspace_dir = workspace_manager.get_workspace_dir("test", workspace_id)
+    assert workspace_dir is not None
+    artifacts_dir = workspace_dir / "data" / "artifacts"
+    if artifacts_dir.exists():
+        shutil.rmtree(artifacts_dir)
+
+    # The save endpoint reassigns `node.data`; after artifact cleanup the
+    # saved value must still be readable.
+    ws = workspace_manager.get_current_workspace("test")
+    assert ws is not None
+    saved_node = ws.nodes[detached_id]
+    collected = saved_node.data.collect()
+    assert collected["ai_annotation"].to_list()[0] == "edited"
