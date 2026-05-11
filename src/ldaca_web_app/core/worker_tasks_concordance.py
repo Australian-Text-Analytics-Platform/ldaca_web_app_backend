@@ -9,6 +9,7 @@ from ..api.workspaces.analyses.concordance_core import build_concordance_search_
 from .analysis_cache import materialized_cache_path
 from ..api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
+    CONC_EXTRACTION_COLUMN,
     CONC_L1_COLUMN,
     CONC_L1_FREQ_COLUMN,
     CONC_LEFT_CONTEXT_COLUMN,
@@ -19,10 +20,15 @@ from ..api.workspaces.analyses.generated_columns import (
     CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
     MATERIALIZED_CONCORDANCE_COLUMNS,
+    concordance_extraction_expr,
     concordance_struct_projection,
 )
 
-DISPERSION_EXTRACTED_CONTENTS_COLUMN = "extracted_contents"
+# The dispersion-detach output reuses `CONC_extraction` as the column name
+# for the per-document multi-line joined string. It carries the same KWIC
+# windows as the per-hit `CONC_extraction` column on the materialised
+# parquet, just collapsed into one row per source document.
+DISPERSION_EXTRACTED_CONTENTS_COLUMN = CONC_EXTRACTION_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +88,7 @@ def _build_concordance_occurrence_dataframe(
     result = (
         df.select(
             [
+                pl.col(source_column_name).alias("__concordance_doc__"),
                 *base_columns,
                 pt.concordance(
                     pl.col(source_column_name),
@@ -101,8 +108,12 @@ def _build_concordance_occurrence_dataframe(
             ]
         )
         .filter(pl.col(CONC_MATCHED_TEXT_COLUMN).is_not_null())
+        .with_columns(concordance_extraction_expr("__concordance_doc__"))
+        .drop("__concordance_doc__")
     )
-    return result, output_columns + list(CORE_CONCORDANCE_COLUMNS)
+    return result, output_columns + list(CORE_CONCORDANCE_COLUMNS) + [
+        CONC_EXTRACTION_COLUMN
+    ]
 
 
 def run_concordance_detach_task(
@@ -290,9 +301,12 @@ def _aggregate_hits_per_document(
     """Group per-hit rows by source document and aggregate into list columns.
 
     Used by the dispersion-detach task to produce the per-document output shape:
-    one row per document, hits collected into `List<T>` columns plus an
-    `extracted_contents` string column rendering each hit's character slice
-    as an asterisk-bulleted multi-line paragraph in document-flow order.
+    one row per document, hits collected into `List<T>` columns plus a
+    `CONC_extraction` string column rendering each hit's character slice as an
+    asterisk-bulleted multi-line paragraph in document-flow order. The same
+    `CONC_extraction` name is used per-hit on the materialised parquet and
+    per-document on this aggregate output — different aggregation level, same
+    semantic.
 
     When `selected_bins` is provided, hits are filtered to those whose bin
     index (`start_idx / doc_length * total_bins`, floored) is in the selected
@@ -362,54 +376,11 @@ def _aggregate_hits_per_document(
         df = df.with_columns(bin_idx.alias("__bin_idx__"))
         df = df.filter(pl.col("__bin_idx__").is_in(allowed))
 
-    # Slice the raw window text — from the start of `left_context` to the
-    # end of `right_context` — so the extract preserves the original
-    # whitespace and punctuation between the context tokens and the matched
-    # span. `pt.concordance` returns context strings token-bounded (no
-    # surrounding whitespace), so we assume a single separator char between
-    # each context and the matched span — accurate for whitespace-tokenized
-    # text; off by a small amount only when the separator is multi-char
-    # (e.g. an em-dash or multiple spaces).
-    df = df.with_columns(
-        pl.col(CONC_LEFT_CONTEXT_COLUMN)
-        .fill_null("")
-        .str.len_chars()
-        .alias("__left_len__"),
-        pl.col(CONC_RIGHT_CONTEXT_COLUMN)
-        .fill_null("")
-        .str.len_chars()
-        .alias("__right_len__"),
-    )
-    df = df.with_columns(
-        pl.when(pl.col("__left_len__") > 0)
-        .then(pl.lit(1, dtype=pl.Int64))
-        .otherwise(pl.lit(0, dtype=pl.Int64))
-        .alias("__left_sep__"),
-        pl.when(pl.col("__right_len__") > 0)
-        .then(pl.lit(1, dtype=pl.Int64))
-        .otherwise(pl.lit(0, dtype=pl.Int64))
-        .alias("__right_sep__"),
-    )
-    df = df.with_columns(
-        pl.max_horizontal(
-            pl.lit(0, dtype=pl.Int64),
-            pl.col(CONC_START_IDX_COLUMN)
-            - pl.col("__left_len__")
-            - pl.col("__left_sep__"),
-        ).alias("__window_start__"),
-    )
-    df = df.with_columns(
-        pl.col(document_column)
-        .cast(pl.Utf8, strict=False)
-        .str.slice(
-            pl.col("__window_start__"),
-            pl.col(CONC_END_IDX_COLUMN)
-            + pl.col("__right_len__")
-            + pl.col("__right_sep__")
-            - pl.col("__window_start__"),
-        )
-        .alias("__extract__"),
-    )
+    # Ensure CONC_extraction is present. Newly-generated hits already carry
+    # it (added in `_build_concordance_occurrence_dataframe`), but older
+    # materialised parquets pre-dating that change need it computed lazily.
+    if CONC_EXTRACTION_COLUMN not in df.columns:
+        df = df.with_columns(concordance_extraction_expr(document_column))
 
     # Sort by document then by hit start so list aggregates land in
     # document-flow order, then group with `maintain_order=True` so the
@@ -421,7 +392,7 @@ def _aggregate_hits_per_document(
     ]
 
     agg_columns = [
-        pl.col("__extract__").alias("__extracts_list__"),
+        pl.col(CONC_EXTRACTION_COLUMN).alias("__extracts_list__"),
         pl.col(CONC_MATCHED_TEXT_COLUMN).alias(CONC_MATCHED_TEXT_COLUMN),
         pl.col(CONC_L1_COLUMN).alias(CONC_L1_COLUMN),
         pl.col(CONC_R1_COLUMN).alias(CONC_R1_COLUMN),
@@ -497,7 +468,7 @@ def run_concordance_dispersion_detach_task(
     Fast path: reads the previously-materialised flat parquet when
     `materialized_path` is provided; otherwise computes hits from the full
     source corpus. Always drops left/right context and start/end indices —
-    callers consume `extracted_contents` plus the List<T> aggregates.
+    callers consume `CONC_extraction` plus the List<T> aggregates.
     """
     configure_worker_environment()
 

@@ -14,12 +14,15 @@ from fastapi import HTTPException
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
 from .generated_columns import (
+    CONC_END_IDX_COLUMN,
+    CONC_EXTRACTION_COLUMN,
     CONC_LEFT_CONTEXT_COLUMN,
     CONC_MATCHED_TEXT_COLUMN,
     CONC_RIGHT_CONTEXT_COLUMN,
     CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
     MATERIALIZED_CONCORDANCE_COLUMNS,
+    compute_concordance_extraction_string,
     concordance_struct_projection,
 )
 from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, estimate_page_size
@@ -159,17 +162,36 @@ def build_concordance_search_pattern(
     return rf"\b(?:{base_pattern})\b", True
 
 
-def _project_concordance_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:
-    """Project one raw concordance struct into canonical response columns."""
-    return {
+def _project_concordance_hit(
+    raw_hit: dict[str, Any],
+    *,
+    document_text: Optional[str] = None,
+) -> dict[str, Any]:
+    """Project one raw concordance struct into canonical response columns.
+
+    When ``document_text`` is provided, ``CONC_extraction`` is computed
+    using the same slicing rule as the worker-side materialised parquet.
+    """
+    start_idx = raw_hit.get("start_idx")
+    end_idx = raw_hit.get("end_idx")
+    projected: dict[str, Any] = {
         CONC_LEFT_CONTEXT_COLUMN: raw_hit.get("left_context"),
         CONC_MATCHED_TEXT_COLUMN: raw_hit.get("matched_text"),
         CONC_RIGHT_CONTEXT_COLUMN: raw_hit.get("right_context"),
-        "CONC_start_idx": raw_hit.get("start_idx"),
-        "CONC_end_idx": raw_hit.get("end_idx"),
+        CONC_START_IDX_COLUMN: start_idx,
+        CONC_END_IDX_COLUMN: end_idx,
         "CONC_l1": raw_hit.get("l1"),
         "CONC_r1": raw_hit.get("r1"),
     }
+    if document_text is not None and start_idx is not None and end_idx is not None:
+        projected[CONC_EXTRACTION_COLUMN] = compute_concordance_extraction_string(
+            document_text=document_text,
+            left_context=raw_hit.get("left_context"),
+            right_context=raw_hit.get("right_context"),
+            start_idx=int(start_idx),
+            end_idx=int(end_idx),
+        )
+    return projected
 
 
 def _concordance_hit_has_content(hit: dict[str, Any]) -> bool:
@@ -191,18 +213,28 @@ def _serialize_grouped_concordance_rows(
     result_df: pl.DataFrame,
     *,
     node_label: Optional[str] = None,
+    text_column: Optional[str] = None,
 ) -> tuple[list[list[dict[str, Any]]], list[str]]:
-    """Serialize collected concordance rows into grouped per-document hit lists."""
+    """Serialize collected concordance rows into grouped per-document hit lists.
+
+    When ``text_column`` is given and that column survives on the result frame
+    (it normally does — ``build_concordance_lazyframe`` keeps ``pl.all()``),
+    each projected hit gets a ``CONC_extraction`` field with the stitched
+    raw KWIC window.
+    """
     if result_df.height == 0:
         return [], []
 
     metadata_columns = [
         column for column in result_df.columns if column != "concordance"
     ]
+    has_extraction = bool(text_column) and text_column in metadata_columns
     columns = [
         *metadata_columns,
         *CORE_CONCORDANCE_COLUMNS,
     ]
+    if has_extraction:
+        columns.append(CONC_EXTRACTION_COLUMN)
     if node_label:
         columns.append("__source_node")
 
@@ -213,13 +245,17 @@ def _serialize_grouped_concordance_rows(
             continue
 
         base_row = {key: value for key, value in row.items() if key != "concordance"}
+        document_text: Optional[str] = None
+        if has_extraction:
+            raw_doc = base_row.get(text_column)
+            document_text = str(raw_doc) if raw_doc is not None else ""
         grouped_hits: list[dict[str, Any]] = []
         for raw_hit in raw_hits:
             if not isinstance(raw_hit, dict):
                 continue
             projected_hit = {
                 **base_row,
-                **_project_concordance_hit(raw_hit),
+                **_project_concordance_hit(raw_hit, document_text=document_text),
             }
             if node_label:
                 projected_hit["__source_node"] = node_label
@@ -325,10 +361,16 @@ def compute_concordance_page(
     page_rows, columns = _serialize_grouped_concordance_rows(
         result_df,
         node_label=node_label,
+        text_column=column,
     )
 
     total_source_pages = max(1, math.ceil(total_source_rows / resolved_page_size))
 
+    # `CONC_extraction` is intentionally classified under `metadata_columns`
+    # so the existing metadata-columns picker offers it as an opt-in toggle,
+    # matching the rest of the user-controllable column set. The CONC_
+    # prefix makes the source obvious; behaviourally it's "an optional column
+    # you can show / detach if you want it."
     metadata = {
         "concordance_columns": [c for c in columns if c in CORE_CONCORDANCE_COLUMNS],
         "metadata_columns": [c for c in columns if c not in CORE_CONCORDANCE_COLUMNS],

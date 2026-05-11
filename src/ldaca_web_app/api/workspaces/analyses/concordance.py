@@ -469,7 +469,7 @@ async def detach_concordance_dispersion(
     """Submit a per-document aggregated detach (dispersion view).
 
     Output shape differs from the per-hit detach: one row per source document,
-    matched-text/L1/R1/freq columns become `List<T>`, plus an `extracted_contents`
+    matched-text/L1/R1/freq columns become `List<T>`, plus a `CONC_extraction`
     string column that joins each hit's character slice with newline + asterisk
     bullets in document-flow order. Used by the dispersion summary chart so the
     user can pull a per-document view (optionally limited to bin-filtered hits)

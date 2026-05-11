@@ -417,7 +417,7 @@ class ConcordanceDispersionDetachRequest(BaseModel):
 
     Unlike `ConcordanceDetachRequest` (one row per hit), this produces one row
     per source document with the hits collected into `List<T>` columns and the
-    raw match-window text rendered as a multi-line `extracted_contents` string.
+    raw match-window text rendered as a multi-line `CONC_extraction` string.
 
     `selected_bins` + `total_bins` optionally restrict the aggregation to hits
     whose `start_idx / doc_length` falls inside one of the selected bins (the

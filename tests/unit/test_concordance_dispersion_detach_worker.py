@@ -45,7 +45,7 @@ def test_aggregate_hits_per_document_groups_and_renders_extract():
 
     assert output_columns == [
         "document",
-        "extracted_contents",
+        "CONC_extraction",
         "CONC_matched_text",
         "CONC_l1",
         "CONC_r1",
@@ -54,12 +54,12 @@ def test_aggregate_hits_per_document_groups_and_renders_extract():
     ]
     # 3 unique documents — the two "Hello world..." rows collapse.
     assert agg.height == 3
-    assert agg.schema["extracted_contents"] == pl.Utf8
+    assert agg.schema["CONC_extraction"] == pl.Utf8
     assert agg.schema["CONC_matched_text"] == pl.List(pl.Utf8)
     assert agg.schema["CONC_l1_freq"] == pl.List(pl.Int64)
 
     extracted = {
-        row["document"]: row["extracted_contents"]
+        row["document"]: row["CONC_extraction"]
         for row in agg.iter_rows(named=True)
     }
     # Each line is `* <left_context> <matched> <right_context>` — the full
@@ -264,9 +264,9 @@ def test_run_concordance_dispersion_detach_task_writes_node_payload(tmp_path):
     restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
     df = cast(pl.DataFrame, restored.collect())
     assert df.height >= 1
-    # Per-document output shape — extracted_contents is a string, others are
+    # Per-document output shape — CONC_extraction is a string, others are
     # List<T>. The per-hit start/end indices and L/R contexts are dropped.
-    assert df.schema["extracted_contents"] == pl.Utf8
+    assert df.schema["CONC_extraction"] == pl.Utf8
     assert df.schema["CONC_matched_text"] == pl.List(pl.Utf8)
     assert "CONC_left_context" not in df.columns
     assert "CONC_right_context" not in df.columns
