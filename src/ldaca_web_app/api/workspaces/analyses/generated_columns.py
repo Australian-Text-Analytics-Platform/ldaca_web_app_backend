@@ -10,7 +10,12 @@ Why:
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import polars as pl
+
+if TYPE_CHECKING:  # pragma: no cover
+    from docworkspace import Node
 
 CONC_LEFT_CONTEXT_COLUMN = "CONC_left_context"
 CONC_MATCHED_TEXT_COLUMN = "CONC_matched_text"
@@ -161,20 +166,63 @@ QUOTE_COLUMN_NAMES = (
 
 
 # ----------------------------------------------------------------------------
-# Tokens column (Phase 2 of pluggable_tokeniser)
+# Derived analytic columns (Phase 2, decision 7)
 # ----------------------------------------------------------------------------
-# A derived "tokens" node carries an additional column with the canonical
-# tokens-with-offsets schema emitted by
-# ``polars_text.tokenize_with_offsets``. Token-consuming tools (concordance
-# in tokens-mode, token-frequency, future POS) detect this column and use it
-# instead of re-tokenising the raw text. See docs/pluggable-tokeniser/PLAN.md
-# Phase 2 for the rationale; the schema is the contract that makes
-# cross-tool results consistent across HF and Jieba backends.
+# Tokens (and future POS / NER) outputs live as hidden columns on the source
+# Node's LazyFrame. Each column is named
+# ``__derived__.<form>.<source_column>.<model>`` — e.g.
+# ``__derived__.tokens.text.jieba``. Per-column metadata (source, form,
+# model, language, generated_at) lives in ``Node.derived``; the column name
+# is just a label.
+#
+# Token-consuming tools (concordance tokens-mode, token-frequency, future
+# POS) look up the right derived column via ``Node.find_derived_column``
+# rather than relying on a single fixed name. See
+# docs/pluggable-tokeniser/PLAN.md decision 7 for the rationale.
 
-TOKENS_COLUMN = "TOKENS_tokens"
+DERIVED_PREFIX = "__derived__"
+DERIVED_SEPARATOR = "."
+
+TOKENS_FORM = "tokens"
 TOKENS_TOKEN_FIELD = "token"
 TOKENS_START_FIELD = "start"
 TOKENS_END_FIELD = "end"
+
+
+def derived_column_name(form: str, source_column: str, model: str) -> str:
+    """Build the canonical hidden derived-column name for ``(form, source, model)``.
+
+    Example: ``derived_column_name("tokens", "text", "jieba")`` →
+    ``"__derived__.tokens.text.jieba"``. Used by the tokenise operation and
+    every consumer that wants to add a derived column on a node.
+    """
+    return DERIVED_SEPARATOR.join((DERIVED_PREFIX, form, source_column, model))
+
+
+def parse_derived_column(name: str) -> tuple[str, str, str] | None:
+    """Inverse of :func:`derived_column_name`. Returns ``(form, source, model)``
+    or ``None`` if ``name`` doesn't follow the derived pattern.
+
+    Limitation: source-column names or model IDs containing a ``.`` are
+    ambiguous from the name alone. Callers that need authoritative parts
+    should consult ``Node.derived`` rather than parsing the column name.
+    """
+    parts = name.split(DERIVED_SEPARATOR)
+    if len(parts) != 4 or parts[0] != DERIVED_PREFIX:
+        return None
+    _, form, source_column, model = parts
+    if not (form and source_column and model):
+        return None
+    return form, source_column, model
+
+
+def is_derived_column_name(name: str) -> bool:
+    """Cheap prefix check — True for any name starting with ``__derived__.``.
+
+    Use this for the frontend-facing schema filter (Phase 2.10) where the
+    metadata index may not be reachable and the goal is just to hide.
+    """
+    return name.startswith(DERIVED_PREFIX + DERIVED_SEPARATOR)
 
 
 def tokens_struct_dtype() -> pl.DataType:
@@ -196,20 +244,23 @@ def tokens_struct_dtype() -> pl.DataType:
     )
 
 
-def is_tokens_column(name: str, dtype: pl.DataType) -> bool:
-    """Schema-aware detector for the tokens column.
+def is_derived_tokens_column(node: "Node", col_name: str) -> bool:
+    """Metadata-driven detector for a tokens-form derived column.
 
-    True when the column is named ``TOKENS_tokens`` AND has the canonical
-    dtype. Used by worker tasks to decide whether to take the tokens path
-    or re-tokenise from raw text.
+    Reads ``Node.derived`` (decision 7's source of truth) — True when the
+    column is registered on this node with ``form == "tokens"``. The
+    LazyFrame dtype check is implicit: tokens-form entries are only ever
+    registered by the tokenise operation, which guarantees the canonical
+    dtype.
     """
-    return name == TOKENS_COLUMN and dtype == tokens_struct_dtype()
+    meta = node.derived.get(col_name)
+    return meta is not None and meta.get("form") == TOKENS_FORM
 
 
-def tokens_struct_projection(struct_column: str = TOKENS_COLUMN) -> tuple[pl.Expr, ...]:
+def tokens_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
     """Project the struct fields out of a tokens row (list-of-struct).
 
-    Returns expressions that, applied after ``.explode(TOKENS_COLUMN)``,
+    Returns expressions that, applied after ``.explode(struct_column)``,
     flatten each token into separate ``token`` / ``start`` / ``end``
     columns. Useful for ad-hoc inspection; production token-consuming
     paths typically operate on the list-of-struct directly.
