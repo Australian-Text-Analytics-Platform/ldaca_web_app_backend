@@ -58,7 +58,19 @@ def frontend_node_info(node: Node) -> dict[str, Any]:
     info["shape"] = (height, len(filtered_columns))
     # Guard against test mocks where ``node.derived`` isn't a real dict.
     derived = getattr(node, "derived", None)
-    info["derived_columns"] = sorted(derived.keys()) if isinstance(derived, dict) else []
+    if isinstance(derived, dict):
+        info["derived_columns"] = sorted(derived.keys())
+        # Phase 4 frontend (4.5 / 4.6 / 4.7) needs the structured metadata
+        # — column name → {source_column, form, model, language,
+        # generated_at} — to drive the quotation gate, inspector panel,
+        # and concordance tokens-mode auto-pick. Same shape the backend
+        # stores in Node.derived; ordered by column name for stable JSON.
+        info["derived"] = {
+            name: dict(derived[name]) for name in sorted(derived.keys())
+        }
+    else:
+        info["derived_columns"] = []
+        info["derived"] = {}
     return info
 
 

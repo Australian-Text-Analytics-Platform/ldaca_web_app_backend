@@ -77,6 +77,10 @@ def test_frontend_node_info_hides_derived_from_schema_and_columns() -> None:
     assert info["shape"][1] == 2
     # Derived columns surface separately so the frontend can list them.
     assert info["derived_columns"] == [_DERIVED_NAME]
+    # Phase 4: structured metadata travels alongside the name list so the
+    # frontend can drive the quotation gate / concordance auto-pick /
+    # inspector panel without having to fetch the workspace state again.
+    assert info["derived"] == {_DERIVED_NAME: _meta()}
 
 
 def test_frontend_node_info_round_trips_empty_derived() -> None:
@@ -85,6 +89,7 @@ def test_frontend_node_info_round_trips_empty_derived() -> None:
     info = frontend_node_info(node)
     assert info["columns"] == ["text"]
     assert info["derived_columns"] == []
+    assert info["derived"] == {}
     assert info["shape"][1] == 1
 
 
