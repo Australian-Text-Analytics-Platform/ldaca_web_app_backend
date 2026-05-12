@@ -6,6 +6,7 @@ Separated from `worker.py` to keep the worker module focused and smaller.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -25,6 +26,7 @@ def run_token_frequencies_task(
     token_limit: int = 10,
     stop_words: Optional[list[str]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    node_tokens: Optional[Dict[str, list[list[str]]]] = None,
 ) -> Dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
 
@@ -71,7 +73,10 @@ def run_token_frequencies_task(
             MAX_SERVER_TOKEN_LIMIT,
         )
 
-        node_ids = list(node_corpora.keys())
+        tokens_payload = node_tokens or {}
+        # Union of node ids reachable through either path. Order preserved to
+        # match the request payload (Python 3.7+ dict order is insertion).
+        node_ids = list({**node_corpora, **tokens_payload}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
@@ -92,11 +97,22 @@ def run_token_frequencies_task(
         frequency_results: dict[str, dict[str, int]] = {}
         stats_df = None
         for node_id in node_ids:
-            docs = node_corpora.get(node_id) or []
-            series = pl.Series(
-                "document", [str(v) if v is not None else "" for v in docs]
-            )
-            frequency_results[node_id] = pt.token_frequencies(series)
+            if node_id in tokens_payload:
+                # Decision 7 tokens path: derived tokens column already on the
+                # source node — count directly without re-tokenising raw text.
+                counter: Counter[str] = Counter()
+                for token_list in tokens_payload[node_id]:
+                    counter.update(
+                        str(tok) for tok in (token_list or []) if tok is not None
+                    )
+                frequency_results[node_id] = dict(counter)
+            else:
+                docs = node_corpora.get(node_id) or []
+                series = pl.Series(
+                    "document",
+                    [str(v) if v is not None else "" for v in docs],
+                )
+                frequency_results[node_id] = pt.token_frequencies(series)
 
         if len(node_ids) == 2:
             stats_df = pt.token_frequency_stats(

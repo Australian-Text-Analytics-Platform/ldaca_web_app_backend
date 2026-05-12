@@ -384,6 +384,7 @@ def token_frequencies_task(
     stop_words: Optional[list[str]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
+    node_tokens: Optional[Dict[str, list[list[str]]]] = None,
 ) -> Dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_token_frequencies_task(
@@ -397,6 +398,7 @@ def token_frequencies_task(
         token_limit=token_limit,
         stop_words=stop_words,
         progress_callback=cb,
+        node_tokens=node_tokens,
     )
 
 

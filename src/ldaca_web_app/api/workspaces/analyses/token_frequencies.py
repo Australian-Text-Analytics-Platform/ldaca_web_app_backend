@@ -30,6 +30,7 @@ from ....models import TokenFrequencyRequest, TokenFrequencyResponse
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
+from .generated_columns import TOKENS_FORM
 
 router = APIRouter(prefix="/workspaces")
 logger = logging.getLogger(__name__)
@@ -431,6 +432,7 @@ async def calculate_token_frequencies(
         )
 
     node_corpora: dict[str, list[str]] = {}
+    node_tokens: dict[str, list[list[str]]] = {}
     node_display_names: dict[str, str] = {}
     document_column_updated = False
     for node_id in request.node_ids:
@@ -450,10 +452,29 @@ async def calculate_token_frequencies(
                 exc,
             )
 
-        docs_df = node_data.select(pl.col(column_name).alias("__doc_col__")).collect()
-        node_corpora[node_id] = [
-            str(v) if v is not None else "" for v in docs_df["__doc_col__"].to_list()
-        ]
+        # Decision 7 routing: if a derived tokens column exists on this node
+        # for the user-selected source column, count from it directly — the
+        # tokens are already segmented with the right language backend, so
+        # we don't re-tokenise and risk diverging from concordance / POS.
+        derived_tokens_col = node.find_derived_column(column_name, form=TOKENS_FORM)
+        if derived_tokens_col is not None:
+            tokens_df = node_data.select(
+                pl.col(derived_tokens_col)
+                .list.eval(pl.element().struct.field("token"))
+                .alias("__tokens__")
+            ).collect()
+            node_tokens[node_id] = [
+                [str(tok) for tok in (row or []) if tok is not None]
+                for row in tokens_df["__tokens__"].to_list()
+            ]
+        else:
+            docs_df = node_data.select(
+                pl.col(column_name).alias("__doc_col__")
+            ).collect()
+            node_corpora[node_id] = [
+                str(v) if v is not None else ""
+                for v in docs_df["__doc_col__"].to_list()
+            ]
         node_display_names[node_id] = str(getattr(node, "name", None) or node_id)
 
     if document_column_updated:
@@ -504,6 +525,7 @@ async def calculate_token_frequencies(
             task_type="token_frequencies",
             task_args={
                 "node_corpora": node_corpora,
+                "node_tokens": node_tokens,
                 "node_display_names": node_display_names,
                 "artifact_dir": str(artifact_dir),
                 "artifact_prefix": artifact_prefix,
