@@ -14,11 +14,14 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         input_df: pl.DataFrame, source_column: str
     ):
         assert source_column == "__quotation_source__"
-        return pl.DataFrame(
-            {
-                "document": input_df.get_column("document").to_list(),
-                "speaker_label": ["narrator"],
-                "quotation": [
+        # Mirror the real `quotation_groups_for_dataframe`: it preserves
+        # every input column and adds a `quotation` group column. The
+        # worker pipeline relies on that contract (e.g. for QUOTE_extraction
+        # to flow through), so the mock must match.
+        return input_df.with_columns(
+            pl.Series(
+                "quotation",
+                [
                     [
                         {
                             "speaker": "Ada",
@@ -37,7 +40,7 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
                         }
                     ]
                 ],
-            }
+            )
         )
 
     monkeypatch.setattr(

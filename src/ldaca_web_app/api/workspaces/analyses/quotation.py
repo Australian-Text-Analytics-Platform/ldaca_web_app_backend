@@ -33,6 +33,7 @@ from ....settings import settings
 from ..utils import update_workspace
 from . import quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
+from .generated_columns import QUOTE_EXTRACTION_COLUMN
 
 logger = logging.getLogger(__name__)
 
@@ -454,8 +455,13 @@ async def quotation_detach_options(
 
     available_schema_columns = list(node_data.collect_schema().names())
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
+    # `QUOTE_extraction` is a generated column (raw source-document text)
+    # offered as an opt-in pick — placed between the text column and the
+    # source metadata columns so users see it next to the canonical fields.
     optional_columns = [
-        col for col in [column, *available_schema_columns] if col not in mandatory_set
+        col
+        for col in [column, QUOTE_EXTRACTION_COLUMN, *available_schema_columns]
+        if col not in mandatory_set
     ]
     ordered_available_columns = list(
         dict.fromkeys([column, *CORE_QUOTATION_COLUMNS, *optional_columns])
@@ -501,11 +507,17 @@ async def detach_quotation(
     node_data = node.data
 
     include_document_column = False
+    include_extraction = False
     columns_to_select: list[str] = []
     if request.selected_columns:
         for col in request.selected_columns:
             if col == request.column:
                 include_document_column = True
+                continue
+            # QUOTE_extraction is a generated column, not a source schema
+            # column — translate to a worker flag and skip source-selection.
+            if col == QUOTE_EXTRACTION_COLUMN:
+                include_extraction = True
                 continue
             columns_to_select.append(col)
 
@@ -551,6 +563,7 @@ async def detach_quotation(
                 "engine_config": request.engine.model_dump() if request.engine else {},
                 "new_node_name": request.new_node_name,
                 "include_document_column": include_document_column,
+                "include_extraction": include_extraction,
                 "extra_columns_data": extra_columns_data or None,
                 "extra_columns_dtypes": extra_columns_dtypes or None,
                 "materialized_path": request.materialized_path,

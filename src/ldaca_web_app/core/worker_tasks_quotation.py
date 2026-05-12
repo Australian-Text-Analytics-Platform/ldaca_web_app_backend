@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
+    QUOTE_EXTRACTION_COLUMN,
     QUOTE_QUOTE_COLUMN,
 )
 from .analysis_cache import materialized_cache_path
@@ -35,8 +36,15 @@ def _build_quotation_occurrence_dataframe(
 
     source_column_name = "__quotation_source__"
     data: dict[str, list] = {source_column_name: filtered_corpus}
-    selected_columns: list[str] = []
-    output_columns: list[str] = []
+    # `QUOTE_extraction` is the per-quote-row copy of the raw source document
+    # text — exposed under a canonical name so callers (table view, detach)
+    # can refer to it without needing to know the user's source column name.
+    # Always carried through extraction so the materialised parquet has it
+    # for the fast-path detach. The detach worker drops it from the final
+    # output when the user hasn't opted into the column.
+    data[QUOTE_EXTRACTION_COLUMN] = filtered_corpus
+    selected_columns: list[str] = [QUOTE_EXTRACTION_COLUMN]
+    output_columns: list[str] = [QUOTE_EXTRACTION_COLUMN]
 
     if include_document_column:
         data[document_column] = filtered_corpus
@@ -85,6 +93,7 @@ def run_quotation_detach_task(
     engine_config: Dict[str, Any],
     new_node_name: str,
     include_document_column: bool = False,
+    include_extraction: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
@@ -125,7 +134,18 @@ def run_quotation_detach_task(
                 detach_data_dir,
                 f"quotation_detach_{uuid.uuid4().hex}.parquet",
             )
-            shutil.copy2(materialized_path, detach_parquet_path)
+            # When the user didn't tick `QUOTE_extraction` in the detach
+            # dialog, drop it from the materialised parquet copy. The
+            # materialised parquet always carries it (so subsequent ticks
+            # are cheap), but the detached node should respect the user's
+            # column picks.
+            mat_lazy = pl.scan_parquet(materialized_path)
+            mat_columns = list(mat_lazy.collect_schema().names())
+            if not include_extraction and QUOTE_EXTRACTION_COLUMN in mat_columns:
+                mat_df = mat_lazy.drop(QUOTE_EXTRACTION_COLUMN).collect()
+                mat_df.write_parquet(detach_parquet_path)
+            else:
+                shutil.copy2(materialized_path, detach_parquet_path)
             lazy = pl.scan_parquet(detach_parquet_path)
             schema_names = list(lazy.collect_schema().names())
             record_count = int(
@@ -165,6 +185,17 @@ def run_quotation_detach_task(
             extra_columns_data=extra_columns_data,
             extra_columns_dtypes=extra_columns_dtypes,
         )
+
+        # `_build_quotation_occurrence_dataframe` always emits
+        # `QUOTE_extraction`; drop it from the detach output when the user
+        # didn't tick it. Keeps the slow-path output consistent with what
+        # the fast-path materialised copy ships and with the detach dialog
+        # contract: untouched optional columns are excluded.
+        if not include_extraction and QUOTE_EXTRACTION_COLUMN in quote_df.columns:
+            quote_df = quote_df.drop(QUOTE_EXTRACTION_COLUMN)
+            output_columns = [
+                c for c in output_columns if c != QUOTE_EXTRACTION_COLUMN
+            ]
 
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")

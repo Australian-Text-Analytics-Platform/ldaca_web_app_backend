@@ -128,6 +128,7 @@ def concordance_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
 TOPIC_COLUMN = "TOPIC_topic"
 TOPIC_MEANING_COLUMN = "TOPIC_topic_meaning"
 
+QUOTE_EXTRACTION_COLUMN = "QUOTE_extraction"
 QUOTE_SPEAKER_COLUMN = "QUOTE_speaker"
 QUOTE_SPEAKER_START_IDX_COLUMN = "QUOTE_speaker_start_idx"
 QUOTE_SPEAKER_END_IDX_COLUMN = "QUOTE_speaker_end_idx"
