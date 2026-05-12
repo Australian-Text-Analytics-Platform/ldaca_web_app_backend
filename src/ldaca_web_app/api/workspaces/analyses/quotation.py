@@ -15,6 +15,12 @@ from ....analysis.implementations.quotation import (
 from ....analysis.manager import get_task_manager
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.i18n import (
+    DEFAULT_LANGUAGE,
+    UnsupportedLanguageError,
+    effective_language,
+    require_language,
+)
 from ....core.services.quotation_client import (
     QuotationServiceError,
     extract_remote_quotations,
@@ -41,6 +47,41 @@ DEFAULT_CONTEXT_LENGTH = qcore.DEFAULT_CONTEXT_LENGTH
 DEFAULT_PAGE_SIZE = qcore.DEFAULT_PAGE_SIZE
 DEFAULT_DESCENDING = qcore.DEFAULT_DESCENDING
 CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
+
+# Phase 3.6: quotation extractor is English-only. Vendored GenderGapTracker
+# rules / spaCy model only work for English; running them on other
+# languages produces garbage rather than a useful refusal. Frontend shows
+# a disabled-with-tooltip control, but the API still gates so curl users
+# / future clients can't bypass it.
+_QUOTATION_TOOL = "Quotation extractor"
+_QUOTATION_SUPPORTED_LANGUAGES = (DEFAULT_LANGUAGE,)
+
+
+def _enforce_quotation_language_gate(
+    request_language: Optional[str], node: Any
+) -> str:
+    """Resolve effective language and reject anything other than English.
+
+    Returns the resolved language string for downstream telemetry/logging.
+    Raises ``HTTPException(400)`` with a typed-error payload on rejection.
+    """
+    language = effective_language(request_language, node)
+    try:
+        require_language(
+            _QUOTATION_TOOL, language, supported=_QUOTATION_SUPPORTED_LANGUAGES
+        )
+    except UnsupportedLanguageError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "unsupported_language",
+                "tool": exc.tool,
+                "language": exc.language,
+                "supported": list(_QUOTATION_SUPPORTED_LANGUAGES),
+                "message": str(exc),
+            },
+        ) from exc
+    return language
 
 
 async def _compute_on_demand_page(
@@ -326,6 +367,7 @@ async def get_quotation(
             raise HTTPException(status_code=404, detail="No active workspace selected")
 
         node = workspace.nodes[node_id]
+        _enforce_quotation_language_gate(request.language, node)
         try:
             node.document = request.column
             update_workspace(user_id, workspace_id, best_effort=True)
@@ -501,9 +543,10 @@ async def detach_quotation(
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
-    tm = workspace_manager.get_task_manager(user_id)
 
     node = ws.nodes[node_id]
+    _enforce_quotation_language_gate(request.language, node)
+    tm = workspace_manager.get_task_manager(user_id)
     node_data = node.data
 
     include_document_column = False
@@ -602,11 +645,13 @@ async def materialize_quotation(
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
-    tm = workspace_manager.get_task_manager(user_id)
 
     if node_id not in ws.nodes:
         raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-    node_data = ws.nodes[node_id].data
+    node = ws.nodes[node_id]
+    _enforce_quotation_language_gate(request.language, node)
+    tm = workspace_manager.get_task_manager(user_id)
+    node_data = node.data
 
     corpus_df = (
         node_data.select([pl.col(request.column)])

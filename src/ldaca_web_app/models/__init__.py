@@ -515,6 +515,12 @@ class QuotationRequest(BaseModel):
     sort_by: Optional[str] = None  # column name to sort by
     descending: bool = True
     engine: Optional[QuotationEngineConfig] = None
+    # Phase 3.6: quotation is English-only. The route resolves an effective
+    # language and rejects non-EN with a typed UnsupportedLanguageError so
+    # users see a clear "English-only" message rather than garbage output.
+    # ``None`` falls back to the node's derived metadata (if it's been
+    # tokenised) and then ``"en"``.
+    language: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -526,6 +532,7 @@ class QuotationDetachRequest(BaseModel):
     engine: Optional[QuotationEngineConfig] = None
     selected_columns: Optional[list[str]] = None
     materialized_path: Optional[str] = None  # Reuse existing flattened parquet
+    language: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -534,6 +541,7 @@ class QuotationMaterializeRequest(BaseModel):
     column: str
     engine: Optional[QuotationEngineConfig] = None
     parent_task_id: str
+    language: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
