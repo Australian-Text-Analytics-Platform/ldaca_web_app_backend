@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
+from .concordance_tokens_mode import compute_tokens_concordance_page
 from .generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
@@ -22,6 +23,7 @@ from .generated_columns import (
     CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
     MATERIALIZED_CONCORDANCE_COLUMNS,
+    TOKENS_FORM,
     compute_concordance_extraction_string,
     concordance_struct_projection,
 )
@@ -303,10 +305,19 @@ def resolve_node_sources(
         column = node_columns.get(node_id)
         if not column:
             continue
+        # Tokens-mode (Phase 2.6) needs the derived tokens column name for
+        # this source. Look it up here so the page computation can route
+        # without having to re-touch the workspace.
+        derived_tokens_column: Optional[str] = None
+        if hasattr(node, "find_derived_column"):
+            derived_tokens_column = node.find_derived_column(
+                column, form=TOKENS_FORM
+            )
         node_sources[node_id] = {
             "lf": node_data,
             "column": column,
             "label": node_label,
+            "derived_tokens_column": derived_tokens_column,
         }
 
     return node_sources, label_to_node_map, node_labels
@@ -395,6 +406,57 @@ def compute_concordance_page(
             "descending": descending,
         },
     }
+
+
+def compute_node_concordance_page(
+    src: dict[str, Any],
+    request: dict[str, Any],
+    *,
+    page: int,
+    page_size: Optional[int],
+    sort_by: Optional[str],
+    descending: bool,
+) -> dict[str, Any]:
+    """Route a node to either regex-mode or tokens-mode page computation.
+
+    Tokens-mode only activates when ``request['search_mode'] == 'tokens'``
+    AND the node carries a derived tokens column for the source column.
+    Otherwise we fall back to the existing regex/text path so EN goldens
+    stay byte-identical.
+    """
+    base_lf = src["lf"]
+    column = src["column"]
+    label = src.get("label")
+    derived_tokens_column = src.get("derived_tokens_column")
+    search_mode = str(request.get("search_mode") or "regex")
+
+    if search_mode == "tokens" and derived_tokens_column:
+        effective_page_size = (
+            int(page_size)
+            if page_size is not None and int(page_size) > 0
+            else DEFAULT_CONCORDANCE_PAGE_SIZE
+        )
+        return compute_tokens_concordance_page(
+            base_lf,
+            column=column,
+            derived_column=derived_tokens_column,
+            request=request,
+            page=page,
+            page_size=effective_page_size,
+            sort_by=sort_by,
+            descending=descending,
+            node_label=label,
+        )
+    return compute_concordance_page(
+        base_lf,
+        column,
+        request,
+        page=page,
+        page_size=page_size,
+        sort_by=sort_by,
+        descending=descending,
+        node_label=label,
+    )
 
 
 def _count_concordance_hits(
@@ -622,18 +684,14 @@ def empty_concordance_page(page: int, page_size: int) -> dict[str, Any]:
 
 
 def collect_interleaved_combined(
-    left_base_lf: pl.LazyFrame,
-    left_column: str,
-    right_base_lf: pl.LazyFrame,
-    right_column: str,
+    left_src: dict[str, Any],
+    right_src: dict[str, Any],
     request: dict[str, Any],
     *,
     page: int,
     page_size: Optional[int],
     sort_by: Optional[str],
     descending: bool,
-    left_label: Optional[str] = None,
-    right_label: Optional[str] = None,
 ) -> dict[str, Any]:
     """Combine two node concordance pages using left-right interleaving.
 
@@ -642,26 +700,24 @@ def collect_interleaved_combined(
 
     Why:
     - Preserves per-node page semantics while presenting a merged comparison view.
+      Routes through ``compute_node_concordance_page`` so each side independently
+      picks regex- vs tokens-mode based on the request and its derived columns.
     """
-    left_result = compute_concordance_page(
-        left_base_lf,
-        left_column,
+    left_result = compute_node_concordance_page(
+        left_src,
         request,
         page=page,
         page_size=page_size,
         sort_by=sort_by,
         descending=descending,
-        node_label=left_label,
     )
-    right_result = compute_concordance_page(
-        right_base_lf,
-        right_column,
+    right_result = compute_node_concordance_page(
+        right_src,
         request,
         page=page,
         page_size=page_size,
         sort_by=sort_by,
         descending=descending,
-        node_label=right_label,
     )
 
     left_all_rows = left_result["data"]
@@ -823,17 +879,13 @@ def build_concordance_response(
             right_src = node_sources.get(right_id)
             if left_src and right_src:
                 data["__COMBINED__"] = collect_interleaved_combined(
-                    left_src["lf"],
-                    left_src["column"],
-                    right_src["lf"],
-                    right_src["column"],
+                    left_src,
+                    right_src,
                     request,
                     page=page,
                     page_size=page_size,
                     sort_by=sort_by,
                     descending=descending,
-                    left_label=left_src.get("label"),
-                    right_label=right_src.get("label"),
                 )
             else:
                 data["__COMBINED__"] = empty_concordance_page(
@@ -849,15 +901,13 @@ def build_concordance_response(
                 src = node_sources.get(node_id)
                 if not src:
                     continue
-                node_result = compute_concordance_page(
-                    src["lf"],
-                    src["column"],
+                node_result = compute_node_concordance_page(
+                    src,
                     request,
                     page=page,
                     page_size=combined_page_size,
                     sort_by=sort_by,
                     descending=descending,
-                    node_label=src.get("label"),
                 )
                 all_rows.extend(node_result["data"])
                 if not columns and node_result["columns"]:
@@ -910,15 +960,13 @@ def build_concordance_response(
                     node_label=src.get("label"),
                 )
                 continue
-            data[node_id] = compute_concordance_page(
-                src["lf"],
-                src["column"],
+            data[node_id] = compute_node_concordance_page(
+                src,
                 request,
                 page=page,
                 page_size=page_size,
                 sort_by=sort_by,
                 descending=descending,
-                node_label=src.get("label"),
             )
         combinable = len(node_ids) > 1
 

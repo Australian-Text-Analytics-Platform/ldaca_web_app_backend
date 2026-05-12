@@ -186,17 +186,23 @@ def test_collect_interleaved_combined_interleaves_grouped_rows():
     ).lazy()
 
     result = collect_interleaved_combined(
-        left_source,
-        "text",
-        right_source,
-        "text",
+        {
+            "lf": left_source,
+            "column": "text",
+            "label": "left",
+            "derived_tokens_column": None,
+        },
+        {
+            "lf": right_source,
+            "column": "text",
+            "label": "right",
+            "derived_tokens_column": None,
+        },
         request,
         page=1,
         page_size=2,
         sort_by=None,
         descending=False,
-        left_label="left",
-        right_label="right",
     )
 
     assert len(result["data"]) == 4

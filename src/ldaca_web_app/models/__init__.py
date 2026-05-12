@@ -391,6 +391,13 @@ class ConcordanceAnalysisRequest(BaseModel):
     whole_word: bool = False
     case_sensitive: bool = False
     combined: bool = False  # if true, backend builds a combined view across nodes
+    # "regex" (default) uses the polars-text concordance engine on raw text,
+    # preserving partial-word patterns like ``equ\w*`` for English users.
+    # "tokens" looks up a derived tokens column (decision 7) and walks it for
+    # exact-token matches with N-actual-token left/right context — the
+    # word-aware semantics CJK users want once Tokenise has been run.
+    # Falls back to regex behaviour if no derived tokens column exists.
+    search_mode: Literal["regex", "tokens"] = "regex"
     # Sorting parameters
     sort_by: Optional[str] = None  # column name to sort by
     descending: bool = True
