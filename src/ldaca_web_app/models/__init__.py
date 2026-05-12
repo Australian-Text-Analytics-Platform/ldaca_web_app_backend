@@ -901,6 +901,11 @@ class AiAnnotationRequest(BaseAnalysisRequest):
     top_p: float = Field(default=1.0, gt=0, le=1.0)
     seed: Optional[int] = 42
     batch_size: int = Field(default=100, ge=1)
+    # Phase 3.7: when set, the classification system prompt gains a line
+    # like "Texts are in Chinese." so the LLM doesn't mistake CJK for noise.
+    # ``None`` falls back to ``effective_language(None, node)`` per node,
+    # which keeps existing English flows unchanged (default = "en").
+    language: Optional[str] = None
 
     page: int = 1
     page_size: int = 20
@@ -946,6 +951,9 @@ class AiAnnotationDetachRequest(BaseModel):
     top_p: float = Field(default=1.0, gt=0, le=1.0)
     seed: Optional[int] = 42
     batch_size: int = Field(default=100, ge=1)
+    # Phase 3.7: optional language hint surfaced to the LLM prompt; falls
+    # back to the node's derived metadata then to ``"en"``.
+    language: Optional[str] = None
 
 
 class AiAnnotationEdit(BaseModel):

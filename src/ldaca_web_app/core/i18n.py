@@ -30,6 +30,27 @@ if TYPE_CHECKING:  # pragma: no cover
 
 DEFAULT_LANGUAGE = "en"
 
+# Human-readable label for the language codes the analysis stack uses.
+# Keep this list small and additive — anything missing falls through to
+# the raw code, which is still a meaningful hint to LLM-driven tools.
+_LANGUAGE_LABELS: dict[str, str] = {
+    "en": "English",
+    "zh": "Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "multi": "multilingual",
+}
+
+
+def language_label(code: str) -> str:
+    """Return a human-friendly label for a language code, falling back to
+    the code itself when unknown. Used by tools that surface the language
+    to an end user or an LLM (e.g. AI annotation prompts)."""
+    return _LANGUAGE_LABELS.get(code.lower(), code)
+
 
 class UnsupportedLanguageError(Exception):
     """Raised when a tool is asked to run against a language it does not
@@ -92,5 +113,6 @@ __all__ = [
     "DEFAULT_LANGUAGE",
     "UnsupportedLanguageError",
     "effective_language",
+    "language_label",
     "require_language",
 ]
