@@ -56,5 +56,9 @@ def merge_preferences(
         overrides["favorite_workspaces"] = update.favorite_workspaces
     if update.quotation is not None:
         overrides["quotation"] = update.quotation
+    if update.default_language is not None:
+        overrides["default_language"] = update.default_language
+    if update.default_tokenizer_model is not None:
+        overrides["default_tokenizer_model"] = update.default_tokenizer_model
     merged = current.model_copy(update=overrides)
     return merged.validated()

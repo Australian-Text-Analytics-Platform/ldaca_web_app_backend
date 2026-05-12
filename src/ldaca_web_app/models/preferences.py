@@ -38,6 +38,11 @@ class UserPreferences(BaseModel):
     hidden_views: list[str] = Field(default_factory=lambda: list(DEFAULT_HIDDEN_VIEWS))
     favorite_workspaces: list[str] = Field(default_factory=list)
     quotation: QuotationPreferences = Field(default_factory=QuotationPreferences)
+    # Phase 4.1: per-user multilingual defaults. ``None`` falls back to the
+    # per-request resolution chain (request → derived → "en") so existing
+    # English users see no behaviour change.
+    default_language: Optional[str] = None
+    default_tokenizer_model: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -57,5 +62,7 @@ class UserPreferencesUpdate(BaseModel):
     hidden_views: Optional[list[str]] = None
     favorite_workspaces: Optional[list[str]] = None
     quotation: Optional[QuotationPreferences] = None
+    default_language: Optional[str] = None
+    default_tokenizer_model: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
