@@ -1,4 +1,4 @@
-"""Concordance tokens-mode helper (Phase 2.6 of pluggable_tokeniser).
+"""Concordance tokens-mode helper (Phase 2.6 of multilingual).
 
 Implements the second concordance mode introduced in decision 6:
 

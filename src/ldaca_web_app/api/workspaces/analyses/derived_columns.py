@@ -1,4 +1,4 @@
-"""Derived-column lifecycle endpoints (Phase 2.5 of pluggable_tokeniser).
+"""Derived-column lifecycle endpoints (Phase 2.5 of multilingual).
 
 POST  /workspaces/nodes/{node_id}/derived/tokens
     Tokenise a string column on the active workspace's node. Idempotent on

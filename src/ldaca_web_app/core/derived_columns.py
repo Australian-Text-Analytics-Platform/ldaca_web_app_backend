@@ -1,4 +1,4 @@
-"""Derived-column operations (Phase 2.3 of pluggable_tokeniser).
+"""Derived-column operations (Phase 2.3 of multilingual).
 
 Tokens and future analytic derivations live as hidden columns on the source
 Node's LazyFrame (decision 7). This module owns the operation that adds or

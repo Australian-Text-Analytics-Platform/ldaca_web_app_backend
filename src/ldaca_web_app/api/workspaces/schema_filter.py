@@ -1,4 +1,4 @@
-"""Frontend-facing schema projection (Phase 2.10 of pluggable_tokeniser).
+"""Frontend-facing schema projection (Phase 2.10 of multilingual).
 
 Decision 7 keeps derived analytic columns on the source node's LazyFrame
 (``__derived__.<form>.<source>.<model>``), but the user shouldn't see them
