@@ -25,6 +25,7 @@ from ...core.auth import get_current_user
 # Note: DocWorkspace API helpers are not used directly in this HTTP layer
 from ...core.utils import get_user_data_folder, load_data_file
 from ...core.workspace import workspace_manager
+from .schema_filter import frontend_node_info
 from .utils import stage_dataframe_as_lazy, update_workspace
 
 router = APIRouter(prefix="/workspaces", tags=["workspace"])
@@ -229,7 +230,7 @@ async def delete_node_column(
     if node.document == column_name:
         node.document = None
     update_workspace(user_id, workspace_id, best_effort=True)
-    return node.info()
+    return frontend_node_info(node)
 
 
 @router.put("/nodes/{node_id}/columns/{column_name}")
@@ -260,7 +261,7 @@ async def rename_node_column(
 
     node.rename({column_name: trimmed_name})
     update_workspace(user_id, workspace_id, best_effort=True)
-    return node.info()
+    return frontend_node_info(node)
 
 
 @router.post("/nodes/{node_id}/undo")
@@ -284,7 +285,7 @@ async def undo_node_operation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     update_workspace(user_id, workspace_id, best_effort=True)
-    return node.info()
+    return frontend_node_info(node)
 
 
 @router.post("/nodes/{node_id}/redo")
@@ -308,7 +309,7 @@ async def redo_node_operation(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     update_workspace(user_id, workspace_id, best_effort=True)
-    return node.info()
+    return frontend_node_info(node)
 
 
 # -----------------------------------------------------------------------------
@@ -500,7 +501,7 @@ async def add_node_to_workspace(
     workspace.add_node(node)
     update_workspace(user_id, workspace_id, workspace)
 
-    return node.info()
+    return frontend_node_info(node)
 
 
 @router.post("/nodes/{node_id}/cast")

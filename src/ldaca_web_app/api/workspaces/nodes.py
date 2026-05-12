@@ -43,6 +43,7 @@ from ...models import (
     ReplaceRequest,
     SliceRequest,
 )
+from .schema_filter import frontend_node_info, project_visible
 from .utils import update_workspace
 
 router = APIRouter(prefix="/workspaces", tags=["nodes"])
@@ -613,7 +614,7 @@ async def get_node_info(
 ):
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
-    return ws.nodes[node_id].info()
+    return frontend_node_info(ws.nodes[node_id])
 
 
 @router.get("/nodes/{node_id}/query-plan")
@@ -641,7 +642,10 @@ async def get_node_data(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    lf = _require_current_workspace(user_id).nodes[node_id].data
+    # Hide ``__derived__.*`` columns from the user-facing data view (Phase
+    # 2.10, decision 7). Analytics tools that consume the derived columns
+    # read ``node.data`` directly and are unaffected.
+    lf = project_visible(_require_current_workspace(user_id).nodes[node_id].data)
     schema = {col: str(dtype) for col, dtype in lf.collect_schema().items()}
     columns = list(schema.keys())
 
@@ -857,7 +861,7 @@ async def update_node_name(
     node.name = new_name
     update_workspace(user_id, workspace_id, best_effort=True)
     try:
-        return node.info()
+        return frontend_node_info(node)
     except Exception:
         logger.debug("node.info() failed for %s, returning minimal dict", node_id)
         return {"id": getattr(node, "id", node_id), "name": new_name}
@@ -898,7 +902,7 @@ async def clone_node(
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
         try:
-            return new_node.info()
+            return frontend_node_info(new_node)
         except Exception:
             logger.debug("new_node.info() failed after clone, returning minimal dict")
             return {"id": getattr(new_node, "id", None), "name": new_name}
@@ -1194,7 +1198,7 @@ async def concat_nodes(
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
-        return new_node.info()
+        return frontend_node_info(new_node)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1343,7 +1347,7 @@ async def join_nodes(
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
-        return new_node.info()
+        return frontend_node_info(new_node)
     except KeyError:
         raise
     except HTTPException:
