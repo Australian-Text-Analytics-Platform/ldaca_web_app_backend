@@ -40,7 +40,11 @@ from .concordance_core import (
     normalize_saved_request,
     read_dispersion_bins,
 )
-from .generated_columns import CONC_EXTRACTION_COLUMN
+from .generated_columns import (
+    CONC_EXTRACTION_COLUMN,
+    TOKENS_FORM,
+    is_derived_column_name,
+)
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
@@ -616,17 +620,44 @@ async def materialize_concordance(
 
     if node_id not in ws.nodes:
         raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
-    node_data = ws.nodes[node_id].data
+    node = ws.nodes[node_id]
+    node_data = node.data
+
+    # Tokens-mode materialize needs the derived tokens column alongside the
+    # text. Look it up via the node's derived registry so we know exactly
+    # which column to pull. Empty/missing → 400 so the caller can fall back
+    # or prompt the user to re-tokenise.
+    derived_tokens_column: Optional[str] = None
+    if request.search_mode == "tokens":
+        if hasattr(node, "find_derived_column"):
+            derived_tokens_column = node.find_derived_column(
+                request.column, form=TOKENS_FORM
+            )
+        if derived_tokens_column is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"No tokens column registered on node {node_id!r} for "
+                    f"source column {request.column!r}; re-run Tokenise first."
+                ),
+            )
 
     # Collect all source columns so the materialized parquet includes metadata.
     # This allows the detach fast path to select only user-chosen columns later.
+    # Hidden ``__derived__.*`` columns are excluded from extras — they are
+    # not user-facing metadata, and (for tokens-mode) we pull the specific
+    # derived tokens column separately below.
     all_schema_columns = list(node_data.collect_schema().names())
     extra_source_columns = [
-        c for c in all_schema_columns if c != request.column
+        c
+        for c in all_schema_columns
+        if c != request.column and not is_derived_column_name(c)
     ]
-    select_exprs = [pl.col(request.column)] + [
+    select_exprs: list[pl.Expr] = [pl.col(request.column)] + [
         pl.col(c) for c in extra_source_columns
     ]
+    if derived_tokens_column is not None:
+        select_exprs.append(pl.col(derived_tokens_column))
 
     corpus_df = (
         node_data.select(select_exprs)
@@ -644,6 +675,9 @@ async def materialize_concordance(
         str(value) if value is not None else ""
         for value in corpus_df.get_column(request.column).to_list()
     ]
+    node_tokens: Optional[list[Any]] = None
+    if derived_tokens_column is not None:
+        node_tokens = corpus_df.get_column(derived_tokens_column).to_list()
 
     extra_columns_data: dict[str, list] | None = None
     extra_columns_dtypes: dict[str, Any] | None = None
@@ -678,6 +712,8 @@ async def materialize_concordance(
                 "case_sensitive": request.case_sensitive,
                 "extra_columns_data": extra_columns_data,
                 "extra_columns_dtypes": extra_columns_dtypes,
+                "search_mode": request.search_mode,
+                "node_tokens": node_tokens,
             },
         )
         return {

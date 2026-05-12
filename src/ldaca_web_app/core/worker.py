@@ -245,6 +245,8 @@ def concordance_materialize_task(
     case_sensitive: bool,
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    search_mode: str = "regex",
+    node_tokens: Optional[list[Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -264,6 +266,8 @@ def concordance_materialize_task(
         case_sensitive,
         extra_columns_data=extra_columns_data,
         extra_columns_dtypes=extra_columns_dtypes,
+        search_mode=search_mode,
+        node_tokens=node_tokens,
         progress_callback=cb,
     )
 

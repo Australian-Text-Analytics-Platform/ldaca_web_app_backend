@@ -470,6 +470,10 @@ class ConcordanceMaterializeRequest(BaseModel):
     regex: bool = False
     whole_word: bool = False
     case_sensitive: bool = False
+    # Mirror the live ``/concordance`` request — materialize must honour the
+    # engine the user actually searched with. Defaults to ``"regex"`` so
+    # existing English flows are byte-identical.
+    search_mode: Literal["regex", "tokens"] = "regex"
     parent_task_id: str
 
 

@@ -13,7 +13,10 @@ from fastapi import HTTPException
 
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
-from .concordance_tokens_mode import compute_tokens_concordance_page
+from .concordance_tokens_mode import (
+    compute_tokens_concordance_page,
+    find_token_matches,
+)
 from .generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
@@ -481,16 +484,65 @@ def _count_concordance_hits(
     return int(value or 0)
 
 
+def _count_tokens_concordance_hits(
+    base_lf: pl.LazyFrame,
+    derived_column: str,
+    request: dict[str, Any],
+    size: int,
+) -> int:
+    """Tokens-mode equivalent of :func:`_count_concordance_hits`.
+
+    Walks the first ``size`` rows of the derived tokens column and counts
+    exact-token matches of ``search_word``. Without this, the page-size
+    estimator probes via the regex engine, which produces 0 hits for CJK
+    queries (``\\b``-style whole-word semantics don't apply) and pushes the
+    estimator all the way to the largest candidate.
+    """
+    search_word = str(request.get("search_word") or "")
+    if not search_word:
+        return 0
+    case_sensitive = bool(request.get("case_sensitive", False))
+    try:
+        slice_df = cast(
+            pl.DataFrame, base_lf.select(derived_column).slice(0, size).collect()
+        )
+    except Exception as exc:
+        logger.debug("Tokens-mode hit probe failed at size=%d: %s", size, exc)
+        return 0
+    total = 0
+    for tokens in slice_df.get_column(derived_column).to_list():
+        if not isinstance(tokens, list) or not tokens:
+            continue
+        total += len(find_token_matches(tokens, search_word, case_sensitive=case_sensitive))
+    return total
+
+
 def _resolve_page_size(
     base_lf: pl.LazyFrame,
     column: str,
     request: dict[str, Any],
     requested: Optional[int],
+    *,
+    derived_tokens_column: Optional[str] = None,
 ) -> int:
-    """Return an effective page size, estimating when the client omitted one."""
+    """Return an effective page size, estimating when the client omitted one.
+
+    For tokens-mode requests with a derived tokens column on the node, the
+    probe walks the tokens column directly so CJK searches estimate against
+    actual hit density instead of the regex engine's near-zero count.
+    """
     if requested is not None and int(requested) > 0:
         return int(requested)
-    probe = partial(_count_concordance_hits, base_lf, column, request)
+    use_tokens_probe = (
+        str(request.get("search_mode") or "regex") == "tokens"
+        and derived_tokens_column is not None
+    )
+    if use_tokens_probe:
+        probe = partial(
+            _count_tokens_concordance_hits, base_lf, derived_tokens_column, request
+        )
+    else:
+        probe = partial(_count_concordance_hits, base_lf, column, request)
     return estimate_page_size(probe, candidates=DEFAULT_PAGE_SIZE_CANDIDATES)
 
 
@@ -853,7 +905,13 @@ def build_concordance_response(
             if not src:
                 continue
             estimates.append(
-                _resolve_page_size(src["lf"], src["column"], request, None)
+                _resolve_page_size(
+                    src["lf"],
+                    src["column"],
+                    request,
+                    None,
+                    derived_tokens_column=src.get("derived_tokens_column"),
+                )
             )
         if estimates:
             page_size = max(estimates)
@@ -863,11 +921,23 @@ def build_concordance_response(
         estimates_combined: list[int] = []
         if left_src and node_ids[0] not in materialized_paths:
             estimates_combined.append(
-                _resolve_page_size(left_src["lf"], left_src["column"], request, None)
+                _resolve_page_size(
+                    left_src["lf"],
+                    left_src["column"],
+                    request,
+                    None,
+                    derived_tokens_column=left_src.get("derived_tokens_column"),
+                )
             )
         if right_src and node_ids[1] not in materialized_paths:
             estimates_combined.append(
-                _resolve_page_size(right_src["lf"], right_src["column"], request, None)
+                _resolve_page_size(
+                    right_src["lf"],
+                    right_src["column"],
+                    request,
+                    None,
+                    derived_tokens_column=right_src.get("derived_tokens_column"),
+                )
             )
         if estimates_combined:
             page_size = max(estimates_combined)

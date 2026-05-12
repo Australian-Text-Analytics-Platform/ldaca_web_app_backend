@@ -6,6 +6,10 @@ import logging
 from typing import Any, Callable, Dict, Optional, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
+from ..api.workspaces.analyses.concordance_tokens_mode import (
+    build_token_hit,
+    find_token_matches,
+)
 from .analysis_cache import materialized_cache_path
 from ..api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
@@ -114,6 +118,126 @@ def _build_concordance_occurrence_dataframe(
     return result, output_columns + list(CORE_CONCORDANCE_COLUMNS) + [
         CONC_EXTRACTION_COLUMN
     ]
+
+
+def _build_tokens_concordance_occurrence_dataframe(
+    node_corpus: list[str],
+    node_tokens: list[Any],
+    document_column: str,
+    search_word: str,
+    num_left_tokens: int,
+    num_right_tokens: int,
+    case_sensitive: bool,
+    include_document_column: bool,
+    extra_columns_data: Optional[Dict[str, list]],
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+):
+    """Tokens-mode parallel of :func:`_build_concordance_occurrence_dataframe`.
+
+    Output column shape is identical to the regex-mode build so paginated
+    reads, detach, and dispersion bin fetches don't have to branch on the
+    parquet's origin. Walks ``node_tokens`` (the materialised values of
+    the derived ``__derived__.tokens.<source>.<model>`` column) for exact
+    token equality with ``search_word``, then reuses
+    :func:`build_token_hit` to construct each row.
+    """
+    import polars as pl
+
+    corpus = [str(v) if v is not None else "" for v in (node_corpus or [])]
+    tokens_per_row = list(node_tokens or [])
+    if len(tokens_per_row) != len(corpus):
+        raise ValueError(
+            "node_tokens length must equal node_corpus length "
+            f"(got {len(tokens_per_row)} vs {len(corpus)})"
+        )
+    # Mirror the regex builder's empty-row filter so the document index
+    # stays aligned with extra columns.
+    keep_mask = [bool(text.strip()) for text in corpus]
+    corpus = [text for text, keep in zip(corpus, keep_mask) if keep]
+    tokens_per_row = [
+        tokens for tokens, keep in zip(tokens_per_row, keep_mask) if keep
+    ]
+
+    filtered_extras: dict[str, list] = {}
+    if extra_columns_data:
+        for col_name, col_values in extra_columns_data.items():
+            filtered_extras[col_name] = [
+                v for v, keep in zip(col_values, keep_mask) if keep
+            ]
+
+    hits: list[dict[str, Any]] = []
+    for row_index, (raw_text, tokens) in enumerate(zip(corpus, tokens_per_row)):
+        if not isinstance(tokens, list) or not tokens:
+            continue
+        # ``tokens`` may include None entries (polars struct nulls). The
+        # helpers below tolerate that, so no extra filtering needed here.
+        token_list = cast(list[Any], tokens)
+        match_indices = find_token_matches(
+            token_list, search_word, case_sensitive=case_sensitive
+        )
+        for match_index in match_indices:
+            hit = build_token_hit(
+                cast(list[dict[str, Any]], token_list),
+                match_index,
+                raw_text=raw_text,
+                num_left=num_left_tokens,
+                num_right=num_right_tokens,
+            )
+            full: dict[str, Any] = dict(hit)
+            if include_document_column:
+                full[document_column] = raw_text
+            for col_name, values in filtered_extras.items():
+                full[col_name] = values[row_index]
+            hits.append(full)
+
+    # Build the output columns list in the same order the regex builder
+    # uses: [document_column?, *extras, *CORE_CONCORDANCE_COLUMNS,
+    # CONC_extraction]. The DataFrame constructor will follow this order
+    # because we pass dicts; force the column order explicitly via select
+    # at the end so downstream consumers see byte-identical schema.
+    output_columns: list[str] = []
+    if include_document_column:
+        output_columns.append(document_column)
+    output_columns.extend(filtered_extras.keys())
+    output_columns.extend(CORE_CONCORDANCE_COLUMNS)
+    output_columns.append(CONC_EXTRACTION_COLUMN)
+
+    if not hits:
+        # Build an empty DataFrame with the right schema so the downstream
+        # group_by joins don't error on an empty input.
+        schema: dict[str, Any] = {}
+        if include_document_column:
+            schema[document_column] = pl.Utf8
+        if extra_columns_dtypes:
+            for col_name in filtered_extras:
+                schema[col_name] = extra_columns_dtypes.get(col_name, pl.Utf8)
+        else:
+            for col_name in filtered_extras:
+                schema[col_name] = pl.Utf8
+        schema[CONC_LEFT_CONTEXT_COLUMN] = pl.Utf8
+        schema[CONC_MATCHED_TEXT_COLUMN] = pl.Utf8
+        schema[CONC_RIGHT_CONTEXT_COLUMN] = pl.Utf8
+        schema[CONC_START_IDX_COLUMN] = pl.Int64
+        schema[CONC_END_IDX_COLUMN] = pl.Int64
+        schema[CONC_L1_COLUMN] = pl.Utf8
+        schema[CONC_R1_COLUMN] = pl.Utf8
+        schema[CONC_EXTRACTION_COLUMN] = pl.Utf8
+        return pl.DataFrame(schema=schema), output_columns
+
+    df = pl.DataFrame(hits)
+    # Cast extras to the source dtypes if provided, mirroring the regex
+    # builder's behaviour. CONC_* numeric columns come out as Int64 from
+    # the build_token_hit dicts, which matches the regex side.
+    if extra_columns_dtypes:
+        cast_exprs = [
+            pl.col(col).cast(dtype)
+            for col, dtype in extra_columns_dtypes.items()
+            if col in df.columns and df.schema[col] != dtype
+        ]
+        if cast_exprs:
+            df = df.with_columns(cast_exprs)
+    df = df.select(output_columns)
+    return df, output_columns
 
 
 def run_concordance_detach_task(
@@ -680,6 +804,8 @@ def run_concordance_materialize_task(
     case_sensitive: bool,
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    search_mode: str = "regex",
+    node_tokens: Optional[list[Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Run full concordance extraction and persist the flattened parquet.
@@ -700,19 +826,37 @@ def run_concordance_materialize_task(
         if progress_callback:
             progress_callback(0.25, "Generating concordance matches...")
 
-        result, output_columns = _build_concordance_occurrence_dataframe(
-            node_corpus=node_corpus,
-            document_column=document_column,
-            search_word=search_word,
-            num_left_tokens=num_left_tokens,
-            num_right_tokens=num_right_tokens,
-            regex=regex,
-            whole_word=whole_word,
-            case_sensitive=case_sensitive,
-            include_document_column=True,
-            extra_columns_data=extra_columns_data,
-            extra_columns_dtypes=extra_columns_dtypes,
-        )
+        if search_mode == "tokens":
+            if node_tokens is None:
+                raise ValueError(
+                    "search_mode='tokens' requires node_tokens from the route"
+                )
+            result, output_columns = _build_tokens_concordance_occurrence_dataframe(
+                node_corpus=node_corpus,
+                node_tokens=node_tokens,
+                document_column=document_column,
+                search_word=search_word,
+                num_left_tokens=num_left_tokens,
+                num_right_tokens=num_right_tokens,
+                case_sensitive=case_sensitive,
+                include_document_column=True,
+                extra_columns_data=extra_columns_data,
+                extra_columns_dtypes=extra_columns_dtypes,
+            )
+        else:
+            result, output_columns = _build_concordance_occurrence_dataframe(
+                node_corpus=node_corpus,
+                document_column=document_column,
+                search_word=search_word,
+                num_left_tokens=num_left_tokens,
+                num_right_tokens=num_right_tokens,
+                regex=regex,
+                whole_word=whole_word,
+                case_sensitive=case_sensitive,
+                include_document_column=True,
+                extra_columns_data=extra_columns_data,
+                extra_columns_dtypes=extra_columns_dtypes,
+            )
 
         import polars as pl
 
