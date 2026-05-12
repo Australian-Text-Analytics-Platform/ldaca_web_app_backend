@@ -147,26 +147,73 @@ def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool
     return sum(len(d) for d in docs) > _ONLINE_THRESHOLD_BYTES
 
 
+def _bertopic_language_kwarg(language: "str | None") -> str:
+    """Map our internal language code to BERTopic's ``language`` kwarg.
+
+    BERTopic accepts ``"english"`` or ``"multilingual"`` and uses it for
+    some default heuristics (label word filtering, default embedder
+    selection when none is passed). We always pass an explicit
+    ``embedding_model``, but the flag still influences post-fit behavior,
+    so route non-English to ``"multilingual"`` per BERTopic's API.
+    """
+    return "english" if (language or "en").strip().lower() == "en" else "multilingual"
+
+
+def _build_label_vectorizer(language: "str | None", *, online: bool = False) -> Any:
+    """Return the CountVectorizer (or OnlineCountVectorizer) used for the
+    label/c-TF-IDF stage.
+
+    English: sklearn's built-in English stoplist + default regex — unchanged
+    from the legacy behavior.
+
+    Non-English: callers feed BERTopic pre-tokenised, space-joined docs
+    (built from the node's derived ``__derived__.<form>.<src>.<model>``
+    column), so the vectorizer just needs to split on Unicode word
+    characters. ``\\b\\w+\\b`` with the Unicode flag matches CJK runs that
+    sit between non-word characters (the inserted spaces), which gives us
+    meaningful per-token c-TF-IDF without bringing jieba into this stage.
+
+    Stopwords are deliberately NOT applied here — they get filtered in the
+    frontend after the user inspects topic labels (decision recorded in
+    the multilingual fix discussion).
+    """
+    code = (language or "en").strip().lower()
+    if code == "en":
+        if online:
+            from bertopic.vectorizers import OnlineCountVectorizer
+
+            return OnlineCountVectorizer(stop_words="english", decay=0.01)
+        from sklearn.feature_extraction.text import CountVectorizer
+
+        return CountVectorizer(stop_words="english")
+
+    if online:
+        from bertopic.vectorizers import OnlineCountVectorizer
+
+        return OnlineCountVectorizer(token_pattern=r"(?u)\b\w+\b", decay=0.01)
+    from sklearn.feature_extraction.text import CountVectorizer
+
+    return CountVectorizer(token_pattern=r"(?u)\b\w+\b")
+
+
 def _resolve_top_n_words(representative_words_count: "int | None") -> int:
     """Pick BERTopic's ``top_n_words`` from the user-requested display cap.
 
     BERTopic's default is 10. When the user picks "Words per topic = 35"
     and toggles on the frontend stopword filter, c-TF-IDF would compute
-    only 10 raw words; the filter would drop most of them as function
-    words (English: by sklearn's stoplist at the vectorizer; non-English:
-    by the post-fit filter); and the user would see 1–3 — even though
-    they asked for 35.
+    only 10 raw words, the filter would drop 5–9 of them as CJK function
+    words (的/是/了/...), and the user would see 1–3 — even though they
+    asked for 35.
 
-    We pre-compute a generous headroom so the post-filter slice still
-    has enough material:
+    We pre-compute a generous headroom so the post-filter slice still has
+    enough material:
 
-    - At least 50 candidates, so even a tiny request like 5 has a
-      healthy buffer for the stopword filter.
+    - At least 50 candidates, so even a tiny request like 5 has a healthy
+      buffer for the stopword filter.
     - Otherwise 2× the requested cap.
 
-    Performance impact is negligible — c-TF-IDF already produces a
-    ranked vocabulary per topic; ``top_n_words`` just decides where to
-    truncate.
+    Performance impact is negligible — c-TF-IDF already produces a ranked
+    vocabulary per topic; ``top_n_words`` just decides where to truncate.
     """
     requested = int(representative_words_count or 0)
     return max(50, requested * 2) if requested > 0 else 50
@@ -176,6 +223,7 @@ def _build_classic_pipeline(
     min_topic_size: int,
     random_state: int,
     embedder: Any,
+    language: "str | None" = None,
     top_n_words: int = 50,
 ) -> Any:
     """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
@@ -193,6 +241,8 @@ def _build_classic_pipeline(
             metric="cosine",
             random_state=random_state,
         ),
+        vectorizer_model=_build_label_vectorizer(language, online=False),
+        language=_bertopic_language_kwarg(language),
         top_n_words=top_n_words,
     )
 
@@ -235,16 +285,11 @@ def _build_online_pipeline(
         embedding_model=embedder,
         umap_model=dim_model,
         hdbscan_model=cluster_model,
+        language=_bertopic_language_kwarg(language),
         top_n_words=top_n_words,
     )
     try:
-        from bertopic.vectorizers import OnlineCountVectorizer
-
-        resolved_language = (language or "en").strip().lower()
-        stop_words = "english" if resolved_language == "en" else None
-        kwargs["vectorizer_model"] = OnlineCountVectorizer(
-            stop_words=stop_words, decay=0.01
-        )
+        kwargs["vectorizer_model"] = _build_label_vectorizer(language, online=True)
     except ImportError:
         logger.debug("[Worker] OnlineCountVectorizer unavailable; using default CountVectorizer")
 
@@ -922,11 +967,27 @@ def run_topic_modeling_task(
 
         def _load_corpora_from_workspace(
             target_workspace_dir: str, node_payloads: list[Dict[str, Any]]
-        ) -> list[list[str]]:
+        ) -> tuple[list[list[str]], list[list[str] | None], list[str | None]]:
+            """Return (raw_corpora, vectorizer_corpora, tokens_column_per_node).
+
+            ``raw_corpora`` feeds the sentence-transformer embedder unchanged.
+
+            ``vectorizer_corpora[i]`` is the space-joined derived tokens for
+            node i when a ``form="tokens"`` derived column exists for the
+            selected ``text_column``; ``None`` otherwise (caller falls back
+            to raw text for that node's vectorizer docs).
+
+            ``tokens_column_per_node[i]`` is the derived column name we
+            used, or ``None`` — surfaced in ``meta.language_resolution`` so
+            the frontend can flag the fallback case and offer the
+            "tokenise first" prompt.
+            """
             from docworkspace import Workspace
 
             workspace = Workspace.load(Path(target_workspace_dir))
-            loaded_corpora: list[list[str]] = []
+            raw_corpora: list[list[str]] = []
+            vectorizer_corpora: list[list[str] | None] = []
+            tokens_columns: list[str | None] = []
 
             for node_info in node_payloads:
                 node_id = str(node_info.get("node_id") or "")
@@ -947,18 +1008,58 @@ def run_topic_modeling_task(
                     pl.DataFrame,
                     node.data.select(pl.col(text_column).alias("__doc_col__")).collect(),
                 )
-                loaded_corpora.append(
+                raw_corpora.append(
                     [
                         str(value) if value is not None else ""
                         for value in selected["__doc_col__"].to_list()
                     ]
                 )
 
-            return loaded_corpora
+                tokens_column = node.find_derived_column(text_column, form="tokens")
+                if tokens_column is None:
+                    vectorizer_corpora.append(None)
+                    tokens_columns.append(None)
+                    continue
+
+                # The derived tokens column is a ``list<struct<token, start,
+                # end>>`` (offsets are needed by concordance / quotation).
+                # We must extract just the ``token`` field here — joining
+                # the struct as-is leaks the literal field names "token",
+                # "start", "end" into every document and they dominate
+                # c-TF-IDF. Mirrors the projection in
+                # ``token_frequencies.py`` (decision-7 routing).
+                tokens_selected = cast(
+                    pl.DataFrame,
+                    node.data.select(
+                        pl.col(tokens_column)
+                        .list.eval(pl.element().struct.field("token"))
+                        .alias("__tokens_col__")
+                    ).collect(),
+                )
+                joined: list[str] = []
+                for tokens in tokens_selected["__tokens_col__"].to_list():
+                    if tokens is None:
+                        joined.append("")
+                        continue
+                    joined.append(
+                        " ".join(str(t) for t in tokens if t is not None and str(t))
+                    )
+                vectorizer_corpora.append(joined)
+                tokens_columns.append(tokens_column)
+
+            return raw_corpora, vectorizer_corpora, tokens_columns
 
         artifact_root = Path(artifact_dir)
         artifact_root.mkdir(parents=True, exist_ok=True)
 
+        # ``vectorizer_corpora[i]`` mirrors the raw ``corpora[i]`` row-for-row
+        # with the derived tokens column space-joined when one exists for the
+        # selected source column. ``None`` per node means we fall back to raw
+        # text for that node's vectorizer docs (English path, or non-English
+        # node with no tokenisation yet — surfaced in meta so the UI can
+        # prompt the user to tokenise).
+        vectorizer_corpora: list[list[str] | None]
+        tokens_columns_per_node: list[str | None]
         if corpora is None:
             if workspace_dir is None:
                 raise ValueError(
@@ -966,7 +1067,15 @@ def run_topic_modeling_task(
                 )
             if progress_callback:
                 progress_callback(0.03, "Loading source documents from workspace...")
-            corpora = _load_corpora_from_workspace(workspace_dir, node_infos)
+            corpora, vectorizer_corpora, tokens_columns_per_node = (
+                _load_corpora_from_workspace(workspace_dir, node_infos)
+            )
+        else:
+            # Caller pre-loaded raw corpora (test paths). We don't have access
+            # to the derived tokens column here, so every node falls back to
+            # raw text for the vectorizer.
+            vectorizer_corpora = [None] * len(corpora)
+            tokens_columns_per_node = [None] * len(corpora)
 
         if len(corpora) != len(node_infos):
             raise ValueError(
@@ -990,6 +1099,11 @@ def run_topic_modeling_task(
             # original row indices for each corpus — used to write correct __row_nr__
             # values in the assignments parquet so detach joins back to the right rows.
             active_corpora_indices: list[list[int]] = []
+            # Sampling produces a permutation of row indices; we replay it on
+            # the matching ``vectorizer_corpora[i]`` so the joined-tokens
+            # corpus stays row-aligned with the raw corpus that drives
+            # embeddings.
+            active_vectorizer_corpora: list[list[str] | None] = []
             if sample_fractions is not None:
                 for _i, _corpus in enumerate(corpora):
                     _frac = sample_fractions[_i] if _i < len(sample_fractions) else None
@@ -997,14 +1111,33 @@ def run_topic_modeling_task(
                         _sampled_docs, _sampled_idx = _sample_corpus(_corpus, _frac, random_seed + _i)
                         active_corpora.append(_sampled_docs)
                         active_corpora_indices.append(_sampled_idx)
+                        _vec = vectorizer_corpora[_i]
+                        active_vectorizer_corpora.append(
+                            [_vec[k] for k in _sampled_idx] if _vec is not None else None
+                        )
                     else:
                         active_corpora.append(_corpus)
                         active_corpora_indices.append(list(range(len(_corpus))))
+                        active_vectorizer_corpora.append(vectorizer_corpora[_i])
             else:
                 active_corpora = list(corpora)
                 active_corpora_indices = [list(range(len(c))) for c in corpora]
+                active_vectorizer_corpora = list(vectorizer_corpora)
 
             all_docs = [doc for corpus in active_corpora for doc in corpus]
+            # Build the parallel vectorizer-doc stream: per-node, use the
+            # joined-tokens corpus when present, otherwise fall back to that
+            # node's raw text. Falls back to raw text overall when no node
+            # has tokens (English / legacy path).
+            all_docs_for_vectorizer: list[str] = []
+            any_pretokenised = False
+            for idx, raw_corpus in enumerate(active_corpora):
+                vec = active_vectorizer_corpora[idx]
+                if vec is not None:
+                    any_pretokenised = True
+                    all_docs_for_vectorizer.extend(vec)
+                else:
+                    all_docs_for_vectorizer.extend(raw_corpus)
             corpus_sizes = [len(corpus) for corpus in active_corpora]
             if not all_docs:
                 topic_meanings_path = (
@@ -1136,11 +1269,19 @@ def run_topic_modeling_task(
                     effective_min_topic_size,
                     random_state,
                     embedder,
+                    language=language,
                     top_n_words=top_n_words,
                 )
                 actual_k = None
 
-            assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
+            # Embeddings are computed from raw text (cache-stable). c-TF-IDF
+            # and topic labels run off the pre-tokenised, space-joined docs
+            # when available — that's the whole point of the multilingual
+            # label fix: feed BERTopic strings the default Unicode word
+            # regex can actually segment.
+            assigned_topics, _ = topic_model.fit_transform(
+                all_docs_for_vectorizer, all_embeddings
+            )
 
             raw_total_topics = None
             exact_reduction_artifact_path: str | None = None
@@ -1150,10 +1291,12 @@ def run_topic_modeling_task(
                 exact_reduction_artifact_path = str(
                     artifact_root / f"{artifact_prefix}_exact_reduction.pkl"
                 )
+                # Persist the vectorizer corpus (not raw text) so the
+                # reaggregation path uses an identical doc stream.
                 _persist_exact_reduction_artifact(
                     exact_reduction_artifact_path,
                     topic_model=topic_model,
-                    all_docs=all_docs,
+                    all_docs=all_docs_for_vectorizer,
                     corpus_sizes=corpus_sizes,
                     active_corpora_indices=active_corpora_indices,
                 )
@@ -1163,7 +1306,7 @@ def run_topic_modeling_task(
                         f"Reducing topics to exactly {topic_size_value}...",
                     )
                 topic_model.reduce_topics(
-                    all_docs,
+                    all_docs_for_vectorizer,
                     nr_topics=_resolve_exact_reduce_topics_target(
                         topic_model, int(topic_size_value)
                     ),
@@ -1172,7 +1315,7 @@ def run_topic_modeling_task(
             payload = _build_topic_result_payload(
                 topic_model=topic_model,
                 node_infos=node_infos,
-                all_docs=all_docs,
+                all_docs=all_docs_for_vectorizer,
                 corpus_sizes=corpus_sizes,
                 active_corpora_indices=active_corpora_indices,
                 max_representative_words=max_representative_words,
@@ -1184,6 +1327,39 @@ def run_topic_modeling_task(
             payload_meta = payload.get("meta")
             if not isinstance(payload_meta, dict):
                 payload_meta = {}
+            # Tells the frontend which nodes used pre-tokenised docs for
+            # the label stage and which fell back to raw text. The latter
+            # is the case the UI should flag with the "tokenise then
+            # proceed / proceed with raw text / cancel" prompt next time
+            # the user runs topic modelling on those nodes. ``mode`` is a
+            # quick read for telemetry / banner copy.
+            resolved_language_code = (language or "en").strip().lower() or "en"
+            per_node_label_source: list[dict[str, str | None]] = []
+            for idx, node_info in enumerate(node_infos):
+                tokens_col = (
+                    tokens_columns_per_node[idx]
+                    if idx < len(tokens_columns_per_node)
+                    else None
+                )
+                per_node_label_source.append(
+                    {
+                        "node_id": str(node_info.get("node_id") or ""),
+                        "text_column": str(node_info.get("text_column") or ""),
+                        "tokens_column": tokens_col,
+                        "label_source": "pretokenised" if tokens_col else "raw_text",
+                    }
+                )
+            if resolved_language_code == "en":
+                label_vectorizer_mode = "english_default"
+            elif any_pretokenised:
+                label_vectorizer_mode = (
+                    "pretokenised"
+                    if all(entry["tokens_column"] for entry in per_node_label_source)
+                    else "pretokenised_mixed"
+                )
+            else:
+                label_vectorizer_mode = "raw_text_fallback"
+
             payload_meta.update(
                 {
                     "native": True,
@@ -1196,6 +1372,12 @@ def run_topic_modeling_task(
                     "representative_words_count": max_representative_words,
                     "random_state": random_state,
                     "pipeline_mode": pipeline_mode,
+                    "language_resolution": {
+                        "language": resolved_language_code,
+                        "bertopic_language": _bertopic_language_kwarg(language),
+                        "label_vectorizer_mode": label_vectorizer_mode,
+                        "nodes": per_node_label_source,
+                    },
                     **({"n_clusters": actual_k} if actual_k is not None else {}),
                     **(
                         {

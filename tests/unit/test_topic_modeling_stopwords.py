@@ -20,7 +20,9 @@ from __future__ import annotations
 import pytest
 
 from ldaca_web_app.core.worker_tasks_topic import (
+    _bertopic_language_kwarg,
     _build_classic_pipeline,
+    _build_label_vectorizer,
     _build_online_pipeline,
     _resolve_top_n_words,
 )
@@ -118,10 +120,76 @@ def test_language_normalisation_handles_case_and_whitespace() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Classic-pipeline + label-vectorizer coverage for the multilingual fix.
+# Before the fix, the classic pipeline passed no ``vectorizer_model`` so
+# BERTopic defaulted to ``CountVectorizer(stop_words="english")`` whose
+# ``\b\w\w+\b`` regex can't segment CJK. After the fix, the classic
+# pipeline picks the same language-aware vectorizer the online pipeline
+# uses and forwards ``language="multilingual"`` to BERTopic.
+# ---------------------------------------------------------------------------
+
+
+def test_label_vectorizer_english_uses_sklearn_english_stoplist() -> None:
+    vec = _build_label_vectorizer("en")
+    assert vec.stop_words == "english"
+
+
+def test_label_vectorizer_chinese_drops_stopwords_and_uses_unicode_word_regex() -> None:
+    vec = _build_label_vectorizer("zh")
+    assert vec.stop_words is None
+    assert vec.token_pattern == r"(?u)\b\w+\b"
+
+
+def test_label_vectorizer_segments_space_joined_chinese_tokens() -> None:
+    """Sanity check: the Unicode-word regex segments pre-tokenised, space-
+    joined Chinese into the original tokens. Documents the contract the
+    multilingual path relies on — feed BERTopic ``"中文 分词 测试"`` and
+    c-TF-IDF sees three distinct words, not one ideograph blob."""
+    import re
+
+    vec = _build_label_vectorizer("zh")
+    pattern = re.compile(vec.token_pattern)
+    assert pattern.findall("中文 分词 测试") == ["中文", "分词", "测试"]
+
+
+def test_classic_pipeline_attaches_multilingual_vectorizer_for_chinese() -> None:
+    model = _build_classic_pipeline(
+        min_topic_size=10,
+        random_state=42,
+        embedder=_make_dummy_embedder(),
+        language="zh",
+    )
+    vec = _vectorizer(model)
+    assert vec is not None
+    assert vec.stop_words is None
+    assert vec.token_pattern == r"(?u)\b\w+\b"
+
+
+def test_classic_pipeline_keeps_english_default_for_english() -> None:
+    model = _build_classic_pipeline(
+        min_topic_size=10,
+        random_state=42,
+        embedder=_make_dummy_embedder(),
+        language="en",
+    )
+    vec = _vectorizer(model)
+    assert vec is not None
+    assert vec.stop_words == "english"
+
+
+def test_bertopic_language_kwarg_maps_to_multilingual_for_non_en() -> None:
+    assert _bertopic_language_kwarg("en") == "english"
+    assert _bertopic_language_kwarg(None) == "english"
+    assert _bertopic_language_kwarg("zh") == "multilingual"
+    assert _bertopic_language_kwarg("ja") == "multilingual"
+    assert _bertopic_language_kwarg("multi") == "multilingual"
+
+
+# ---------------------------------------------------------------------------
 # top_n_words plumbing — guards against the silent-cap regression where
 # "Words per topic = 35" only produced 10 candidates because BERTopic's
-# top_n_words default was never overridden. With any post-fit stopword
-# filter on, that left ~1–3 visible words per topic.
+# top_n_words default was never overridden. With the frontend stopword
+# filter on, that left ~1–3 visible words per topic on a CJK run.
 # ---------------------------------------------------------------------------
 
 
@@ -147,6 +215,7 @@ def test_classic_pipeline_forwards_top_n_words_to_bertopic() -> None:
         min_topic_size=10,
         random_state=42,
         embedder=_make_dummy_embedder(),
+        language="zh",
         top_n_words=70,
     )
     assert getattr(model, "top_n_words", None) == 70
@@ -158,6 +227,7 @@ def test_online_pipeline_forwards_top_n_words_to_bertopic() -> None:
         n_clusters=5,
         random_state=42,
         embedder=_make_dummy_embedder(),
+        language="zh",
         top_n_words=70,
     )
     assert getattr(model, "top_n_words", None) == 70
