@@ -503,6 +503,12 @@ async def detach_concordance_dispersion(
             if col == request.column:
                 include_document_column = True
                 continue
+            # `CONC_extraction` is the dispersion-detach worker's own output
+            # column (the per-document joined raw-window string); a stale
+            # client that picks it would otherwise crash this endpoint with
+            # `ColumnNotFoundError` on the source-frame select.
+            if col == CONC_EXTRACTION_COLUMN:
+                continue
             columns_to_select.append(col)
 
     corpus_df = (
