@@ -39,7 +39,7 @@ from ....settings import settings
 from ..utils import update_workspace
 from . import quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
-from .generated_columns import QUOTE_EXTRACTION_COLUMN
+from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_derived_column_name
 
 logger = logging.getLogger(__name__)
 
@@ -495,7 +495,14 @@ async def quotation_detach_options(
     node = ws.nodes[node_id]
     node_data = node.data
 
-    available_schema_columns = list(node_data.collect_schema().names())
+    # Phase 2 / decision 7: hidden derived analytic columns
+    # (``__derived__.*``) must not appear in the detach picker — the
+    # worker can't carry them through, and they have no user-facing role.
+    available_schema_columns = [
+        c
+        for c in node_data.collect_schema().names()
+        if not is_derived_column_name(c)
+    ]
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
     # `QUOTE_extraction` is a generated column (raw source-document text)
     # offered as an opt-in pick — placed between the text column and the

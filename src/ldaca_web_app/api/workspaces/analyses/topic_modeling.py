@@ -35,7 +35,7 @@ from ....core.utils import get_user_cache_folder, get_user_data_folder
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
-from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN
+from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN, is_derived_column_name
 
 router = APIRouter(prefix="/workspaces", tags=["topic-modeling"])
 logger = logging.getLogger(__name__)
@@ -757,7 +757,13 @@ async def topic_modeling_detach_options(
             continue
         source_node = ws.nodes[node_id]
         source_data = source_node.data
-        original_columns = list(source_data.collect_schema().names())
+        # Phase 2 / decision 7: hidden derived analytic columns
+        # (``__derived__.*``) are excluded from the detach picker.
+        original_columns = [
+            c
+            for c in source_data.collect_schema().names()
+            if not is_derived_column_name(c)
+        ]
         topic_column_name = _resolve_topic_column_name(
             TOPIC_COLUMN, set(original_columns)
         )

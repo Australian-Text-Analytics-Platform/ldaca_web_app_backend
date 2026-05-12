@@ -755,7 +755,14 @@ async def concordance_detach_options(
     node = ws.nodes[node_id]
     node_data = node.data
 
-    available_schema_columns = list(node_data.collect_schema().names())
+    # Hidden ``__derived__.*`` columns must never appear in the picker even
+    # though they exist in the schema — they're an internal analytic layer
+    # (Phase 2 / decision 7) that the detach worker doesn't carry through.
+    available_schema_columns = [
+        c
+        for c in node_data.collect_schema().names()
+        if not is_derived_column_name(c)
+    ]
     mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
     mandatory_set = set(mandatory_columns)
     # `CONC_extraction` is a generated column (raw KWIC window) — opt-in for
