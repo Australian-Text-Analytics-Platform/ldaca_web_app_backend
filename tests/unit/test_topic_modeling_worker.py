@@ -41,7 +41,7 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10):
             assert verbose is False
             assert min_topic_size == 2
             assert embedding_model is not None
@@ -139,7 +139,7 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10):
             assert verbose is False
             assert min_topic_size == 2
             assert embedding_model is not None
@@ -374,7 +374,7 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopicClassic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10):
             self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
             self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
 
@@ -490,7 +490,7 @@ def _make_classic_fake_bertopic_cls(received_docs: list):
     """FakeBERTopic that records the docs passed to fit_transform."""
 
     class FakeBERTopicClassic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10):
             self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
             self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
 
@@ -554,7 +554,7 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopicExact:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model):
+        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10):
             self.c_tf_idf_ = np.array(
                 [
                     [1.0, 0.5],

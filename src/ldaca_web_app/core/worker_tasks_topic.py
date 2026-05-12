@@ -107,7 +107,37 @@ def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool
     return sum(len(d) for d in docs) > _ONLINE_THRESHOLD_BYTES
 
 
-def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: Any) -> Any:
+def _resolve_top_n_words(representative_words_count: "int | None") -> int:
+    """Pick BERTopic's ``top_n_words`` from the user-requested display cap.
+
+    BERTopic's default is 10. When the user picks "Words per topic = 35"
+    and toggles on the frontend stopword filter, c-TF-IDF would compute
+    only 10 raw words; the filter would drop most of them as function
+    words (English: by sklearn's stoplist at the vectorizer; non-English:
+    by the post-fit filter); and the user would see 1–3 — even though
+    they asked for 35.
+
+    We pre-compute a generous headroom so the post-filter slice still
+    has enough material:
+
+    - At least 50 candidates, so even a tiny request like 5 has a
+      healthy buffer for the stopword filter.
+    - Otherwise 2× the requested cap.
+
+    Performance impact is negligible — c-TF-IDF already produces a
+    ranked vocabulary per topic; ``top_n_words`` just decides where to
+    truncate.
+    """
+    requested = int(representative_words_count or 0)
+    return max(50, requested * 2) if requested > 0 else 50
+
+
+def _build_classic_pipeline(
+    min_topic_size: int,
+    random_state: int,
+    embedder: Any,
+    top_n_words: int = 50,
+) -> Any:
     """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
     from bertopic import BERTopic
     from umap import UMAP
@@ -123,6 +153,7 @@ def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: An
             metric="cosine",
             random_state=random_state,
         ),
+        top_n_words=top_n_words,
     )
 
 
@@ -131,6 +162,7 @@ def _build_online_pipeline(
     n_clusters: int | None,
     random_state: int,
     embedder: Any,
+    top_n_words: int = 50,
 ) -> tuple[Any, int]:
     """Build a BERTopic pipeline using IncrementalPCA + MiniBatchKMeans.
 
@@ -157,6 +189,7 @@ def _build_online_pipeline(
         embedding_model=embedder,
         umap_model=dim_model,
         hdbscan_model=cluster_model,
+        top_n_words=top_n_words,
     )
     try:
         from bertopic.vectorizers import OnlineCountVectorizer
@@ -1009,6 +1042,7 @@ def run_topic_modeling_task(
                 progress_start=embed_start, progress_end=embed_end,
             )
 
+            top_n_words = _resolve_top_n_words(representative_words_count)
             if use_online:
                 if progress_callback:
                     progress_callback(
@@ -1017,14 +1051,23 @@ def run_topic_modeling_task(
                         f"(IncrementalPCA + MiniBatchKMeans)...",
                     )
                 topic_model, actual_k = _build_online_pipeline(
-                    len(all_docs), n_clusters, random_state, embedder
+                    len(all_docs),
+                    n_clusters,
+                    random_state,
+                    embedder,
+                    top_n_words=top_n_words,
                 )
             else:
                 if progress_callback:
                     progress_callback(
                         cluster_frac, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
                     )
-                topic_model = _build_classic_pipeline(effective_min_topic_size, random_state, embedder)
+                topic_model = _build_classic_pipeline(
+                    effective_min_topic_size,
+                    random_state,
+                    embedder,
+                    top_n_words=top_n_words,
+                )
                 actual_k = None
 
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)
