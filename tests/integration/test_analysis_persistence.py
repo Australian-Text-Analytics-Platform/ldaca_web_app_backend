@@ -1055,6 +1055,59 @@ class TestWorkspaceGraphEnrichment:
         assert "edges" in graph_data and "nodes" in graph_data
         assert "workspace_info" not in graph_data
 
+    async def test_graph_surfaces_derived_metadata_on_tokenised_node(
+        self, authenticated_client, workspace_id, tiny_node_id, test_user
+    ):
+        """After Tokenise, ``/graph`` must surface ``derived`` per-node so the
+        frontend tokens-mode auto-pick can read it.
+
+        Regression test: the endpoint previously returned ``node.info()``
+        directly (no ``derived``/``derived_columns``), which left the
+        concordance tokens-mode radio permanently disabled for CJK corpora.
+        """
+        # Given: a tokenised node. Register the derived column directly on
+        # the in-memory node so we don't round-trip through plbin (polars
+        # FFI plugin plans don't serialise cleanly across every polars
+        # version, and this test only cares about the graph payload shape).
+        from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+            TOKENS_FORM,
+            derived_column_name,
+        )
+
+        workspace = workspace_manager.get_current_workspace(test_user["id"])
+        assert workspace is not None
+        node = workspace.nodes[tiny_node_id]
+        derived_name = derived_column_name(TOKENS_FORM, "document", "bert-base-uncased")
+        node.register_derived_column(  # type: ignore[arg-type]
+            derived_name,
+            {
+                "source_column": "document",
+                "form": TOKENS_FORM,
+                "model": "bert-base-uncased",
+                "language": "en",
+                "generated_at": "2026-05-12T00:00:00+00:00",
+            },
+        )
+
+        # When: we read the graph payload.
+        response = await get_json(authenticated_client, "/api/workspaces/graph")
+        assert response.status_code == 200
+        graph_data = response.json()
+
+        # Then: the tokenised node carries `derived` metadata.
+        node_entry = next(
+            (n for n in graph_data["nodes"] if n.get("id") == tiny_node_id), None
+        )
+        assert node_entry is not None
+        assert "derived" in node_entry
+        assert "derived_columns" in node_entry
+        derived = node_entry["derived"]
+        assert len(derived) == 1
+        only_meta = next(iter(derived.values()))
+        assert only_meta["form"] == "tokens"
+        assert only_meta["source_column"] == "document"
+        assert only_meta["model"] == "bert-base-uncased"
+
 
 @pytest.mark.anyio
 class TestAnalysisPersistenceEdgeCases:

@@ -155,6 +155,8 @@ async def run_concordance(
             whole_word=request.whole_word,
             case_sensitive=request.case_sensitive,
             combined=bool(request.combined),
+            search_mode=request.search_mode,
+            language=request.language,
         )
 
         task_id = str(uuid4())

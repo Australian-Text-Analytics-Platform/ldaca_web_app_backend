@@ -398,6 +398,10 @@ class ConcordanceAnalysisRequest(BaseModel):
     # word-aware semantics CJK users want once Tokenise has been run.
     # Falls back to regex behaviour if no derived tokens column exists.
     search_mode: Literal["regex", "tokens"] = "regex"
+    # Phase 4.4 language hint: lets the frontend tell the backend what
+    # language to assume (drives the resolver chain in core/i18n.py).
+    # ``None`` defers to the active node's derived metadata then ``"en"``.
+    language: Optional[str] = None
     # Sorting parameters
     sort_by: Optional[str] = None  # column name to sort by
     descending: bool = True

@@ -7,7 +7,7 @@ Why:
 - Keeps concordance-specific request/result contracts separated from route logic.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import Field
 
@@ -34,6 +34,14 @@ class ConcordanceRequest(BaseAnalysisRequest):
     whole_word: bool = False
     case_sensitive: bool = False
     combined: bool = False
+    # Engine selector: "regex" walks raw text (default, preserves partial-word
+    # patterns); "tokens" walks the active node's derived tokens column for
+    # exact-token matches with N-actual-token context. Persisted on the task
+    # so hydration replays the same engine.
+    search_mode: Literal["regex", "tokens"] = "regex"
+    # Phase 4.4 language hint — resolver chain falls back to derived metadata
+    # then "en" when this is None.
+    language: Optional[str] = None
     # node_id -> parquet path holding flattened occurrence rows.
     # Populated when a materialize background task completes for that node.
     materialized_paths: Optional[Dict[str, str]] = None

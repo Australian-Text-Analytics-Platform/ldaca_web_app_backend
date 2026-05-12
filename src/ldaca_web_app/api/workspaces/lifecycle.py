@@ -18,6 +18,7 @@ from ...core.auth import get_current_user
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
+from .schema_filter import frontend_node_info
 from .utils import update_workspace
 
 logger = logging.getLogger(__name__)
@@ -475,12 +476,20 @@ async def get_workspace_graph(
     - frontend graph canvas initialization and refresh
 
     Why:
-    - Exposes the workspace's native graph JSON; frontend owns view-specific
-      graph configuration.
+    - Exposes the workspace's native graph JSON; per-node entries are routed
+      through :func:`frontend_node_info` so the payload hides ``__derived__.*``
+      columns and surfaces structured ``derived`` metadata (needed by the
+      tokens-mode auto-pick and the CustomNode inspector chip).
     """
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    return workspace.graph_json()
+    graph = workspace.graph_json()
+    graph["nodes"] = [
+        frontend_node_info(workspace.nodes[entry["id"]])
+        for entry in graph.get("nodes", [])
+        if entry.get("id") in workspace.nodes
+    ]
+    return graph
 
 
 @router.get("/nodes")
@@ -489,6 +498,5 @@ async def get_workspace_nodes(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    graph_data = workspace.graph_json()
-    return {"nodes": graph_data.get("nodes", [])}
-    return {"nodes": graph_data.get("nodes", [])}
+    nodes = [frontend_node_info(node) for node in workspace.nodes.values()]
+    return {"nodes": nodes}
