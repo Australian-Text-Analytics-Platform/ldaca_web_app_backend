@@ -62,14 +62,15 @@ def test_aggregate_hits_per_document_groups_and_renders_extract():
         row["document"]: row["CONC_extraction"]
         for row in agg.iter_rows(named=True)
     }
-    # Each line is `* <left_context> <matched> <right_context>` — the full
+    # Each line is `- <left_context> <matched> <right_context>` — the full
     # KWIC window read directly from the source document so spacing matches
-    # the original. Two-hit document picks up two windows, in order.
+    # the original. Two-hit document picks up two windows, in order. The
+    # `- ` prefix mirrors Markdown bullet syntax for portability.
     assert (
         extracted["Hello world this is a test document"]
-        == "* Hello world this\n* Hello world this is"
+        == "- Hello world this\n- Hello world this is"
     )
-    assert extracted["Another doc with some content here"] == "* Another doc with some"
+    assert extracted["Another doc with some content here"] == "- Another doc with some"
 
 
 def test_aggregate_hits_per_document_filters_by_selected_bins():

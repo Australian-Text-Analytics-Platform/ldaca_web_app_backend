@@ -431,12 +431,13 @@ def _aggregate_hits_per_document(
 
     grouped = df.group_by(document_column, maintain_order=True).agg(agg_columns)
 
-    # Use polars-native list manipulation to prefix each extract with "* "
-    # and join with newlines. The earlier `map_elements` form passed each row
-    # value as a Series, which broke the `items or []` truthiness check.
+    # Use polars-native list manipulation to prefix each extract with "- "
+    # (Markdown bullet syntax) and join with newlines. The earlier
+    # `map_elements` form passed each row value as a Series, which broke
+    # the `items or []` truthiness check.
     grouped = grouped.with_columns(
         pl.col("__extracts_list__")
-        .list.eval(pl.lit("* ") + pl.element())
+        .list.eval(pl.lit("- ") + pl.element())
         .list.join("\n")
         .alias(DISPERSION_EXTRACTED_CONTENTS_COLUMN)
     ).drop("__extracts_list__")
