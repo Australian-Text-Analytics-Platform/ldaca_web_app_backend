@@ -82,8 +82,11 @@ async def test_concordance_detach_options_include_mandatory_and_optional_columns
         "CONC_end_idx",
         "CONC_l1",
         "CONC_r1",
+        "CONC_extraction",
         "speaker",
     ]
+    # CONC_extraction is opt-in (not mandatory) so it stays out of
+    # disabled_columns despite the `CONC_` prefix.
     assert node_option["disabled_columns"] == [
         "CONC_left_context",
         "CONC_matched_text",

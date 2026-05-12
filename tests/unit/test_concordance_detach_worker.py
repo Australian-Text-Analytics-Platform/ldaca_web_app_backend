@@ -23,12 +23,14 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         case_sensitive,
         new_node_name,
         include_document_column=False,
+        include_extraction=False,
         extra_columns_data=None,
         extra_columns_dtypes=None,
         materialized_path=None,
         progress_callback=None,
     ):
         captured["include_document_column"] = include_document_column
+        captured["include_extraction"] = include_extraction
         captured["extra_columns_data"] = extra_columns_data
         captured["whole_word"] = whole_word
         return {"state": "successful"}
@@ -97,8 +99,46 @@ def test_concordance_detach_task_writes_node_payload_under_workspace_data(tmp_pa
     restored = pl.LazyFrame.deserialize(data_file.open("rb"), format="binary")
     restored_df = cast(pl.DataFrame, restored.collect())
     assert restored_df.height >= 1
+    # CONC_extraction is opt-in; the default (`include_extraction=False`)
+    # call above must NOT include it.
+    assert "CONC_extraction" not in restored_df.columns
     assert progress_updates[0][1].startswith("Loading concordance")
     assert any(
         "Preparing text data" in message for _progress, message in progress_updates
     )
     assert progress_updates[-1] == (1.0, "Concordance detach completed")
+
+
+def test_concordance_detach_includes_extraction_when_opted_in(tmp_path):
+    """When `include_extraction=True`, the per-hit detach output keeps the
+    `CONC_extraction` raw-window column. Default keeps the existing
+    backward-compatible "exclude" behaviour.
+    """
+    result = run_concordance_detach_task(
+        configure_worker_environment=lambda: None,
+        workspace_dir=str(tmp_path),
+        node_corpus=["alpha beta gamma", "beta gamma alpha"],
+        parent_node_id="parent-1",
+        document_column="document",
+        search_word="alpha",
+        num_left_tokens=1,
+        num_right_tokens=1,
+        regex=False,
+        whole_word=False,
+        case_sensitive=False,
+        new_node_name="detached_with_extract",
+        include_document_column=True,
+        include_extraction=True,
+    )
+    assert result["state"] == "successful"
+    payload = result["result"]["node_payload"]
+    data_file = tmp_path / Path(payload["data_path"])
+    restored_df = cast(
+        pl.DataFrame,
+        pl.LazyFrame.deserialize(data_file.open("rb"), format="binary").collect(),
+    )
+    assert "CONC_extraction" in restored_df.columns
+    assert restored_df.schema["CONC_extraction"] == pl.Utf8
+    # Sanity check the slice matches what dispersion-detach would have
+    # produced for the same hits: "alpha beta" for the first row.
+    assert restored_df.get_column("CONC_extraction").to_list()[0] == "alpha beta"

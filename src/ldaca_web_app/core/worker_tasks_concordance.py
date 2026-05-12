@@ -130,6 +130,7 @@ def run_concordance_detach_task(
     case_sensitive: bool,
     new_node_name: str,
     include_document_column: bool = False,
+    include_extraction: bool = False,
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
@@ -174,11 +175,22 @@ def run_concordance_detach_task(
                 for col_name in extra_columns_data:
                     if col_name in mat_df.columns and col_name not in keep_cols:
                         keep_cols.append(col_name)
-            # Always keep concordance-generated columns.
+            # Always keep CORE_CONCORDANCE_COLUMNS + freq columns. Other
+            # generated columns (currently just CONC_extraction) are opt-in
+            # via flags, mirroring the detach-options dialog: the user must
+            # tick them to receive them.
+            mandatory_generated = {
+                *CORE_CONCORDANCE_COLUMNS,
+                CONC_L1_FREQ_COLUMN,
+                CONC_R1_FREQ_COLUMN,
+            }
             for col in mat_df.columns:
-                if col not in keep_cols:
-                    if col.startswith("CONC_"):
-                        keep_cols.append(col)
+                if col in keep_cols:
+                    continue
+                if col in mandatory_generated:
+                    keep_cols.append(col)
+                elif col == CONC_EXTRACTION_COLUMN and include_extraction:
+                    keep_cols.append(col)
             mat_df = mat_df.select(keep_cols) if keep_cols else mat_df
 
             detach_data_dir = os.path.join(workspace_dir, "data")
@@ -250,6 +262,16 @@ def run_concordance_detach_task(
             r1_freq, on=CONC_R1_COLUMN, how="left"
         )
         output_columns = output_columns + [CONC_L1_FREQ_COLUMN, CONC_R1_FREQ_COLUMN]
+
+        # `_build_concordance_occurrence_dataframe` always appends
+        # `CONC_extraction`; drop it from the detach output unless the user
+        # ticked the column. The output_columns list returned from there
+        # carries it too — strip it for the manifest as well.
+        if not include_extraction and CONC_EXTRACTION_COLUMN in result.columns:
+            result = result.drop(CONC_EXTRACTION_COLUMN)
+            output_columns = [
+                c for c in output_columns if c != CONC_EXTRACTION_COLUMN
+            ]
 
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")

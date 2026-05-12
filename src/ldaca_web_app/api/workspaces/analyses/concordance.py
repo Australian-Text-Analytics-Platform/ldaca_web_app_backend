@@ -40,6 +40,7 @@ from .concordance_core import (
     normalize_saved_request,
     read_dispersion_bins,
 )
+from .generated_columns import CONC_EXTRACTION_COLUMN
 from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
@@ -380,11 +381,18 @@ async def detach_concordance(
     node_data = node.data
 
     include_document_column = False
+    include_extraction = False
     columns_to_select: list[str] = []
     if request.selected_columns:
         for col in request.selected_columns:
             if col == request.column:
                 include_document_column = True
+                continue
+            # CONC_extraction is a generated column, not a source schema
+            # column — translate the tick into a worker-side flag and skip
+            # source selection.
+            if col == CONC_EXTRACTION_COLUMN:
+                include_extraction = True
                 continue
             columns_to_select.append(col)
 
@@ -437,6 +445,7 @@ async def detach_concordance(
                 "case_sensitive": request.case_sensitive,
                 "new_node_name": request.new_node_name,
                 "include_document_column": include_document_column,
+                "include_extraction": include_extraction,
                 "extra_columns_data": extra_columns_data
                 if extra_columns_data
                 else None,
@@ -705,8 +714,14 @@ async def concordance_detach_options(
     available_schema_columns = list(node_data.collect_schema().names())
     mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
     mandatory_set = set(mandatory_columns)
+    # `CONC_extraction` is a generated column (raw KWIC window) — opt-in for
+    # detach. Surfaced here as a user-pickable option, not a mandatory one,
+    # so it appears in the column picker between the text column and the
+    # source metadata columns.
     optional_columns = [
-        col for col in [column, *available_schema_columns] if col not in mandatory_set
+        col
+        for col in [column, CONC_EXTRACTION_COLUMN, *available_schema_columns]
+        if col not in mandatory_set
     ]
     ordered_available_columns = list(
         dict.fromkeys(mandatory_columns + optional_columns)
