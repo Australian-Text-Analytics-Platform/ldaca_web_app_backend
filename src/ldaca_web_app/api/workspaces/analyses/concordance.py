@@ -161,6 +161,7 @@ async def run_concordance(
             combined=bool(request.combined),
             search_mode=request.search_mode,
             language=request.language,
+            model=request.model,
         )
 
         task_id = str(uuid4())
@@ -631,14 +632,22 @@ async def materialize_concordance(
     if request.search_mode == "tokens":
         if hasattr(node, "find_derived_column"):
             derived_tokens_column = node.find_derived_column(
-                request.column, form=TOKENS_FORM
+                request.column,
+                form=TOKENS_FORM,
+                model=request.model,
             )
         if derived_tokens_column is None:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"No tokens column registered on node {node_id!r} for "
-                    f"source column {request.column!r}; re-run Tokenise first."
+                    f"source column {request.column!r}"
+                    + (
+                        f" with model {request.model!r}"
+                        if request.model
+                        else ""
+                    )
+                    + "; re-run Tokenise first."
                 ),
             )
 

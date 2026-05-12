@@ -456,7 +456,11 @@ async def calculate_token_frequencies(
         # for the user-selected source column, count from it directly — the
         # tokens are already segmented with the right language backend, so
         # we don't re-tokenise and risk diverging from concordance / POS.
-        derived_tokens_col = node.find_derived_column(column_name, form=TOKENS_FORM)
+        # ``request.model`` lets the user pick when N>1 tokens columns
+        # coexist for the same source; ``None`` keeps the first-match path.
+        derived_tokens_col = node.find_derived_column(
+            column_name, form=TOKENS_FORM, model=request.model
+        )
         if derived_tokens_col is not None:
             tokens_df = node_data.select(
                 pl.col(derived_tokens_col)

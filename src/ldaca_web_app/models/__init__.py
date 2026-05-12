@@ -402,6 +402,12 @@ class ConcordanceAnalysisRequest(BaseModel):
     # language to assume (drives the resolver chain in core/i18n.py).
     # ``None`` defers to the active node's derived metadata then ``"en"``.
     language: Optional[str] = None
+    # When a node carries >1 tokens column for the same source column
+    # (e.g. user tokenised the same text with jieba AND bert-base-uncased),
+    # the frontend can pick which model's derived column to walk. ``None``
+    # falls through to "first matching entry in Node.derived" — the
+    # historical behaviour for single-model nodes stays byte-identical.
+    model: Optional[str] = None
     # Sorting parameters
     sort_by: Optional[str] = None  # column name to sort by
     descending: bool = True
@@ -474,6 +480,8 @@ class ConcordanceMaterializeRequest(BaseModel):
     # engine the user actually searched with. Defaults to ``"regex"`` so
     # existing English flows are byte-identical.
     search_mode: Literal["regex", "tokens"] = "regex"
+    # Optional model picker — same semantics as ConcordanceAnalysisRequest.
+    model: Optional[str] = None
     parent_task_id: str
 
 
@@ -801,6 +809,11 @@ class TokenFrequencyRequest(BaseModel):
     node_columns: Dict[str, str]  # Maps node_id -> column_name
     stop_words: Optional[List[str]] = None
     token_limit: Optional[int] = None
+    # Phase 4 follow-up: when the source column has >1 derived tokens
+    # column (e.g. jieba and bert-base-uncased coexisting), the frontend
+    # can pick which one drives the frequency count. ``None`` keeps the
+    # historical "first matching entry" behaviour for single-model nodes.
+    model: Optional[str] = None
 
     # Pydantic v2 model config
     model_config = ConfigDict(

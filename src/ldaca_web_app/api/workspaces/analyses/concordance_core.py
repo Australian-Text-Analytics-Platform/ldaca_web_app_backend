@@ -310,11 +310,18 @@ def resolve_node_sources(
             continue
         # Tokens-mode (Phase 2.6) needs the derived tokens column name for
         # this source. Look it up here so the page computation can route
-        # without having to re-touch the workspace.
+        # without having to re-touch the workspace. When ``request.model``
+        # is set, narrow the lookup to that model — required for nodes that
+        # carry >1 tokens column for the same source (e.g. jieba and
+        # bert-base-uncased coexisting); ``None`` keeps the historical
+        # first-match behaviour for single-model nodes.
         derived_tokens_column: Optional[str] = None
         if hasattr(node, "find_derived_column"):
+            requested_model = request.get("model")
             derived_tokens_column = node.find_derived_column(
-                column, form=TOKENS_FORM
+                column,
+                form=TOKENS_FORM,
+                model=str(requested_model) if requested_model else None,
             )
         node_sources[node_id] = {
             "lf": node_data,
