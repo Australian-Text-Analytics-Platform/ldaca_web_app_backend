@@ -21,10 +21,50 @@ logger = logging.getLogger(__name__)
 
 _EMBEDDER_CACHE: dict[tuple[str, str], Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
-_TOPIC_EMBEDDER_REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
-# Pinned revision of the embedder. Update via scripts/check_model_updates.py
-# at release time so the question of bumping is deliberate, not implicit.
-_TOPIC_EMBEDDER_REVISION = "c9745ed1d9f207416be6d2e6f8de32d1f16199bf"
+
+# Phase 3.1: language → (repo_id, revision) for the topic-modeling embedder.
+# English keeps the pinned MiniLM-L6 the topic-modeling team has been
+# validating against (existing flows are byte-identical when language
+# resolves to "en"). Anything else routes to the multilingual MiniLM-L12,
+# which is same 384-dim embedding space, ~110 MB ONNX, 50+ languages
+# including ZH / JA / KO / ES / FR / DE per decision 3.
+#
+# Revision pinning for the multilingual model is deferred until the ZH
+# workflow is validated end-to-end. ``scripts/check_model_updates.py``
+# is the release-time deliberate bump point.
+_TOPIC_EMBEDDERS_BY_LANGUAGE: dict[str, tuple[str, "str | None"]] = {
+    "en": (
+        "sentence-transformers/all-MiniLM-L6-v2",
+        "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
+    ),
+    "multi": (
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        None,
+    ),
+}
+
+# Back-compat alias used by the result payload and existing telemetry — the
+# English pair is what English callers (the previous default) still see.
+_TOPIC_EMBEDDER_REPO_ID, _TOPIC_EMBEDDER_REVISION = _TOPIC_EMBEDDERS_BY_LANGUAGE["en"]
+
+
+def _select_embedder(language: "str | None") -> tuple[str, "str | None"]:
+    """Return ``(repo_id, revision)`` for ``language``. English keeps the
+    pinned MiniLM-L6 (back-compat); everything else routes to the
+    multilingual fallback so ZH / JA topic modeling produces non-degenerate
+    clusters.
+    """
+    code = (language or "en").strip().lower()
+    if code == "en":
+        return _TOPIC_EMBEDDERS_BY_LANGUAGE["en"]
+    return _TOPIC_EMBEDDERS_BY_LANGUAGE["multi"]
+
+
+def _embedder_cache_label(repo_id: str, revision: "str | None") -> str:
+    """Format the embedder identifier used for on-disk cache keying so the
+    same revision string format as before lands in the cache filename."""
+    suffix = revision[:8] if revision else "latest"
+    return f"{repo_id}@{suffix}"
 
 # Auto-engagement of the online pipeline is disabled: sampling handles large
 # corpora by default.  These thresholds are set to effectively unreachable
@@ -178,15 +218,19 @@ def _build_online_pipeline(
     return BERTopic(**kwargs), k
 
 
-def _get_embedder(model_id: str):
+def _get_embedder(model_id: str, revision: "str | None" = None):
     """Get or create a cached embedder per worker process.
 
     On Apple Silicon, prefers MPS (PyTorch Metal) over ONNX CPU — the full
     BERT graph runs on Metal/Neural Engine as a single unit, giving ~3× cold
     throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
     26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
+
+    ``revision`` is ``None`` for the multilingual embedder until it gets
+    pinned at release time; the cache key uses the empty string as a stable
+    sentinel so the per-process cache still works.
     """
-    cache_key = (model_id, _TOPIC_EMBEDDER_REVISION)
+    cache_key = (model_id, revision or "")
     embedder = _EMBEDDER_CACHE.get(cache_key)
     if embedder is not None:
         return embedder
@@ -196,11 +240,11 @@ def _get_embedder(model_id: str):
     if is_mps_available():
         from .mps_embedder import MpsEmbedder
 
-        embedder = MpsEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
+        embedder = MpsEmbedder.from_pretrained(model_id, revision=revision)
     else:
         from .onnx_embedder import OnnxEmbedder
 
-        embedder = OnnxEmbedder.from_pretrained(model_id, revision=_TOPIC_EMBEDDER_REVISION)
+        embedder = OnnxEmbedder.from_pretrained(model_id, revision=revision)
 
     _EMBEDDER_CACHE[cache_key] = embedder
     return embedder
@@ -689,12 +733,18 @@ def _embed_with_cache(
     progress_callback: Optional[Callable[[float, str], None]],
     progress_start: float = 0.08,
     progress_end: float = 0.88,
+    cache_model_id: str | None = None,
 ) -> Any:
     """Encode docs using the embedder, reading from / writing to disk cache.
 
     When cache_dir is None the cache is bypassed and all docs are encoded
     directly (preserves the pre-Phase-2 behaviour for callers that don't
     pass a cache dir).
+
+    ``cache_model_id`` keys the on-disk cache so two different embedders
+    (e.g. EN MiniLM-L6 vs multilingual MiniLM-L12) don't collide on a
+    shared cache directory. Defaults to the English embedder label for
+    callers that haven't been migrated yet.
     """
     import numpy as np
 
@@ -718,7 +768,8 @@ def _embed_with_cache(
         cache_dir=Path(cache_dir),
         # Include revision in the cache key so a bumped embedder version
         # writes to a fresh cache file rather than reusing stale embeddings.
-        model_id=f"{_TOPIC_EMBEDDER_REPO_ID}@{_TOPIC_EMBEDDER_REVISION[:8]}",
+        model_id=cache_model_id
+        or _embedder_cache_label(_TOPIC_EMBEDDER_REPO_ID, _TOPIC_EMBEDDER_REVISION),
         provider_id=getattr(embedder, "provider", "cpu"),
     )
 
@@ -983,7 +1034,10 @@ def run_topic_modeling_task(
 
             random_state = int(random_seed)
             max_representative_words = max(1, int(representative_words_count))
-            embedding_model_name = "all-MiniLM-L6-v2"
+            # Phase 3.1: the displayed embedder name reflects the language-
+            # routed model, so the result panel shows e.g.
+            # "paraphrase-multilingual-MiniLM-L12-v2" on a ZH run.
+            embedding_model_name = _select_embedder(language)[0].split("/")[-1]
 
             random.seed(random_state)
             np.random.seed(random_state)
@@ -1011,13 +1065,17 @@ def run_topic_modeling_task(
             embed_end = 0.88 if use_online else 0.63
             cluster_frac = 0.89 if use_online else 0.65
 
-            embedder = _get_embedder(_TOPIC_EMBEDDER_REPO_ID)
+            embedder_repo_id, embedder_revision = _select_embedder(language)
+            embedder = _get_embedder(embedder_repo_id, embedder_revision)
             embedding_backend = (
                 "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
             )
             all_embeddings = _embed_with_cache(
                 embedder, all_docs, embedding_cache_dir, progress_callback,
                 progress_start=embed_start, progress_end=embed_end,
+                cache_model_id=_embedder_cache_label(
+                    embedder_repo_id, embedder_revision
+                ),
             )
 
             if use_online:

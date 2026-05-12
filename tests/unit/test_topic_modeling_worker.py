@@ -76,7 +76,7 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder()
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -194,7 +194,7 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(
     docworkspace_module.Workspace = FakeWorkspace
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder()
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -338,7 +338,7 @@ def test_run_topic_modeling_task_online_pipeline_mode(tmp_path, monkeypatch):
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -395,7 +395,7 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -523,7 +523,7 @@ def test_run_topic_modeling_task_sampling_reduces_corpus(tmp_path, monkeypatch):
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _: FakeEmbedder())
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -630,7 +630,7 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _: FakeEmbedder())
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
