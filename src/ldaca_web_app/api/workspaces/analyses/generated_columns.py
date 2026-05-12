@@ -160,6 +160,73 @@ QUOTE_COLUMN_NAMES = (
 )
 
 
+# ----------------------------------------------------------------------------
+# Tokens column (Phase 2 of pluggable_tokeniser)
+# ----------------------------------------------------------------------------
+# A derived "tokens" node carries an additional column with the canonical
+# tokens-with-offsets schema emitted by
+# ``polars_text.tokenize_with_offsets``. Token-consuming tools (concordance
+# in tokens-mode, token-frequency, future POS) detect this column and use it
+# instead of re-tokenising the raw text. See docs/pluggable-tokeniser/PLAN.md
+# Phase 2 for the rationale; the schema is the contract that makes
+# cross-tool results consistent across HF and Jieba backends.
+
+TOKENS_COLUMN = "TOKENS_tokens"
+TOKENS_TOKEN_FIELD = "token"
+TOKENS_START_FIELD = "start"
+TOKENS_END_FIELD = "end"
+
+
+def tokens_struct_dtype() -> pl.DataType:
+    """The canonical Polars dtype for a tokens-with-offsets column.
+
+    ``List[Struct{token: String, start: Int64, end: Int64}]`` — must match
+    the Rust output type emitted by ``polars_text::expressions::
+    list_token_struct_output``. Tests assert schema equality, so keep these
+    two definitions in sync.
+    """
+    return pl.List(
+        pl.Struct(
+            [
+                pl.Field(TOKENS_TOKEN_FIELD, pl.String),
+                pl.Field(TOKENS_START_FIELD, pl.Int64),
+                pl.Field(TOKENS_END_FIELD, pl.Int64),
+            ]
+        )
+    )
+
+
+def is_tokens_column(name: str, dtype: pl.DataType) -> bool:
+    """Schema-aware detector for the tokens column.
+
+    True when the column is named ``TOKENS_tokens`` AND has the canonical
+    dtype. Used by worker tasks to decide whether to take the tokens path
+    or re-tokenise from raw text.
+    """
+    return name == TOKENS_COLUMN and dtype == tokens_struct_dtype()
+
+
+def tokens_struct_projection(struct_column: str = TOKENS_COLUMN) -> tuple[pl.Expr, ...]:
+    """Project the struct fields out of a tokens row (list-of-struct).
+
+    Returns expressions that, applied after ``.explode(TOKENS_COLUMN)``,
+    flatten each token into separate ``token`` / ``start`` / ``end``
+    columns. Useful for ad-hoc inspection; production token-consuming
+    paths typically operate on the list-of-struct directly.
+    """
+    return (
+        pl.col(struct_column)
+        .struct.field(TOKENS_TOKEN_FIELD)
+        .alias(TOKENS_TOKEN_FIELD),
+        pl.col(struct_column)
+        .struct.field(TOKENS_START_FIELD)
+        .alias(TOKENS_START_FIELD),
+        pl.col(struct_column)
+        .struct.field(TOKENS_END_FIELD)
+        .alias(TOKENS_END_FIELD),
+    )
+
+
 def quotation_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
     """Project raw quotation struct fields into canonical prefixed columns."""
     return (
