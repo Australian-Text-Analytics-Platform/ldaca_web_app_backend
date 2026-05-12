@@ -131,11 +131,17 @@ def _build_online_pipeline(
     n_clusters: int | None,
     random_state: int,
     embedder: Any,
+    language: str | None = None,
 ) -> tuple[Any, int]:
     """Build a BERTopic pipeline using IncrementalPCA + MiniBatchKMeans.
 
     Returns (topic_model, k) where k is the actual cluster count selected.
     Suitable for corpora that exceed the online-mode thresholds.
+
+    Phase 3.5: ``language`` routes the per-topic label-stage vectorizer's
+    stopword filter. Only ``"en"`` gets sklearn's built-in English list;
+    everything else gets ``None`` so e.g. Chinese function words 的/是/了
+    aren't English-filtered (i.e. silently kept).
     """
     import math
 
@@ -161,7 +167,11 @@ def _build_online_pipeline(
     try:
         from bertopic.vectorizers import OnlineCountVectorizer
 
-        kwargs["vectorizer_model"] = OnlineCountVectorizer(stop_words="english", decay=0.01)
+        resolved_language = (language or "en").strip().lower()
+        stop_words = "english" if resolved_language == "en" else None
+        kwargs["vectorizer_model"] = OnlineCountVectorizer(
+            stop_words=stop_words, decay=0.01
+        )
     except ImportError:
         logger.debug("[Worker] OnlineCountVectorizer unavailable; using default CountVectorizer")
 
@@ -792,6 +802,7 @@ def run_topic_modeling_task(
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
     topic_size_value: int | None = 25,
+    language: str | None = None,
 ) -> Dict[str, Any]:
     """Execute topic modeling in a worker process.
 
@@ -1017,7 +1028,7 @@ def run_topic_modeling_task(
                         f"(IncrementalPCA + MiniBatchKMeans)...",
                     )
                 topic_model, actual_k = _build_online_pipeline(
-                    len(all_docs), n_clusters, random_state, embedder
+                    len(all_docs), n_clusters, random_state, embedder, language=language
                 )
             else:
                 if progress_callback:

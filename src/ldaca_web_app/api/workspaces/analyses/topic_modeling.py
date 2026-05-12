@@ -20,6 +20,7 @@ from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.i18n import effective_language
 from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
@@ -396,6 +397,13 @@ async def run_topic_modeling(
         artifact_dir, artifact_prefix = _prepare_topic_artifact_target(
             user_id, workspace_id
         )
+        # Phase 3.5: resolve a single effective language for the label-stage
+        # CountVectorizer. Explicit request param wins; otherwise we read
+        # from the first node's derived metadata (decision 7). Multi-language
+        # corpora left to the user — the frontend should send "multi" or the
+        # union language label when mixing nodes.
+        first_node = ws.nodes[request.node_ids[0]]
+        topic_language = effective_language(request.language, first_node)
         worker_task = await tm.submit_task(
             user_id=user_id,
             workspace_id=workspace_id,
@@ -416,6 +424,7 @@ async def run_topic_modeling(
                 "sample_fractions": request.sample_fractions,
                 "topic_size_mode": request.topic_size_mode,
                 "topic_size_value": request.topic_size_value,
+                "language": topic_language,
             },
             task_name="Topic Modeling",
         )

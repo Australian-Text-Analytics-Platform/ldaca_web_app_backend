@@ -349,6 +349,7 @@ def topic_modeling_task(
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
     topic_size_value: int | None = 25,
+    language: str | None = None,
 ) -> Dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(
@@ -370,6 +371,7 @@ def topic_modeling_task(
         sample_fractions=sample_fractions,
         topic_size_mode=topic_size_mode,
         topic_size_value=topic_size_value,
+        language=language,
     )
 
 
