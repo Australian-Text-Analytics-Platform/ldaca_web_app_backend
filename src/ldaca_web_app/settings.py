@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     sample_data_remote_url: str | None = Field(
         default="https://raw.githubusercontent.com/Australian-Text-Analytics-Platform/ldaca-analytics-sample-data/main",
         description=(
-            "Base URL for remote sample datasets. The backend fetches manifest.json "
+            "Base URL for remote sample datasets. The backend fetches catalogue.json "
             "from this URL and downloads any missing or changed files in the background "
             "after the bundled datasets are copied. Set to empty string to disable."
         ),

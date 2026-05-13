@@ -238,14 +238,20 @@ def import_sample_data_for_user(user_id: str) -> Dict[str, Any]:
     }
 
 
-async def download_remote_sample_data(user_id: str) -> None:
+async def download_remote_sample_data(
+    user_id: str,
+    collection_ids: list[str] | None = None,
+) -> None:
     """Download any missing or updated remote sample datasets into the user's
     sample_data folder.
 
-    Fetches manifest.json from the configured remote base URL, then downloads
-    each listed file whose on-disk SHA-256 does not match the manifest. Files
-    that already match are skipped. Any download error is logged and skipped so
-    a partial failure does not prevent the rest from downloading.
+    Fetches catalogue.json from the configured remote base URL, then downloads
+    each listed file whose on-disk SHA-256 does not match. Files that already
+    match are skipped. Any download error is logged and skipped so a partial
+    failure does not prevent the rest from downloading.
+
+    If collection_ids is given, only those collections are downloaded.
+    If None, all non-bundled collections are downloaded (original behaviour).
 
     Called as a FastAPI BackgroundTask after the bundled data has been copied.
     No-op when sample_data_remote_url is empty/unset.
@@ -261,47 +267,58 @@ async def download_remote_sample_data(user_id: str) -> None:
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(f"{remote_base}/manifest.json")
+            resp = await client.get(f"{remote_base}/catalogue.json")
             resp.raise_for_status()
-            manifest = resp.json()
+            catalogue = resp.json()
     except Exception:
-        logger.warning("Could not fetch remote sample data manifest from %s", remote_base)
+        logger.warning("Could not fetch remote sample data catalogue from %s", remote_base)
         return
 
-    datasets = manifest.get("datasets", [])
-    for entry in datasets:
-        rel_path: str = entry.get("path", "")
-        expected_sha256: str = entry.get("sha256", "")
-        if not rel_path or not expected_sha256:
-            continue
+    collections = catalogue.get("collections", [])
+    for col in collections:
+        col_id: str = col.get("id", "")
+        bundled: bool = col.get("bundled", False)
 
-        dest = target_dir / Path(rel_path)
-
-        # Skip if already present with correct content.
-        if dest.exists():
-            digest = hashlib.sha256(dest.read_bytes()).hexdigest()
-            if digest == expected_sha256:
+        if collection_ids is not None:
+            if col_id not in collection_ids:
+                continue
+        else:
+            # Default: only download non-bundled collections.
+            if bundled:
                 continue
 
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        url = f"{remote_base}/{rel_path}"
-        logger.info("Downloading remote sample dataset: %s", rel_path)
-        try:
-            async with httpx.AsyncClient(timeout=300) as client:
-                async with client.stream("GET", url) as stream:
-                    stream.raise_for_status()
-                    tmp = dest.with_suffix(dest.suffix + f".tmp_{uuid.uuid4().hex}")
-                    try:
-                        with tmp.open("wb") as fh:
-                            async for chunk in stream.aiter_bytes(chunk_size=1 << 20):
-                                fh.write(chunk)
-                        os.replace(tmp, dest)
-                        logger.info("Downloaded %s", rel_path)
-                    except Exception:
-                        tmp.unlink(missing_ok=True)
-                        raise
-        except Exception:
-            logger.warning("Failed to download remote sample dataset: %s", rel_path, exc_info=True)
+        for entry in col.get("files", []):
+            rel_path: str = entry.get("path", "")
+            expected_sha256: str = entry.get("sha256", "")
+            if not rel_path or not expected_sha256:
+                continue
+
+            dest = target_dir / Path(rel_path)
+
+            if dest.exists():
+                digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+                if digest == expected_sha256:
+                    continue
+
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            url = f"{remote_base}/{rel_path}"
+            logger.info("Downloading remote sample dataset: %s", rel_path)
+            try:
+                async with httpx.AsyncClient(timeout=300) as client:
+                    async with client.stream("GET", url) as stream:
+                        stream.raise_for_status()
+                        tmp = dest.with_suffix(dest.suffix + f".tmp_{uuid.uuid4().hex}")
+                        try:
+                            with tmp.open("wb") as fh:
+                                async for chunk in stream.aiter_bytes(chunk_size=1 << 20):
+                                    fh.write(chunk)
+                            os.replace(tmp, dest)
+                            logger.info("Downloaded %s", rel_path)
+                        except Exception:
+                            tmp.unlink(missing_ok=True)
+                            raise
+            except Exception:
+                logger.warning("Failed to download remote sample dataset: %s", rel_path, exc_info=True)
 
 
 def detect_file_type(filename: str) -> str:
