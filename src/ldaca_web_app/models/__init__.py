@@ -99,6 +99,7 @@ class ImportSampleDataResponse(BaseModel):
     bytes_copied: int
     message: str
     sample_dir: Optional[str] = None
+    remote_download_started: bool = False
 
 
 class DataFileInfo(BaseModel):

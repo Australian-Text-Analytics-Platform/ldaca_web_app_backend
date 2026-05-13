@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 
 import polars as pl
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
 try:
@@ -18,6 +18,7 @@ except Exception:  # pragma: no cover - optional import hardening
 from ..core.auth import get_current_user
 from ..core.utils import (
     detect_file_type,
+    download_remote_sample_data,
     get_user_data_folder,
     import_sample_data_for_user,
     read_text_file,
@@ -489,20 +490,41 @@ async def delete_file(filename: str, current_user: dict = Depends(get_current_us
 
 
 @router.post("/import-sample-data", response_model=ImportSampleDataResponse)
-async def import_sample_data(current_user: dict = Depends(get_current_user)):
-    """Import (or re-import) sample data for the current user on demand."""
+async def import_sample_data(
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
+    """Import (or re-import) sample data for the current user on demand.
+
+    Phase 1 (synchronous): copies bundled datasets (SCL, ADO/twitter) immediately.
+    Phase 2 (background): downloads any missing or updated remote datasets
+    (ADO/reddit and others) if SAMPLE_DATA_REMOTE_URL is configured.
+    """
+    from ..settings import settings
+
     user_id = current_user["id"]
     try:
         summary = import_sample_data_for_user(user_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+    remote_url = (settings.sample_data_remote_url or "").strip()
+    if remote_url:
+        background_tasks.add_task(download_remote_sample_data, user_id)
+
     return {
         "status": "ok",
         "removed_existing": summary["removed_existing"],
         "file_count": summary["file_count"],
         "bytes_copied": summary["bytes_copied"],
         "sample_dir": summary["sample_dir"],
-        "message": "Sample data imported successfully",
+        "remote_download_started": bool(remote_url),
+        "message": (
+            "Sample data imported. Larger datasets are downloading in the background "
+            "and will appear in the file browser shortly."
+            if remote_url
+            else "Sample data imported successfully."
+        ),
     }
 
 
