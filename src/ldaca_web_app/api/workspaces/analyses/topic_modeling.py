@@ -833,10 +833,42 @@ async def detach_topic_modeling(
             status_code=404,
             detail="Topic meanings artifact is missing",
         )
-    meanings_lf = pl.scan_parquet(meanings_path)
     selected_topic_ids = sorted(
         {int(topic_id) for topic_id in (request.topic_ids or [])}
     )
+
+    # Frontend ships ``topic_meanings_override`` when it wants the detached
+    # meanings node to mirror what's currently on screen: post-fit "Words
+    # per topic" slice + post-fit stopword filter. The artifact parquet was
+    # written at fit time with the user's *original* slice and no filter,
+    # so we'd otherwise stamp out a node that doesn't match the visual.
+    # We write a fresh parquet beside the artifact so the resulting
+    # workspace node has the same on-disk lazy backing the artifact path
+    # provides — the workspace's save/reload depends on that. The
+    # downstream per-corpus filter still applies, so an override topic
+    # that doesn't appear in a given corpus is dropped from that
+    # corpus's meanings node (consistent with the multilingual
+    # per-corpus semantics).
+    if request.topic_meanings_override:
+        override_topic_ids = [int(item.topic_id) for item in request.topic_meanings_override]
+        override_words = [list(item.words) for item in request.topic_meanings_override]
+        override_path = (
+            meanings_path.parent
+            / f"{meanings_path.stem}_override_{uuid4().hex[:8]}{meanings_path.suffix}"
+        )
+        pl.DataFrame(
+            {
+                TOPIC_COLUMN: override_topic_ids,
+                TOPIC_MEANING_COLUMN: override_words,
+            },
+            schema={
+                TOPIC_COLUMN: pl.Int64,
+                TOPIC_MEANING_COLUMN: pl.List(pl.String),
+            },
+        ).lazy().sink_parquet(override_path)
+        meanings_lf = pl.scan_parquet(override_path)
+    else:
+        meanings_lf = pl.scan_parquet(meanings_path)
 
     target_node_ids = request.node_ids or list(assignments_by_node_id.keys())
     if not target_node_ids:

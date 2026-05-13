@@ -148,7 +148,15 @@ def test_run_topic_modeling_task_payload_carries_full_top_n_words(
 
     class FakeBERTopic:
         def __init__(
-            self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
         ):
             # Confirm the fit honoured _resolve_top_n_words(15) == 50.
             assert top_n_words == 50
@@ -172,7 +180,9 @@ def test_run_topic_modeling_task_payload_carries_full_top_n_words(
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setattr(
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+    )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
