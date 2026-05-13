@@ -54,6 +54,14 @@ class Settings(BaseSettings):
         default=None,
         description="Optional sample data folder override (filesystem path)",
     )
+    sample_data_remote_url: str | None = Field(
+        default="https://raw.githubusercontent.com/Australian-Text-Analytics-Platform/ldaca-analytics-sample-data/main",
+        description=(
+            "Base URL for remote sample datasets. The backend fetches catalogue.json "
+            "from this URL and downloads any missing or changed files in the background "
+            "after the bundled datasets are copied. Set to empty string to disable."
+        ),
+    )
 
     # Server Configuration
     server_host: str = Field(default="0.0.0.0", description="Server host")

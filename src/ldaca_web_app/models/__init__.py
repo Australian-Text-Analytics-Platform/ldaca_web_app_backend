@@ -99,6 +99,34 @@ class ImportSampleDataResponse(BaseModel):
     bytes_copied: int
     message: str
     sample_dir: Optional[str] = None
+    remote_download_started: bool = False
+
+
+class ImportSampleDataRequest(BaseModel):
+    collection_ids: List[str] = Field(default_factory=list)
+
+
+class SampleDataFileEntry(BaseModel):
+    path: str
+    size: int
+    sha256: str
+
+
+class SampleDataCollection(BaseModel):
+    id: str
+    name: str
+    description: str
+    language: str
+    bundled: bool
+    total_size_bytes: int
+    recommended_for: List[str]
+    files: List[SampleDataFileEntry]
+    status: str  # bundled | downloaded | partial | not_downloaded
+
+
+class SampleDataCatalogueResponse(BaseModel):
+    schema_version: int
+    collections: List[SampleDataCollection]
 
 
 class DataFileInfo(BaseModel):
