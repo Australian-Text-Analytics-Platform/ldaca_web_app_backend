@@ -460,17 +460,32 @@ def _build_topic_result_payload(
         ]
 
     topics_by_id = cast(dict[int, list[tuple[str, float]]], topic_model.get_topics())
-    representative_words_by_topic: list[list[str]] = []
+    # Wire-payload slice — matches BERTopic's actual ``top_n_words`` at fit
+    # time, so the frontend can scale "Words per topic" up to this cap
+    # post-fit without a re-run. Keeping ``representative_words`` narrower
+    # than the fit's capacity would make the slider's upper range a lie:
+    # the user would dial it up and see no new words because there'd be
+    # nothing to reveal.
+    payload_words_cap = _resolve_top_n_words(max_representative_words)
+    payload_representative_words_by_topic: list[list[str]] = []
+    # Meaning-column slice — respects the user's chosen display count so
+    # the "Add to Workspace" parquet matches what they saw. The
+    # server-side label fallback uses the same narrow slice for the same
+    # reason: if the frontend can't build its own label, we want a label
+    # that reflects the user's intent, not the full top_n_words buffer.
+    meaning_words_by_topic: list[list[str]] = []
     labels: list[str] = []
     for topic_id in topic_ids:
         words = topics_by_id.get(topic_id, [])
-        top_words = [
+        payload_words = [
             word
-            for word, _score in words[:max_representative_words]
+            for word, _score in words[:payload_words_cap]
             if isinstance(word, str) and word
         ]
-        representative_words_by_topic.append(top_words)
-        labels.append(" | ".join(top_words) if top_words else f"Topic {topic_id}")
+        payload_representative_words_by_topic.append(payload_words)
+        meaning_words = payload_words[:max_representative_words]
+        meaning_words_by_topic.append(meaning_words)
+        labels.append(" | ".join(meaning_words) if meaning_words else f"Topic {topic_id}")
 
     all_topics_sorted = sorted(topics_by_id.keys())
     indices = (
@@ -560,8 +575,8 @@ def _build_topic_result_payload(
             {
                 "id": topic_id,
                 "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
-                "representative_words": representative_words_by_topic[i]
-                if i < len(representative_words_by_topic)
+                "representative_words": payload_representative_words_by_topic[i]
+                if i < len(payload_representative_words_by_topic)
                 else [],
                 "size": per_sizes,
                 "total_size": int(sum(per_sizes)),
@@ -573,7 +588,7 @@ def _build_topic_result_payload(
     pl.DataFrame(
         {
             TOPIC_COLUMN: topic_ids,
-            TOPIC_MEANING_COLUMN: representative_words_by_topic,
+            TOPIC_MEANING_COLUMN: meaning_words_by_topic,
         },
         schema={
             TOPIC_COLUMN: pl.Int64,

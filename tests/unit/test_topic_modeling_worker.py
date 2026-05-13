@@ -129,6 +129,86 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
     assert progress_updates[-1] == (1.0, "Topic modeling completed")
 
 
+def test_run_topic_modeling_task_payload_carries_full_top_n_words(
+    tmp_path, monkeypatch
+):
+    """Wire payload exposes the full top_n_words buffer, parquet meaning
+    column respects the user's requested count.
+
+    Regression: without this, "Words per topic = 15" silently clipped the
+    payload to 15, so dialing the frontend slider up to 30 post-fit had
+    nothing to reveal — even though BERTopic was fit with top_n_words=50.
+    """
+
+    class FakeEmbedder:
+        def encode(self, docs, show_progress_bar=False):
+            return np.array([[0.1, 0.2] for _ in docs], dtype=float)
+
+    full_words = [(f"w{i}", 1.0 - i * 0.01) for i in range(50)]
+
+    class FakeBERTopic:
+        def __init__(
+            self, *, verbose, min_topic_size, embedding_model, umap_model, top_n_words=10
+        ):
+            # Confirm the fit honoured _resolve_top_n_words(15) == 50.
+            assert top_n_words == 50
+            self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
+            self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
+
+        def fit_transform(self, docs, embeddings):
+            return [0] * len(docs), None
+
+        def get_topic_freq(self):
+            return pd.DataFrame({"Topic": [0, -1], "Count": [2, 0]})
+
+        def get_topics(self):
+            return {-1: [], 0: full_words}
+
+    def fake_select_topic_representation(*_args, **_kwargs):
+        return np.array([[0.0, 0.0], [1.0, 2.0]], dtype=float), False
+
+    bertopic_module = cast(Any, ModuleType("bertopic"))
+    bertopic_module.BERTopic = FakeBERTopic
+    bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
+    bertopic_utils_module.select_topic_representation = fake_select_topic_representation
+
+    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda _name: FakeEmbedder())
+    monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
+    monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
+
+    result = worker_tasks_topic.run_topic_modeling_task(
+        configure_worker_environment=lambda: None,
+        user_id="test-user",
+        workspace_id="test-workspace",
+        corpora=[["doc one", "doc two"]],
+        node_infos=[
+            {
+                "node_id": "node-1",
+                "node_name": "Node 1",
+                "text_column": "document",
+                "original_columns": ["document"],
+            }
+        ],
+        artifact_dir=str(tmp_path),
+        artifact_prefix="topic_full_payload_test",
+        min_topic_size=2,
+        representative_words_count=15,
+    )
+
+    # Wire payload carries the full 50-word buffer so the frontend slider
+    # can scale up to max(50, 2*15)=50 without re-fitting.
+    assert len(result["topics"][0]["representative_words"]) == 50
+    assert result["topics"][0]["representative_words"][:3] == ["w0", "w1", "w2"]
+
+    # Meaning column (workspace attach) still respects the user's 15.
+    meanings = pl.read_parquet(
+        tmp_path / "topic_full_payload_test_topic_meanings.parquet"
+    )
+    meaning_row = meanings.to_dicts()[0]
+    assert len(meaning_row["TOPIC_topic_meaning"]) == 15
+    assert meaning_row["TOPIC_topic_meaning"] == [f"w{i}" for i in range(15)]
+
+
 def test_run_topic_modeling_task_can_load_corpora_from_workspace(
     tmp_path, monkeypatch
 ):
