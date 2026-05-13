@@ -989,6 +989,19 @@ class TopicModelingResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class TopicMeaningOverrideItem(BaseModel):
+    """One topic's representative-words override for detach.
+
+    Lets the frontend ship exactly what the user sees — post-fit
+    "Words per topic" slice, post-fit stopword filter — instead of
+    forcing the meanings parquet (written at fit time) into the
+    detached node.
+    """
+
+    topic_id: int
+    words: List[str]
+
+
 class TopicModelingDetachRequest(BaseModel):
     """Request payload for detaching topic assignments from cached topic-modeling output."""
 
@@ -997,6 +1010,7 @@ class TopicModelingDetachRequest(BaseModel):
     new_node_names: Optional[Dict[str, str]] = None
     topic_column_name: Optional[str] = "TOPIC_topic"
     topic_ids: Optional[List[int]] = None
+    topic_meanings_override: Optional[List[TopicMeaningOverrideItem]] = None
 
 
 class TopicModelingDetachNodeOption(BaseModel):

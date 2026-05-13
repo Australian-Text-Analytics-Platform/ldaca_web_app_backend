@@ -246,3 +246,129 @@ async def test_topic_modeling_detach_keeps_topic_meaning_only_on_support_node(
     assert support_schema["TOPIC_topic_meaning"] in {"list_string", "List(String)"}
     assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}
     assert set(support_schema) == {"TOPIC_topic", "TOPIC_topic_meaning"}
+
+
+@pytest.mark.anyio
+async def test_topic_modeling_detach_with_meanings_override_replaces_meanings(
+    authenticated_client, workspace_id, tmp_path
+):
+    """``topic_meanings_override`` lets the detach mirror what's on screen.
+
+    Regression: without the override path, the meanings node always came
+    from the fit-time parquet — so a post-fit "Words per topic" change
+    or stopword filter toggle wasn't reflected in the detached node.
+    """
+    user_id = "test"
+    workspace = workspace_manager.get_current_workspace(user_id)
+    assert workspace is not None
+
+    source_node = Node(
+        data=pl.DataFrame(
+            {
+                "document": ["alpha beta", "gamma delta"],
+                "source": ["a", "b"],
+            }
+        ).lazy(),
+        name="topic_source_override",
+        workspace=workspace,
+        operation="test_setup",
+        parents=[],
+    )
+    workspace.add_node(source_node)
+
+    assignments_path = tmp_path / "assignments_override.parquet"
+    pl.DataFrame(
+        {"__row_nr__": [0, 1], "TOPIC_topic": [0, 0]},
+        schema={"__row_nr__": pl.Int64, "TOPIC_topic": pl.Int64},
+    ).write_parquet(assignments_path)
+
+    # Artifact carries the fit-time words; the override should win.
+    meanings_path = tmp_path / "topic_meanings_override.parquet"
+    pl.DataFrame(
+        {
+            "TOPIC_topic": [0],
+            "TOPIC_topic_meaning": [["original_one", "original_two", "original_three"]],
+        },
+        schema={
+            "TOPIC_topic": pl.Int64,
+            "TOPIC_topic_meaning": pl.List(pl.String),
+        },
+    ).write_parquet(meanings_path)
+
+    task_id = "completed-topic-task-override"
+    payload = {
+        "topics": [
+            {
+                "id": 0,
+                "label": "original_one | original_two | original_three",
+                "representative_words": ["original_one", "original_two", "original_three"],
+                "size": [2],
+                "total_size": 2,
+                "x": 0.0,
+                "y": 0.0,
+            }
+        ],
+        "corpus_sizes": [2],
+        "artifacts": {
+            "version": 1,
+            "topic_meanings_parquet_path": str(meanings_path),
+            "nodes": [
+                {
+                    "node_id": source_node.id,
+                    "node_name": source_node.name,
+                    "text_column": "document",
+                    "original_columns": ["document", "source"],
+                    "assignments_parquet_path": str(assignments_path),
+                }
+            ],
+        },
+    }
+    get_task_manager(user_id).save_task(
+        AnalysisTask(
+            task_id=task_id,
+            user_id=user_id,
+            workspace_id=workspace_id,
+            request=AnalysisTopicModelingRequest(
+                node_ids=[source_node.id],
+                node_columns={source_node.id: "document"},
+                min_topic_size=5,
+                random_seed=42,
+                representative_words_count=3,
+            ),
+            status=AnalysisStatus.COMPLETED,
+            result=GenericAnalysisResult(payload),
+        )
+    )
+
+    detach_response = await authenticated_client.post(
+        f"/api/workspaces/topic-modeling/tasks/{task_id}/detach",
+        json={
+            "node_ids": [source_node.id],
+            "selected_columns": {source_node.id: ["document"]},
+            "topic_meanings_override": [
+                {"topic_id": 0, "words": ["visible_a", "visible_b"]},
+            ],
+        },
+    )
+
+    assert detach_response.status_code == 200, detach_response.text
+    topic_meanings_node_id = (
+        detach_response.json()
+        .get("data", {})
+        .get("detached_nodes", [{}])[0]
+        .get("topic_meanings_node_id")
+    )
+    assert topic_meanings_node_id
+
+    meanings_node = workspace.nodes[topic_meanings_node_id]
+    meanings_df = meanings_node.data.collect()
+    assert meanings_df["TOPIC_topic"].to_list() == [0]
+    assert meanings_df["TOPIC_topic_meaning"].to_list() == [["visible_a", "visible_b"]]
+
+    # Artifact parquet is untouched on disk — override writes a fresh file.
+    artifact_meanings = pl.read_parquet(meanings_path)
+    assert artifact_meanings["TOPIC_topic_meaning"].to_list() == [
+        ["original_one", "original_two", "original_three"]
+    ]
+    override_files = list(meanings_path.parent.glob("topic_meanings_override_override_*.parquet"))
+    assert len(override_files) == 1
