@@ -53,6 +53,8 @@ LANGUAGE_FILE_MAP = {
     "de": "stopwords_de.txt",
     "chinese": "stopwords_zh.txt",
     "zh": "stopwords_zh.txt",
+    "japanese": "stopwords_ja.txt",
+    "ja": "stopwords_ja.txt",
 }
 
 
