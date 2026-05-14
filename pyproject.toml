@@ -41,16 +41,19 @@ dependencies = [
     # breaks LazyFrame.deserialize() for plans containing those dtypes.
     # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
     "polars[rtcompat]>=1.40.0",
-    # polars-text 0.1.7 adds the `random` polars-plan feature (plus 10 more
-    # future-proofing features). Older wheels (<=0.1.6) fail to deserialize
-    # any workspace plan containing `.sample()` / `.shuffle()` with
-    # `unknown variant 'Random'` — workspace save/load both walk every plbin
-    # through `polars_text.list_source_paths` (docworkspace GC + rebase),
-    # turning the missing variant into an HTTP 500. 0.1.7 also enables
-    # `bitwise`, `is_close`, `arg_where`, `hive_partitions`, `scan_lines`,
-    # `dtype-extension`, etc., to cover the full DslPlan surface that
+    # polars-text 0.2.0 ships the multilingual tokenizer additions:
+    # jieba ZH (`model="jieba"`), Lindera JA + KO (`model="lindera-ja-ipadic"`
+    # etc.), `tokenize_with_offsets`, and Unicode-aware sentence/word counts.
+    # Older wheels (<=0.1.7) fall through to `load_hf_tokenizer` for the
+    # lindera model IDs, which then tries to fetch them as HF Hub model repos
+    # and dies with "Failed to fetch tokenizer.json for lindera-ja-ipadic"
+    # the first time a derived JA/KO tokens column gets lazily evaluated
+    # (e.g. on a concordance call). 0.2.0 also retains the polars-plan
+    # feature set (`random`, `ffi_plugin`, `bitwise`, `is_close`,
+    # `arg_where`, `hive_partitions`, `scan_lines`, `dtype-extension`, ...)
+    # so workspace save/load still covers the full DslPlan surface that
     # Python polars 1.40 wheels emit.
-    "polars-text>=0.1.7",
+    "polars-text>=0.2.0",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
