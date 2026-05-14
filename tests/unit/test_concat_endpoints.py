@@ -5,9 +5,9 @@ from __future__ import annotations
 import polars as pl
 import pytest
 from fastapi import HTTPException
-from ldaca_web_app.api.workspaces import nodes as nodes_api
-from ldaca_web_app.api.workspaces import utils as workspace_utils
-from ldaca_web_app.models import ConcatPreviewRequest, ConcatRequest
+from ldaca_wordflow.api.workspaces import nodes as nodes_api
+from ldaca_wordflow.api.workspaces import utils as workspace_utils
+from ldaca_wordflow.models import ConcatPreviewRequest, ConcatRequest
 
 
 class DummyNode:

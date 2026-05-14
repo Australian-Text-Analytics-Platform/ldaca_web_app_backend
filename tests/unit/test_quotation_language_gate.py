@@ -12,8 +12,8 @@ import pytest
 from docworkspace import Node
 from fastapi import HTTPException
 
-from ldaca_web_app.api.workspaces.analyses import quotation as quotation_api
-from ldaca_web_app.models import (
+from ldaca_wordflow.api.workspaces.analyses import quotation as quotation_api
+from ldaca_wordflow.models import (
     QuotationDetachRequest,
     QuotationMaterializeRequest,
     QuotationRequest,

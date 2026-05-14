@@ -22,7 +22,7 @@ def test_is_mps_available_returns_false_when_torch_missing():
     with patch.dict("sys.modules", {"torch": None}):
         from importlib import reload
 
-        import ldaca_web_app.core.mps_embedder as mod
+        import ldaca_wordflow.core.mps_embedder as mod
 
         reload(mod)
         assert mod.is_mps_available() is False
@@ -32,7 +32,7 @@ def test_is_mps_available_returns_false_when_mps_not_available():
     mock_torch = MagicMock()
     mock_torch.backends.mps.is_available.return_value = False
     with patch.dict("sys.modules", {"torch": mock_torch}):
-        from ldaca_web_app.core.mps_embedder import is_mps_available
+        from ldaca_wordflow.core.mps_embedder import is_mps_available
 
         assert is_mps_available() is False
 
@@ -40,12 +40,12 @@ def test_is_mps_available_returns_false_when_mps_not_available():
 def test_is_mps_available_returns_true_when_mps_available():
     mock_torch = MagicMock()
     mock_torch.backends.mps.is_available.return_value = True
-    with patch("ldaca_web_app.core.mps_embedder.is_mps_available", return_value=True):
-        from ldaca_web_app.core.mps_embedder import is_mps_available
+    with patch("ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=True):
+        from ldaca_wordflow.core.mps_embedder import is_mps_available
 
         # Patch at call site rather than sys.modules to keep test simple
         with patch(
-            "ldaca_web_app.core.mps_embedder.is_mps_available", return_value=True
+            "ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=True
         ) as mock_fn:
             assert mock_fn() is True
 
@@ -56,16 +56,16 @@ def test_is_mps_available_returns_true_when_mps_available():
 
 
 def test_get_active_provider_id_returns_mps_when_available():
-    with patch("ldaca_web_app.core.mps_embedder.is_mps_available", return_value=True):
-        from ldaca_web_app.core.mps_embedder import get_active_provider_id
+    with patch("ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=True):
+        from ldaca_wordflow.core.mps_embedder import get_active_provider_id
 
         assert get_active_provider_id() == "MPS"
 
 
 def test_get_active_provider_id_delegates_to_onnx_when_mps_unavailable():
-    with patch("ldaca_web_app.core.mps_embedder.is_mps_available", return_value=False):
+    with patch("ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=False):
         with patch(
-            "ldaca_web_app.core.mps_embedder.get_active_provider_id"
+            "ldaca_wordflow.core.mps_embedder.get_active_provider_id"
         ) as mock_fn:
             mock_fn.return_value = "CPUExecutionProvider"
             assert mock_fn() == "CPUExecutionProvider"
@@ -93,7 +93,7 @@ def mock_st_module():
 
     with (
         patch.dict("sys.modules", {"torch": mock_torch}),
-        patch("ldaca_web_app.core.mps_embedder.MpsEmbedder.__init__") as mock_init,
+        patch("ldaca_wordflow.core.mps_embedder.MpsEmbedder.__init__") as mock_init,
     ):
         mock_init.return_value = None
         yield mock_torch, mock_st
@@ -108,12 +108,12 @@ def test_mps_embedder_provider_is_mps_on_mps_device():
     with (
         patch.dict("sys.modules", {"torch": mock_torch}),
         patch(
-            "ldaca_web_app.core.mps_embedder.MagicMock", create=True
+            "ldaca_wordflow.core.mps_embedder.MagicMock", create=True
         ),
-        patch("ldaca_web_app.core.mps_embedder.MpsEmbedder.__init__") as mock_init,
+        patch("ldaca_wordflow.core.mps_embedder.MpsEmbedder.__init__") as mock_init,
     ):
         # Build embedder by calling __init__ manually
-        from ldaca_web_app.core.mps_embedder import MpsEmbedder
+        from ldaca_wordflow.core.mps_embedder import MpsEmbedder
 
         embedder = MpsEmbedder.__new__(MpsEmbedder)
         embedder._model = mock_model
@@ -128,7 +128,7 @@ def test_mps_embedder_encode_delegates_to_st_encode():
     mock_model = MagicMock()
     mock_model.encode.return_value = expected
 
-    from ldaca_web_app.core.mps_embedder import MpsEmbedder
+    from ldaca_wordflow.core.mps_embedder import MpsEmbedder
 
     embedder = MpsEmbedder.__new__(MpsEmbedder)
     embedder._model = mock_model
@@ -162,7 +162,7 @@ def test_mps_embedder_from_pretrained_returns_instance():
     ):
         from importlib import reload
 
-        import ldaca_web_app.core.mps_embedder as mod
+        import ldaca_wordflow.core.mps_embedder as mod
 
         reload(mod)
         embedder = mod.MpsEmbedder.from_pretrained("some/model")
@@ -176,7 +176,7 @@ def test_mps_embedder_from_pretrained_returns_instance():
 
 def test_get_embedder_uses_mps_when_available():
     """_get_embedder should return an MpsEmbedder instance when MPS is available."""
-    import ldaca_web_app.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()
@@ -188,9 +188,9 @@ def test_get_embedder_uses_mps_when_available():
         # Patch in the source module — _get_embedder imports them via local `from .`
         with (
             patch(
-                "ldaca_web_app.core.mps_embedder.is_mps_available", return_value=True
+                "ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=True
             ),
-            patch("ldaca_web_app.core.mps_embedder.MpsEmbedder") as mock_cls,
+            patch("ldaca_wordflow.core.mps_embedder.MpsEmbedder") as mock_cls,
         ):
             mock_cls.from_pretrained.return_value = mock_mps_embedder
             embedder = wtt._get_embedder("some/model")
@@ -202,7 +202,7 @@ def test_get_embedder_uses_mps_when_available():
 
 def test_get_embedder_uses_onnx_when_mps_unavailable():
     """_get_embedder should fall through to OnnxEmbedder when MPS is absent."""
-    import ldaca_web_app.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()
@@ -213,9 +213,9 @@ def test_get_embedder_uses_onnx_when_mps_unavailable():
     try:
         with (
             patch(
-                "ldaca_web_app.core.mps_embedder.is_mps_available", return_value=False
+                "ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=False
             ),
-            patch("ldaca_web_app.core.onnx_embedder.OnnxEmbedder") as mock_cls,
+            patch("ldaca_wordflow.core.onnx_embedder.OnnxEmbedder") as mock_cls,
         ):
             mock_cls.from_pretrained.return_value = mock_onnx_embedder
             embedder = wtt._get_embedder("some/model")
@@ -227,7 +227,7 @@ def test_get_embedder_uses_onnx_when_mps_unavailable():
 
 def test_get_embedder_caches_result():
     """_get_embedder should return the same instance on subsequent calls."""
-    import ldaca_web_app.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()
@@ -238,9 +238,9 @@ def test_get_embedder_caches_result():
     try:
         with (
             patch(
-                "ldaca_web_app.core.mps_embedder.is_mps_available", return_value=True
+                "ldaca_wordflow.core.mps_embedder.is_mps_available", return_value=True
             ),
-            patch("ldaca_web_app.core.mps_embedder.MpsEmbedder") as mock_cls,
+            patch("ldaca_wordflow.core.mps_embedder.MpsEmbedder") as mock_cls,
         ):
             mock_cls.from_pretrained.return_value = mock_embedder
             e1 = wtt._get_embedder("cached/model")
@@ -259,7 +259,7 @@ def test_get_embedder_caches_result():
 
 def _smoke_prerequisites_met() -> bool:
     try:
-        mps_mod = __import__("ldaca_web_app.core.mps_embedder", fromlist=["is_mps_available"])
+        mps_mod = __import__("ldaca_wordflow.core.mps_embedder", fromlist=["is_mps_available"])
         if not mps_mod.is_mps_available():
             return False
         import sentence_transformers  # noqa: F401
@@ -271,7 +271,7 @@ def _smoke_prerequisites_met() -> bool:
 @pytest.mark.skipif(not _smoke_prerequisites_met(), reason="MPS not available or sentence_transformers not importable")
 def test_mps_embedder_smoke_encodes_sentences():
     """On Apple Silicon: encode a small batch and verify shape + L2 norm."""
-    from ldaca_web_app.core.mps_embedder import MpsEmbedder
+    from ldaca_wordflow.core.mps_embedder import MpsEmbedder
 
     embedder = MpsEmbedder.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     assert embedder.provider == "MPS"

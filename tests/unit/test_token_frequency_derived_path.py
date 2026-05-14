@@ -15,7 +15,7 @@ from typing import Any, cast
 
 import polars as pl
 
-from ldaca_web_app.core.worker_tasks_token import run_token_frequencies_task
+from ldaca_wordflow.core.worker_tasks_token import run_token_frequencies_task
 
 
 def _stub_polars_text(monkeypatch) -> None:

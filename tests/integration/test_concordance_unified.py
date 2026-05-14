@@ -3,14 +3,14 @@ import time
 
 import polars as pl
 import pytest
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.api.workspaces.analyses.concordance import (
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.api.workspaces.analyses.concordance import (
     DEFAULT_CONCORDANCE_PAGE_SIZE,
 )
-from ldaca_web_app.api.workspaces.analyses.page_size_estimation import (
+from ldaca_wordflow.api.workspaces.analyses.page_size_estimation import (
     DEFAULT_PAGE_SIZE_CANDIDATES,
 )
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.core.workspace import workspace_manager
 
 from docworkspace import Node
 

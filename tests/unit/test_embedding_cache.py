@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from ldaca_web_app.core.embedding_cache import EmbeddingCache, _hash_doc, _safe_name
+from ldaca_wordflow.core.embedding_cache import EmbeddingCache, _hash_doc, _safe_name
 
 
 # ---------------------------------------------------------------------------
@@ -224,7 +224,7 @@ def test_provider_cache_isolation(tmp_path):
 
 def test_embed_with_cache_bypassed_when_no_dir(tmp_path):
     """cache_dir=None should call _encode_embeddings_in_chunks directly."""
-    from ldaca_web_app.core import worker_tasks_topic
+    from ldaca_wordflow.core import worker_tasks_topic
 
     calls: list[int] = []
 
@@ -241,7 +241,7 @@ def test_embed_with_cache_bypassed_when_no_dir(tmp_path):
 
 def test_embed_with_cache_warm_run_skips_encoder(tmp_path):
     """Second call with same docs must not invoke the embedder."""
-    from ldaca_web_app.core import worker_tasks_topic
+    from ldaca_wordflow.core import worker_tasks_topic
 
     encode_calls = []
 
@@ -266,7 +266,7 @@ def test_embed_with_cache_warm_run_skips_encoder(tmp_path):
 
 def test_embed_with_cache_partial_miss_encodes_only_new_docs(tmp_path):
     """Only the uncached docs should be passed to the encoder."""
-    from ldaca_web_app.core import worker_tasks_topic
+    from ldaca_wordflow.core import worker_tasks_topic
 
     encoded_docs: list[list[str]] = []
 

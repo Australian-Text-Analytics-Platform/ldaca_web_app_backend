@@ -1426,8 +1426,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ldaca-web-app"
-version = "0.4.1"
+name = "ldaca-wordflow"
+version = "0.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

@@ -19,8 +19,8 @@ from __future__ import annotations
 
 import polars as pl
 
-from ldaca_web_app.api.workspaces.nodes import _build_filter_expression
-from ldaca_web_app.models import FilterCondition, FilterRequest
+from ldaca_wordflow.api.workspaces.nodes import _build_filter_expression
+from ldaca_wordflow.models import FilterCondition, FilterRequest
 
 
 def _filter(df: pl.DataFrame, request: FilterRequest) -> pl.DataFrame:

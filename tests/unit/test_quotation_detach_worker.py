@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import polars as pl
-from ldaca_web_app.core.worker_tasks_quotation import run_quotation_detach_task
+from ldaca_wordflow.core.worker_tasks_quotation import run_quotation_detach_task
 
 
 def test_quotation_detach_task_writes_node_payload_without_internal_source_column(
@@ -44,7 +44,7 @@ def test_quotation_detach_task_writes_node_payload_without_internal_source_colum
         )
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.quotation_core.quotation_groups_via_quote_extractor",
+        "ldaca_wordflow.api.workspaces.analyses.quotation_core.quotation_groups_via_quote_extractor",
         fake_quotation_groups_via_quote_extractor,
     )
 

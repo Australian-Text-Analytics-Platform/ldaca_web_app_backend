@@ -20,7 +20,7 @@ import re
 
 import pytest
 
-from ldaca_web_app.api.workspaces.analyses.concordance_core import (
+from ldaca_wordflow.api.workspaces.analyses.concordance_core import (
     _whole_word_active_for_language,
     build_concordance_lazyframe,
     build_concordance_search_pattern,
@@ -120,7 +120,7 @@ class TestLazyframeReadsNodeLanguage:
         """
         import polars as pl
 
-        from ldaca_web_app.api.workspaces.analyses import concordance_core
+        from ldaca_wordflow.api.workspaces.analyses import concordance_core
 
         captured: list[dict[str, object]] = []
 
@@ -168,7 +168,7 @@ class TestLazyframeReadsNodeLanguage:
         the pattern builder sees ``language="ja"``."""
         import polars as pl
 
-        from ldaca_web_app.api.workspaces.analyses import concordance_core
+        from ldaca_wordflow.api.workspaces.analyses import concordance_core
 
         seen: dict[str, object] = {}
 
@@ -217,7 +217,7 @@ class TestWorkerDataframeRespectsLanguage:
         """`_build_concordance_occurrence_dataframe(language="ja",
         whole_word=True)` must call build_concordance_search_pattern with a
         path that produces the raw pattern (no \\b)."""
-        from ldaca_web_app.core import worker_tasks_concordance as wtc
+        from ldaca_wordflow.core import worker_tasks_concordance as wtc
 
         captured: dict[str, tuple[str, bool]] = {}
 
@@ -257,7 +257,7 @@ class TestWorkerDataframeRespectsLanguage:
         assert not re.search(r"\\b", pattern)
 
     def test_dataframe_builder_wraps_on_en(self, monkeypatch):
-        from ldaca_web_app.core import worker_tasks_concordance as wtc
+        from ldaca_wordflow.core import worker_tasks_concordance as wtc
 
         captured: dict[str, str] = {}
 

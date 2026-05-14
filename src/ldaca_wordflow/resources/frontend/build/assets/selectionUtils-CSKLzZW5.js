@@ -1,0 +1,2 @@
+function e(e,t){return e.length<=t?e:e.slice(-t)}var t=e=>{let t=new Set,n=[];for(let r of e)t.has(r)||(t.add(r),n.push(r));return n};export{e as n,t};
+//# sourceMappingURL=selectionUtils-CSKLzZW5.js.map

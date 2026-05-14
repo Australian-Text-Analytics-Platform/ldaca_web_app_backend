@@ -1,0 +1,2 @@
+import{c as e,n as t}from"./jsx-runtime-BjieVXav.js";import{d as n}from"./tutorialRegistry-BsdK8hMZ.js";var r=e(t(),1),i=()=>{let e=(0,r.useContext)(n);if(!e)throw Error(`useWorkspaceActions must be used within a WorkspaceProvider`);return e};export{i as t};
+//# sourceMappingURL=useWorkspaceActions-DNL6Vitu.js.map

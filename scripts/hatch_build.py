@@ -13,7 +13,7 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 class FrontendExtractHook(BuildHookInterface):
     """Extract build.tar.gz so the wheel/sdist includes actual frontend files."""
 
-    _FRONTEND_DIR = Path("src/ldaca_web_app/resources/frontend")
+    _FRONTEND_DIR = Path("src/ldaca_wordflow/resources/frontend")
     _ARCHIVE = _FRONTEND_DIR / "build.tar.gz"
     _BUILD_DIR = _FRONTEND_DIR / "build"
 

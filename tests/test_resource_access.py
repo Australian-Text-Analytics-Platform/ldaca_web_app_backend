@@ -6,13 +6,13 @@ from importlib import resources
 from pathlib import Path
 
 import pytest
-from ldaca_web_app.core.utils import get_user_data_folder, import_sample_data_for_user
-from ldaca_web_app.settings import settings
+from ldaca_wordflow.core.utils import get_user_data_folder, import_sample_data_for_user
+from ldaca_wordflow.settings import settings
 
 
 def _resource_path(relative: str) -> Path:
     """Resolve a resource path to a filesystem path."""
-    target = resources.files("ldaca_web_app.resources").joinpath(relative)
+    target = resources.files("ldaca_wordflow.resources").joinpath(relative)
     with resources.as_file(target) as resolved:
         return resolved
 
@@ -29,7 +29,7 @@ def test_sample_data_resources_exist():
 
 
 def test_stopwords_resources():
-    stopwords_dir = resources.files("ldaca_web_app.resources")
+    stopwords_dir = resources.files("ldaca_wordflow.resources")
     languages = ["en", "es", "fr", "de"]
     for lang in languages:
         path = stopwords_dir.joinpath(f"stopwords_{lang}.txt")

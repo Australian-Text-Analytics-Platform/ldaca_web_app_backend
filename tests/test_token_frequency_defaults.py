@@ -1,4 +1,4 @@
-from ldaca_web_app.api.workspaces.analyses.token_frequencies import (
+from ldaca_wordflow.api.workspaces.analyses.token_frequencies import (
     DEFAULT_TOKEN_LIMIT,
     _coerce_limit_value,
 )

@@ -11,15 +11,15 @@ import polars as pl
 import pytest
 from httpx import AsyncClient
 
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.analysis.results import GenericAnalysisResult
-from ldaca_web_app.api.workspaces.analyses.token_frequencies import (
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.analysis.results import GenericAnalysisResult
+from ldaca_wordflow.api.workspaces.analyses.token_frequencies import (
     DEFAULT_TOKEN_LIMIT,
     MAX_SERVER_TOKEN_LIMIT,
     SERVER_LIMIT_MULTIPLIER,
 )
-from ldaca_web_app.core.worker import token_frequencies_task
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.core.worker import token_frequencies_task
+from ldaca_wordflow.core.workspace import workspace_manager
 
 
 # Helper functions
@@ -504,7 +504,7 @@ class TestSequentialAnalysisPersistence:
         node_id: str,
         monkeypatch: pytest.MonkeyPatch,
     ) -> dict:
-        from ldaca_web_app.api.workspaces.analyses import (
+        from ldaca_wordflow.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -670,7 +670,7 @@ class TestSequentialAnalysisPersistence:
         dummy_node = SimpleNamespace(data=dummy_df.lazy())
         dummy_workspace = SimpleNamespace(nodes={timeline_node_id: dummy_node})
 
-        from ldaca_web_app.api.workspaces.analyses import (
+        from ldaca_wordflow.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -724,7 +724,7 @@ class TestSequentialAnalysisPersistence:
         dummy_node = SimpleNamespace(data=dummy_df.lazy())
         dummy_workspace = SimpleNamespace(nodes={timeline_node_id: dummy_node})
 
-        from ldaca_web_app.api.workspaces.analyses import (
+        from ldaca_wordflow.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -768,7 +768,7 @@ class TestSequentialAnalysisPersistence:
         tmp_path,
     ):
         """Selected sequential periods should detach into a filtered child node."""
-        from ldaca_web_app.api.workspaces.analyses import (
+        from ldaca_wordflow.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -877,7 +877,7 @@ class TestSequentialAnalysisPersistence:
         monkeypatch,
     ):
         """Hidden legend groups should be excluded from detached sequential rows."""
-        from ldaca_web_app.api.workspaces.analyses import (
+        from ldaca_wordflow.api.workspaces.analyses import (
             sequential_analysis as sequential_module,
         )
 
@@ -1069,7 +1069,7 @@ class TestWorkspaceGraphEnrichment:
         # the in-memory node so we don't round-trip through plbin (polars
         # FFI plugin plans don't serialise cleanly across every polars
         # version, and this test only cares about the graph payload shape).
-        from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+        from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
             TOKENS_FORM,
             derived_column_name,
         )

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import pytest
 
-from ldaca_web_app.core.worker_tasks_topic import (
+from ldaca_wordflow.core.worker_tasks_topic import (
     _bertopic_language_kwarg,
     _build_classic_pipeline,
     _build_label_vectorizer,

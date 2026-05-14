@@ -20,9 +20,9 @@ import pytest
 from docworkspace import Node
 from fastapi import HTTPException
 
-from ldaca_web_app.api.workspaces.analyses import derived_columns as derived_api
-from ldaca_web_app.api.workspaces import utils as workspace_utils
-from ldaca_web_app.api.workspaces.analyses.derived_columns import (
+from ldaca_wordflow.api.workspaces.analyses import derived_columns as derived_api
+from ldaca_wordflow.api.workspaces import utils as workspace_utils
+from ldaca_wordflow.api.workspaces.analyses.derived_columns import (
     TokeniseColumnRequest,
 )
 

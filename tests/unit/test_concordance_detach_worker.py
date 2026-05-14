@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
-from ldaca_web_app.core import worker
-from ldaca_web_app.core.worker_tasks_concordance import run_concordance_detach_task
+from ldaca_wordflow.core import worker
+from ldaca_wordflow.core.worker_tasks_concordance import run_concordance_detach_task
 
 
 def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):

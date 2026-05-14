@@ -1,6 +1,6 @@
 import polars as pl
 import pytest
-from ldaca_web_app.api.workspaces import nodes as nodes_api
+from ldaca_wordflow.api.workspaces import nodes as nodes_api
 
 
 class _DummyNode:

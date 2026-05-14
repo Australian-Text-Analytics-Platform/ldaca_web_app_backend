@@ -17,9 +17,9 @@ import pytest
 from docworkspace import Node
 from docworkspace.workspace.core import Workspace
 
-from ldaca_web_app.api.workspaces import nodes as nodes_api
-from ldaca_web_app.api.workspaces import utils as workspace_utils
-from ldaca_web_app.models import (
+from ldaca_wordflow.api.workspaces import nodes as nodes_api
+from ldaca_wordflow.api.workspaces import utils as workspace_utils
+from ldaca_wordflow.models import (
     ConcatRequest,
     FilterCondition,
     FilterRequest,

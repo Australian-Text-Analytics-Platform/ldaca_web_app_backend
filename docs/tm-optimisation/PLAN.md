@@ -12,10 +12,10 @@ This is the backend-specific work. Read the parent plan first for goals, constra
 
 All topic-modelling code lives in:
 
-- `src/ldaca_web_app/core/worker_tasks_topic.py` — the BERTopic worker task (the file that does all the heavy lifting)
-- `src/ldaca_web_app/core/model_prefetch.py` — startup-time model download helper (runs in a daemon thread)
-- `src/ldaca_web_app/core/worker.py` — `ProcessPoolExecutor` + task-registry plumbing
-- `src/ldaca_web_app/api/workspaces/analyses/topic_modeling.py` — FastAPI routes
+- `src/ldaca_wordflow/core/worker_tasks_topic.py` — the BERTopic worker task (the file that does all the heavy lifting)
+- `src/ldaca_wordflow/core/model_prefetch.py` — startup-time model download helper (runs in a daemon thread)
+- `src/ldaca_wordflow/core/worker.py` — `ProcessPoolExecutor` + task-registry plumbing
+- `src/ldaca_wordflow/api/workspaces/analyses/topic_modeling.py` — FastAPI routes
 - `pyproject.toml` — dependency block
 
 Tests live under `tests/` (need to enumerate which tests exercise the topic-modelling path during phase 1).
@@ -26,18 +26,18 @@ Tests live under `tests/` (need to enumerate which tests exercise the topic-mode
 
 | File | Change |
 |------|--------|
-| `src/ldaca_web_app/core/worker_tasks_topic.py:21-31` | Replace `_get_embedder` body with ONNX path. Keep the cache key + per-worker caching pattern. |
-| `src/ldaca_web_app/core/worker_tasks_topic.py:34-55` | `_encode_embeddings_in_chunks` — adapt to new embedder API (likely a thin wrapper class implementing `.encode(list[str]) -> np.ndarray` so BERTopic's `embedding_model=` argument keeps working). |
-| `src/ldaca_web_app/core/worker_tasks_topic.py:235` | `embedding_model_name = "all-MiniLM-L6-v2"` — stays the same conceptually; backend code resolves the ONNX variant. |
-| `src/ldaca_web_app/core/worker_tasks_topic.py:239-246` | Drop `import torch` block if torch is fully removed; keep numpy/random seeding. |
-| `src/ldaca_web_app/core/worker_tasks_topic.py:257-268` | BERTopic instantiation — pass our ONNX embedder wrapper as `embedding_model=`. UMAP block unchanged in phase 1. |
-| `src/ldaca_web_app/core/model_prefetch.py:18` | `_TOPIC_EMBEDDER_REPO_ID` — switch to the ONNX-export repo (likely `sentence-transformers/all-MiniLM-L6-v2` `onnx/` subdirectory or a quantised variant). |
-| `src/ldaca_web_app/core/model_prefetch.py:_prefetch_topic_embedder` | Switch to downloading the ONNX file + tokenizer config. Keep the idempotent-cache behaviour. |
+| `src/ldaca_wordflow/core/worker_tasks_topic.py:21-31` | Replace `_get_embedder` body with ONNX path. Keep the cache key + per-worker caching pattern. |
+| `src/ldaca_wordflow/core/worker_tasks_topic.py:34-55` | `_encode_embeddings_in_chunks` — adapt to new embedder API (likely a thin wrapper class implementing `.encode(list[str]) -> np.ndarray` so BERTopic's `embedding_model=` argument keeps working). |
+| `src/ldaca_wordflow/core/worker_tasks_topic.py:235` | `embedding_model_name = "all-MiniLM-L6-v2"` — stays the same conceptually; backend code resolves the ONNX variant. |
+| `src/ldaca_wordflow/core/worker_tasks_topic.py:239-246` | Drop `import torch` block if torch is fully removed; keep numpy/random seeding. |
+| `src/ldaca_wordflow/core/worker_tasks_topic.py:257-268` | BERTopic instantiation — pass our ONNX embedder wrapper as `embedding_model=`. UMAP block unchanged in phase 1. |
+| `src/ldaca_wordflow/core/model_prefetch.py:18` | `_TOPIC_EMBEDDER_REPO_ID` — switch to the ONNX-export repo (likely `sentence-transformers/all-MiniLM-L6-v2` `onnx/` subdirectory or a quantised variant). |
+| `src/ldaca_wordflow/core/model_prefetch.py:_prefetch_topic_embedder` | Switch to downloading the ONNX file + tokenizer config. Keep the idempotent-cache behaviour. |
 | `pyproject.toml` | Add `onnxruntime>=1.18`, `tokenizers>=0.20`. Investigate dropping `sentence-transformers`. Verify `torch` can become absent (it's currently transitive via sentence-transformers/transformers). |
 
 ### New module
 
-`src/ldaca_web_app/core/onnx_embedder.py` — thin wrapper class:
+`src/ldaca_wordflow/core/onnx_embedder.py` — thin wrapper class:
 
 - `__init__(model_path, provider_preference)`: build an `onnxruntime.InferenceSession` with provider preference (`CoreMLExecutionProvider`, `DmlExecutionProvider`, then `CPUExecutionProvider`)
 - `encode(docs: list[str], batch_size: int) -> np.ndarray`: tokenize → run session → mean-pool → L2-normalise. Mirror `SentenceTransformer.encode` shape so it's a drop-in.
@@ -91,7 +91,7 @@ ONNX Runtime is deterministic for a given model+input on a given provider. The c
 
 ### New module
 
-`src/ldaca_web_app/core/embedding_cache.py`:
+`src/ldaca_wordflow/core/embedding_cache.py`:
 
 ```
 class EmbeddingCache:
@@ -233,14 +233,14 @@ as a single unit with no graph-partition overhead, giving ~3× cold throughput v
 the ONNX ARM64 CPU path.
 
 **Files changed:**
-- `src/ldaca_web_app/core/mps_embedder.py` (new) — `is_mps_available()`,
+- `src/ldaca_wordflow/core/mps_embedder.py` (new) — `is_mps_available()`,
   `get_active_provider_id()`, `MpsEmbedder` class
-- `src/ldaca_web_app/core/worker_tasks_topic.py` — `_get_embedder` branches on
+- `src/ldaca_wordflow/core/worker_tasks_topic.py` — `_get_embedder` branches on
   `is_mps_available()`; MPS path creates `MpsEmbedder`, ONNX path unchanged
-- `src/ldaca_web_app/core/model_prefetch.py` — `_prefetch_topic_embedder` now
+- `src/ldaca_wordflow/core/model_prefetch.py` — `_prefetch_topic_embedder` now
   dispatches to `_prefetch_topic_embedder_mps` (downloads ST weights) or
   `_prefetch_topic_embedder_onnx` based on `is_mps_available()`
-- `src/ldaca_web_app/api/workspaces/analyses/topic_modeling.py` — cache-clear
+- `src/ldaca_wordflow/api/workspaces/analyses/topic_modeling.py` — cache-clear
   endpoint uses `get_active_provider_id()` so it clears the right cache file
 
 **Notes:**

@@ -21,7 +21,7 @@ class TestWorkspaceAPI:
     async def test_list_workspaces_empty(self, authenticated_client):
         """Test listing workspaces when user has none"""
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.list_user_workspaces_summaries"
+            "ldaca_wordflow.api.workspaces.workspace_manager.list_user_workspaces_summaries"
         ) as mock_get:
             mock_get.return_value = []
             response = await authenticated_client.get("/api/workspaces/")
@@ -47,7 +47,7 @@ class TestWorkspaceAPI:
             }
         ]
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.list_user_workspaces_summaries"
+            "ldaca_wordflow.api.workspaces.workspace_manager.list_user_workspaces_summaries"
         ) as mock_get:
             mock_get.return_value = mock_summaries
             response = await authenticated_client.get("/api/workspaces/")
@@ -63,7 +63,7 @@ class TestWorkspaceAPI:
         with (
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.set_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.set_current_workspace"
             ) as mock_set_current,
         ):
             mock_save.return_value = None
@@ -96,13 +96,13 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.lifecycle.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.lifecycle.workspace_manager.get_current_workspace_id"
             ) as mock_get_current_id,
             patch(
-                "ldaca_web_app.api.workspaces.lifecycle.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.lifecycle.workspace_manager.get_current_workspace"
             ) as mock_get_current_workspace,
             patch(
-                "ldaca_web_app.api.workspaces.lifecycle.update_workspace"
+                "ldaca_wordflow.api.workspaces.lifecycle.update_workspace"
             ) as mock_update_workspace,
         ):
             mock_get_current_id.return_value = "workspace-123"
@@ -145,10 +145,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_get,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_get.return_value = mock_workspace
@@ -196,7 +196,7 @@ class TestWorkspaceAPI:
         """Large integers exceeding JS MAX_SAFE_INTEGER are returned as strings."""
         import csv
 
-        from ldaca_web_app.core.utils import get_user_data_folder
+        from ldaca_wordflow.core.utils import get_user_data_folder
 
         expected_ids = [
             1317123226535776257,
@@ -246,10 +246,10 @@ class TestWorkspaceAPI:
         """Test getting non-existent workspace"""
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_get,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_get.return_value = None
@@ -263,7 +263,7 @@ class TestWorkspaceAPI:
     async def test_delete_workspace(self, authenticated_client):
         """Test deleting a workspace"""
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.delete_workspace"
+            "ldaca_wordflow.api.workspaces.workspace_manager.delete_workspace"
         ) as mock_delete:
             mock_delete.return_value = True
 
@@ -282,7 +282,7 @@ class TestWorkspaceAPI:
     async def test_delete_workspace_not_found(self, authenticated_client):
         """Test deleting non-existent workspace"""
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.delete_workspace"
+            "ldaca_wordflow.api.workspaces.workspace_manager.delete_workspace"
         ) as mock_delete:
             mock_delete.return_value = False
 
@@ -315,10 +315,10 @@ class TestWorkspaceAPI:
         """Deleting workspace B should target B even when A is loaded."""
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.delete_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.delete_workspace"
             ) as mock_delete,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_current_entry.return_value = "workspace-a"
@@ -355,16 +355,16 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_workspace_dir"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_workspace_dir"
             ) as mock_get_dir,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_get_ws,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_task_manager"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_task_manager"
             ) as mock_get_tm,
         ):
             mock_current_entry.return_value = "ws-1"
@@ -383,7 +383,7 @@ class TestWorkspaceAPI:
 
     async def test_download_workspace_artifact(self, authenticated_client, tmp_path):
         """Workspace artifact endpoint streams ZIP and deletes after download."""
-        from ldaca_web_app.core.worker_task_manager import TaskStatus
+        from ldaca_wordflow.core.worker_task_manager import TaskStatus
 
         artifact = tmp_path / "artifact.zip"
         artifact.write_bytes(b"PK-fake-zip-content")
@@ -402,10 +402,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_task_manager"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_task_manager"
             ) as mock_get_tm,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_get_tm.return_value = mock_tm
@@ -429,7 +429,7 @@ class TestWorkspaceAPI:
         self, authenticated_client, tmp_path
     ):
         """Second artifact fetch returns 410 after first download deletes it."""
-        from ldaca_web_app.core.worker_task_manager import TaskStatus
+        from ldaca_wordflow.core.worker_task_manager import TaskStatus
 
         mock_task_info = MagicMock()
         mock_task_info.status = TaskStatus.SUCCESSFUL
@@ -445,10 +445,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_task_manager"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_task_manager"
             ) as mock_get_tm,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_get_tm.return_value = mock_tm
@@ -483,13 +483,13 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.list_user_workspaces_summaries"
+                "ldaca_wordflow.api.workspaces.workspace_manager.list_user_workspaces_summaries"
             ) as mock_summaries,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager._resolve_workspace_dir"
+                "ldaca_wordflow.api.workspaces.workspace_manager._resolve_workspace_dir"
             ) as mock_resolve,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager._refresh_user_workspace_paths"
+                "ldaca_wordflow.api.workspaces.workspace_manager._refresh_user_workspace_paths"
             ) as mock_refresh,
         ):
             mock_summaries.side_effect = [
@@ -544,7 +544,7 @@ class TestWorkspaceAPI:
         tiny_node_id,
     ):
         """CSV export should stringify unsupported nested column values."""
-        from ldaca_web_app.core.workspace import workspace_manager
+        from ldaca_wordflow.core.workspace import workspace_manager
 
         workspace = workspace_manager.get_current_workspace("test")
         assert workspace is not None
@@ -581,7 +581,7 @@ class TestWorkspaceAPI:
         from datetime import date, datetime
         from zoneinfo import ZoneInfo
 
-        from ldaca_web_app.core.workspace import workspace_manager
+        from ldaca_wordflow.core.workspace import workspace_manager
 
         workspace = workspace_manager.get_current_workspace("test")
         assert workspace is not None
@@ -669,10 +669,10 @@ class TestWorkspaceAPI:
         """Test unloading an existing workspace"""
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.unload_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.unload_workspace"
             ) as mock_unload,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_unload.return_value = True
@@ -688,10 +688,10 @@ class TestWorkspaceAPI:
         """Test unloading non-existent workspace returns 404"""
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.unload_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.unload_workspace"
             ) as mock_unload,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
         ):
             mock_unload.return_value = False
@@ -715,10 +715,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -777,13 +777,13 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch(
-                "ldaca_web_app.api.workspaces.base.update_workspace"
+                "ldaca_wordflow.api.workspaces.base.update_workspace"
             ) as mock_update,
         ):
             mock_current_entry.return_value = "workspace-123"
@@ -809,10 +809,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
         ):
             mock_current_entry.return_value = "workspace-123"
@@ -841,13 +841,13 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch(
-                "ldaca_web_app.api.workspaces.base.update_workspace"
+                "ldaca_wordflow.api.workspaces.base.update_workspace"
             ) as mock_update,
         ):
             mock_current_entry.return_value = "workspace-123"
@@ -873,10 +873,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
         ):
             mock_current_entry.return_value = "workspace-123"
@@ -892,13 +892,13 @@ class TestWorkspaceAPI:
         """Test casting lets missing node ids fail directly."""
 
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
         ) as mock_current_entry:
             mock_workspace = Mock()
             mock_workspace.nodes = {}
             mock_current_entry.return_value = "workspace-123"
             with patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace",
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
                 return_value=mock_workspace,
             ):
                 cast_data = {"column": "test_column", "target_type": "string"}
@@ -917,13 +917,13 @@ class TestWorkspaceAPI:
         mock_node.data = pl.DataFrame({"existing_col": [1, 2, 3]}).lazy()
 
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
         ) as mock_current_entry:
             mock_workspace = Mock()
             mock_workspace.nodes = {"test-node": mock_node}
             mock_current_entry.return_value = "workspace-123"
             with patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace",
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
                 return_value=mock_workspace,
             ):
                 cast_data = {"column": "nonexistent_column", "target_type": "string"}
@@ -962,10 +962,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save"),
         ):
@@ -1018,10 +1018,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -1061,10 +1061,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -1092,10 +1092,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -1127,10 +1127,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -1157,10 +1157,10 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
             ) as mock_current_entry,
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace"
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
             patch("docworkspace.workspace.core.Workspace.save") as mock_save,
         ):
@@ -1192,7 +1192,7 @@ class TestWorkspaceAPI:
                 self.data = source_df
 
         with patch(
-            "ldaca_web_app.api.workspaces.nodes.workspace_manager.get_current_workspace"
+            "ldaca_wordflow.api.workspaces.nodes.workspace_manager.get_current_workspace"
         ) as mock_active_ws:
             mock_workspace = Mock()
             mock_workspace.nodes = {"test-node": DummyNode()}
@@ -1224,7 +1224,7 @@ class TestWorkspaceAPI:
                 self.data = source_df
 
         with patch(
-            "ldaca_web_app.api.workspaces.nodes.workspace_manager.get_current_workspace"
+            "ldaca_wordflow.api.workspaces.nodes.workspace_manager.get_current_workspace"
         ) as mock_active_ws:
             mock_workspace = Mock()
             mock_workspace.nodes = {"test-node": DummyNode()}
@@ -1249,13 +1249,13 @@ class TestWorkspaceAPI:
         mock_node.data = pl.DataFrame({"test_col": [1, 2, 3]}).lazy()
 
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace_id"
+            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
         ) as mock_current_entry:
             mock_workspace = Mock()
             mock_workspace.nodes = {"test-node": mock_node}
             mock_current_entry.return_value = "workspace-123"
             with patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace",
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
                 return_value=mock_workspace,
             ):
                 cast_data = {"column": "test_col", "target_type": "unsupported_type"}
@@ -1306,15 +1306,15 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace",
+                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
                 return_value=mock_workspace,
             ),
             patch(
-                "ldaca_web_app.api.workspaces.nodes.Node",
+                "ldaca_wordflow.api.workspaces.nodes.Node",
                 return_value=joined_node,
             ),
             patch(
-                "ldaca_web_app.api.workspaces.nodes.update_workspace",
+                "ldaca_wordflow.api.workspaces.nodes.update_workspace",
                 return_value=None,
             ),
         ):
@@ -1388,7 +1388,7 @@ class TestWorkspaceAPI:
         }
 
         with patch(
-            "ldaca_web_app.api.workspaces.workspace_manager.get_current_workspace",
+            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
             return_value=mock_workspace,
         ):
             response = await authenticated_client.post(

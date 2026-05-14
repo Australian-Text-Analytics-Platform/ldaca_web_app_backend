@@ -5,7 +5,7 @@ loading the actual model so the test is fast.
 
 from __future__ import annotations
 
-from ldaca_web_app.core.worker_tasks_topic import (
+from ldaca_wordflow.core.worker_tasks_topic import (
     _TOPIC_EMBEDDERS_BY_LANGUAGE,
     _embedder_cache_label,
     _select_embedder,

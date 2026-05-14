@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 from fastapi import HTTPException
 
-from ldaca_web_app.api.workspaces import ui_state as ui_state_api
+from ldaca_wordflow.api.workspaces import ui_state as ui_state_api
 
 
 class _FakeManager:

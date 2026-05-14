@@ -15,7 +15,7 @@ import polars as pl
 import pytest
 from docworkspace import Node
 
-from ldaca_web_app.core.i18n import (
+from ldaca_wordflow.core.i18n import (
     DEFAULT_LANGUAGE,
     UnsupportedLanguageError,
     effective_language,

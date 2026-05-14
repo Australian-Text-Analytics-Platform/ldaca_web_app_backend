@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
-from ldaca_web_app.core.worker_tasks_concordance import (
+from ldaca_wordflow.core.worker_tasks_concordance import (
     _aggregate_hits_per_document,
     run_concordance_dispersion_detach_task,
 )

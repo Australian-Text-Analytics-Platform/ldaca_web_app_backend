@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import polars as pl
 
-from ldaca_web_app.api.workspaces.analyses.concordance_tokens_mode import (
+from ldaca_wordflow.api.workspaces.analyses.concordance_tokens_mode import (
     build_token_hit,
     compute_tokens_concordance_page,
     find_token_matches,
 )
-from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_LEFT_CONTEXT_COLUMN,
     CONC_MATCHED_TEXT_COLUMN,

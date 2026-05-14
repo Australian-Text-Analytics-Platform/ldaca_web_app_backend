@@ -8,8 +8,8 @@ behaviour change. The merge helper honors the partial-update contract:
 
 from __future__ import annotations
 
-from ldaca_web_app.core.preferences import merge_preferences
-from ldaca_web_app.models.preferences import (
+from ldaca_wordflow.core.preferences import merge_preferences
+from ldaca_wordflow.models.preferences import (
     UserPreferences,
     UserPreferencesUpdate,
 )

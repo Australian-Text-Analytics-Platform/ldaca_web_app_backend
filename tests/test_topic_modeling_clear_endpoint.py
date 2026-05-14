@@ -1,12 +1,12 @@
 import pytest
 
-from ldaca_web_app.api.workspaces.analyses import topic_modeling as topic_modeling_routes
-from ldaca_web_app.analysis.implementations.topic_modeling import (
+from ldaca_wordflow.api.workspaces.analyses import topic_modeling as topic_modeling_routes
+from ldaca_wordflow.analysis.implementations.topic_modeling import (
     TopicModelingRequest as AnalysisTopicModelingRequest,
 )
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.analysis.models import AnalysisStatus, AnalysisTask
-from ldaca_web_app.analysis.results import GenericAnalysisResult
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.analysis.models import AnalysisStatus, AnalysisTask
+from ldaca_wordflow.analysis.results import GenericAnalysisResult
 
 
 @pytest.mark.asyncio

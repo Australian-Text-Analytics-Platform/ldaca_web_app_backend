@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import polars as pl
 
-from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
     CONC_L1_COLUMN,
@@ -31,7 +31,7 @@ from ldaca_web_app.api.workspaces.analyses.generated_columns import (
     CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
 )
-from ldaca_web_app.core.worker_tasks_concordance import (
+from ldaca_wordflow.core.worker_tasks_concordance import (
     _build_concordance_occurrence_dataframe,
     _build_tokens_concordance_occurrence_dataframe,
 )

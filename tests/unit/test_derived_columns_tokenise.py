@@ -14,12 +14,12 @@ import polars as pl
 import pytest
 from docworkspace import Node
 
-from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     DERIVED_PREFIX,
     TOKENS_FORM,
     derived_column_name,
 )
-from ldaca_web_app.core.derived_columns import tokenise_column
+from ldaca_wordflow.core.derived_columns import tokenise_column
 
 
 def _make_node(name: str = "root") -> Node:
@@ -134,7 +134,7 @@ def test_tokenise_rejects_missing_source_column() -> None:
 def test_tokenise_emits_canonical_struct_dtype() -> None:
     """Phase 2.1 contract: the derived column dtype matches
     ``tokens_struct_dtype()``."""
-    from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+    from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
         tokens_struct_dtype,
     )
 

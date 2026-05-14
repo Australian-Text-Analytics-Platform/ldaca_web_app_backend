@@ -22,7 +22,7 @@ REPO_ID = "sentence-transformers/all-MiniLM-L6-v2"
 PINNED_FILE = (
     Path(__file__).resolve().parents[1]
     / "src"
-    / "ldaca_web_app"
+    / "ldaca_wordflow"
     / "core"
     / "worker_tasks_topic.py"
 )

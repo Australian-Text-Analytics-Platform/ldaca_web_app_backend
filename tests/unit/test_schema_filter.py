@@ -12,7 +12,7 @@ import polars as pl
 import pytest
 from docworkspace import Node
 
-from ldaca_web_app.api.workspaces.schema_filter import (
+from ldaca_wordflow.api.workspaces.schema_filter import (
     frontend_node_info,
     project_visible,
     visible_column_names,

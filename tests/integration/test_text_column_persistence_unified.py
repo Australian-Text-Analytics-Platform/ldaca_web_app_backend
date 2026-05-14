@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import polars as pl
 import pytest
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.core.workspace import workspace_manager
 
 from docworkspace import Node
 
@@ -105,7 +105,7 @@ async def test_text_column_preference_persists_across_text_analyses(
         return base_df.with_columns(pl.Series("quotation", grouped_quotes))
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
+        "ldaca_wordflow.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
         fake_compute_quote_dataframe,
     )
 

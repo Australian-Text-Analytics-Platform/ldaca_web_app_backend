@@ -8,7 +8,7 @@ import pandas as pd
 import polars as pl
 import pytest
 
-from ldaca_web_app.core import worker_tasks_topic
+from ldaca_wordflow.core import worker_tasks_topic
 
 
 @pytest.fixture(autouse=True)

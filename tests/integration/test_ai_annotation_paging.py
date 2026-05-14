@@ -1,8 +1,8 @@
 import shutil
 
 import pytest
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.core.workspace import workspace_manager
 
 
 @pytest.mark.anyio
@@ -27,7 +27,7 @@ async def test_ai_annotation_recomputes_pages_without_persisting_results(
         ]
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
+        "ldaca_wordflow.api.workspaces.analyses.ai_annotation.classify_texts",
         fake_classify_texts,
     )
 
@@ -114,7 +114,7 @@ async def test_ai_annotation_detach_survives_artifact_cleanup(
         ]
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
+        "ldaca_wordflow.api.workspaces.analyses.ai_annotation.classify_texts",
         fake_classify_texts,
     )
 
@@ -180,7 +180,7 @@ async def test_ai_annotation_save_survives_artifact_cleanup(
         ]
 
     monkeypatch.setattr(
-        "ldaca_web_app.api.workspaces.analyses.ai_annotation.classify_texts",
+        "ldaca_wordflow.api.workspaces.analyses.ai_annotation.classify_texts",
         fake_classify_texts,
     )
 

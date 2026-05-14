@@ -19,7 +19,7 @@ import polars as pl
 import polars_text as pt
 from docworkspace import Node
 
-from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     DERIVED_PREFIX,
     TOKENS_END_FIELD,
     TOKENS_FORM,

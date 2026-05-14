@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 from docworkspace import Node
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.core.workspace import workspace_manager
 
 
 @pytest.mark.anyio
@@ -111,7 +111,7 @@ async def test_concordance_detach_options_hide_derived_columns(
     on a tokenised node leaked ``__derived__.tokens.<source>.<model>`` into
     ``available_columns``.
     """
-    from ldaca_web_app.api.workspaces.analyses.generated_columns import (
+    from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
         TOKENS_FORM,
         derived_column_name,
     )

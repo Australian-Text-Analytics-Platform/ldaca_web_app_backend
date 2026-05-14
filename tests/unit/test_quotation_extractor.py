@@ -2,7 +2,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
-from ldaca_web_app.core import quotation_extractor as qe
+from ldaca_wordflow.core import quotation_extractor as qe
 
 
 def test_load_spacy_model_downloads_to_cache_when_package_missing(

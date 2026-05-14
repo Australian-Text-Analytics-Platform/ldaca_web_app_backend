@@ -13,16 +13,16 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from ldaca_web_app.core import utils as core_utils
-from ldaca_web_app.core import workspace as workspace_module
-from ldaca_web_app.core.analysis_cache import (
+from ldaca_wordflow.core import utils as core_utils
+from ldaca_wordflow.core import workspace as workspace_module
+from ldaca_wordflow.core.analysis_cache import (
     cleanup_orphan_caches,
     cleanup_task_caches,
     cleanup_workspace_caches,
     materialized_cache_path,
 )
-from ldaca_web_app.core.utils import generate_workspace_id
-from ldaca_web_app.core.workspace import WorkspaceManager
+from ldaca_wordflow.core.utils import generate_workspace_id
+from ldaca_wordflow.core.workspace import WorkspaceManager
 
 
 TASK_A = "11111111-1111-1111-1111-111111111111"

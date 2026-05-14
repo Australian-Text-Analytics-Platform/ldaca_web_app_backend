@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from ldaca_web_app.core import onnx_embedder as oem
+from ldaca_wordflow.core import onnx_embedder as oem
 
 
 # ---------------------------------------------------------------------------

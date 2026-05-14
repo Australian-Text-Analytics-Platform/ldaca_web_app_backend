@@ -6,12 +6,12 @@ import polars as pl
 import pytest
 
 from docworkspace import Node
-from ldaca_web_app.core.worker_task_manager import (
+from ldaca_wordflow.core.worker_task_manager import (
     TaskInfo,
     TaskStatus,
     WorkerTaskManager,
 )
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.core.workspace import workspace_manager
 
 
 @pytest.mark.asyncio

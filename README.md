@@ -6,13 +6,13 @@ All-in-one Python package for the LDaCA platform: a FastAPI backend with a bundl
 
 ```bash
 # Install and run (backend + frontend on one port)
-uvx ldaca-web-app
+uvx ldaca-wordflow
 
 # Or run only the backend API
-uvx ldaca-web-app --backend
+uvx ldaca-wordflow --backend
 
 # Custom port
-uvx ldaca-web-app --port 9000
+uvx ldaca-wordflow --port 9000
 ```
 
 ## Start here

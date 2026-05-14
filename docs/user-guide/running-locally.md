@@ -12,7 +12,7 @@
 
 **Question:** _Do I need a `.env` file?_
 
-**Answer:** No. The backend reads environment variables directly. If your tooling loads `.env` files (e.g., a shell wrapper or IDE), you may use the optional template at `backend/src/ldaca_web_app/resources/configs/.env.example` and copy it to `.env` in your working directory.
+**Answer:** No. The backend reads environment variables directly. If your tooling loads `.env` files (e.g., a shell wrapper or IDE), you may use the optional template at `backend/src/ldaca_wordflow/resources/configs/.env.example` and copy it to `.env` in your working directory.
 
 ## Step 3 — Start the server
 

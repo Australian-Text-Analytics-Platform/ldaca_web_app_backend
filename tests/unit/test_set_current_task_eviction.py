@@ -15,13 +15,13 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from ldaca_web_app.analysis.manager import TaskManager
-from ldaca_web_app.analysis.models import BaseAnalysisRequest
-from ldaca_web_app.core import utils as core_utils
-from ldaca_web_app.core import workspace as workspace_module
-from ldaca_web_app.core.analysis_cache import materialized_cache_path
-from ldaca_web_app.core.utils import generate_workspace_id
-from ldaca_web_app.core.workspace import WorkspaceManager
+from ldaca_wordflow.analysis.manager import TaskManager
+from ldaca_wordflow.analysis.models import BaseAnalysisRequest
+from ldaca_wordflow.core import utils as core_utils
+from ldaca_wordflow.core import workspace as workspace_module
+from ldaca_wordflow.core.analysis_cache import materialized_cache_path
+from ldaca_wordflow.core.utils import generate_workspace_id
+from ldaca_wordflow.core.workspace import WorkspaceManager
 
 
 def _bootstrap_workspace(
@@ -70,7 +70,7 @@ def isolated_manager(tmp_path, monkeypatch):
 @pytest.fixture
 def reset_task_store(monkeypatch):
     """Give each test a clean per-user task store."""
-    from ldaca_web_app.analysis import manager as analysis_manager_module
+    from ldaca_wordflow.analysis import manager as analysis_manager_module
 
     monkeypatch.setattr(analysis_manager_module, "_TASK_MANAGER_STORE", {})
     yield

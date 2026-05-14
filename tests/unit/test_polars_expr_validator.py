@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from ldaca_web_app.core.polars_expr_validator import (
+from ldaca_wordflow.core.polars_expr_validator import (
     PolarsExprValidationError,
     ValidationResult,
     validate_polars_expr_code,

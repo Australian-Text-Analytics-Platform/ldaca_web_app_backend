@@ -103,7 +103,7 @@ class TestAuthenticationModes:
         """Test get_current_user function in single-user mode"""
         from unittest.mock import MagicMock, patch
 
-        from ldaca_web_app.core.auth import get_current_user
+        from ldaca_wordflow.core.auth import get_current_user
 
         # Create a mock settings object with test values
         mock_settings = MagicMock()
@@ -113,7 +113,7 @@ class TestAuthenticationModes:
         mock_settings.single_user_email = "test@localhost"
 
         # Patch settings in the core.auth module
-        with patch("ldaca_web_app.core.auth.settings", mock_settings):
+        with patch("ldaca_wordflow.core.auth.settings", mock_settings):
             # In single-user mode, all calls should return the same user
             result1 = await get_current_user("Bearer test-token")
             result2 = await get_current_user("different-token")
@@ -130,17 +130,17 @@ class TestAuthenticationModes:
 
     async def test_auth_methods_single_user_mode(self, test_client):
         """Test available auth methods in single-user mode"""
-        from ldaca_web_app.core.auth import get_available_auth_methods
+        from ldaca_wordflow.core.auth import get_available_auth_methods
 
         methods = get_available_auth_methods()
 
         # Single-user mode should have no auth methods
         assert methods == []
 
-    @patch("ldaca_web_app.core.auth.settings")
+    @patch("ldaca_wordflow.core.auth.settings")
     async def test_single_user_mode_concept(self, mock_settings):
         """Test single-user mode concept with mocked settings"""
-        from ldaca_web_app.core.auth import get_current_user
+        from ldaca_wordflow.core.auth import get_current_user
 
         # Mock single-user configuration
         mock_settings.multi_user = False
@@ -163,11 +163,11 @@ class TestAuthenticationModes:
             # Import caching may prevent mocking - the concept is still valid
             pass
 
-    @patch("ldaca_web_app.core.auth.validate_access_token")
-    @patch("ldaca_web_app.core.auth.settings")
+    @patch("ldaca_wordflow.core.auth.validate_access_token")
+    @patch("ldaca_wordflow.core.auth.settings")
     async def test_multi_user_mode_concept(self, mock_settings, mock_validate):
         """Test multi-user mode concept with mocked settings"""
-        from ldaca_web_app.core.auth import get_current_user
+        from ldaca_wordflow.core.auth import get_current_user
 
         # Mock multi-user configuration
         mock_settings.multi_user = True

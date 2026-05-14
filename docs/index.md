@@ -1,6 +1,6 @@
 # LDaCA Web App Documentation
 
-**Scope statement:** This doc set covers the `ldaca-web-app` Python package — a FastAPI backend bundled with a production React frontend. It documents the API, workspace orchestration, CLI, and server configuration. It does not describe frontend component internals.
+**Scope statement:** This doc set covers the `ldaca-wordflow` Python package — a FastAPI backend bundled with a production React frontend. It documents the API, workspace orchestration, CLI, and server configuration. It does not describe frontend component internals.
 
 ## Start here
 

@@ -3,8 +3,8 @@
 from concurrent.futures import Future
 
 import pytest
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.core.worker_task_manager import TaskInfo, WorkerTaskManager
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.core.worker_task_manager import TaskInfo, WorkerTaskManager
 
 
 @pytest.mark.asyncio

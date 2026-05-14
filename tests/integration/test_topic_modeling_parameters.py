@@ -5,13 +5,13 @@ import polars as pl
 import pytest
 
 from docworkspace import Node
-from ldaca_web_app.analysis.implementations.topic_modeling import (
+from ldaca_wordflow.analysis.implementations.topic_modeling import (
     TopicModelingRequest as AnalysisTopicModelingRequest,
 )
-from ldaca_web_app.analysis.manager import get_task_manager
-from ldaca_web_app.analysis.models import AnalysisStatus, AnalysisTask
-from ldaca_web_app.analysis.results import GenericAnalysisResult
-from ldaca_web_app.core.workspace import workspace_manager
+from ldaca_wordflow.analysis.manager import get_task_manager
+from ldaca_wordflow.analysis.models import AnalysisStatus, AnalysisTask
+from ldaca_wordflow.analysis.results import GenericAnalysisResult
+from ldaca_wordflow.core.workspace import workspace_manager
 
 
 @pytest.fixture(autouse=True)

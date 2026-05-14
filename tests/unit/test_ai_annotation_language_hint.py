@@ -7,7 +7,7 @@ hint line is only added for non-default languages.
 
 from __future__ import annotations
 
-from ldaca_web_app.api.workspaces.analyses.ai_annotation_core import (
+from ldaca_wordflow.api.workspaces.analyses.ai_annotation_core import (
     _build_system_prompt,
 )
 

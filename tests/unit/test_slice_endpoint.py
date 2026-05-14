@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-from ldaca_web_app.api.workspaces import nodes as nodes_api
-from ldaca_web_app.api.workspaces import utils as workspace_utils
-from ldaca_web_app.models import SliceRequest
+from ldaca_wordflow.api.workspaces import nodes as nodes_api
+from ldaca_wordflow.api.workspaces import utils as workspace_utils
+from ldaca_wordflow.models import SliceRequest
 
 
 class DummyNode:

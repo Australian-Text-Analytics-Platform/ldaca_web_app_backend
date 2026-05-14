@@ -1,7 +1,7 @@
 [project]
-name = "ldaca-web-app"
-version = "0.4.1"
-description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
+name = "ldaca-wordflow"
+version = "0.4.2"
+description = "LDaCA Wordflow - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
 license = { text = "MIT" }
@@ -71,7 +71,8 @@ ldaca = ["ldaca-loader"]
 deploy = ["jupyter-server-proxy>=4.4.0", "ipython>=9.5.0"]
 
 [project.scripts]
-ldaca-web-app = "ldaca_web_app.cli:main"
+ldaca-wordflow = "ldaca_wordflow.cli:main"
+ldaca-web-app = "ldaca_wordflow.cli:main"
 
 [tool.pytest.ini_options]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
@@ -109,21 +110,21 @@ allowed-unresolved-imports = [
 [tool.hatch.build]
 # The extracted build/ dir is in .gitignore; force-include it so both
 # the archive *and* the ready-to-serve directory ship in the package.
-artifacts = ["src/ldaca_web_app/resources/frontend/build/**"]
+artifacts = ["src/ldaca_wordflow/resources/frontend/build/**"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "/src",
     "/scripts/hatch_build.py",
-    "/src/ldaca_web_app/resources/**",
-    "/src/ldaca_web_app/_vendor/GenderGapTracker/**",
+    "/src/ldaca_wordflow/resources/**",
+    "/src/ldaca_wordflow/_vendor/GenderGapTracker/**",
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ldaca_web_app"]
+packages = ["src/ldaca_wordflow"]
 include = [
-    "src/ldaca_web_app/resources/**",
-    "src/ldaca_web_app/_vendor/GenderGapTracker/**",
+    "src/ldaca_wordflow/resources/**",
+    "src/ldaca_wordflow/_vendor/GenderGapTracker/**",
 ]
 
 [tool.hatch.build.targets.wheel.sources]

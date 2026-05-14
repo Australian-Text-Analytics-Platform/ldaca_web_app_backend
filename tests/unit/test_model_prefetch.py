@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from ldaca_web_app.core import model_prefetch as mp
-from ldaca_web_app.core import quotation_extractor as qe
+from ldaca_wordflow.core import model_prefetch as mp
+from ldaca_wordflow.core import quotation_extractor as qe
 
 
 def test_prefetch_skips_when_model_already_cached(monkeypatch, tmp_path):

@@ -5,12 +5,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from ldaca_web_app.core.preferences import (
+from ldaca_wordflow.core.preferences import (
     load_preferences,
     merge_preferences,
     save_preferences,
 )
-from ldaca_web_app.models.preferences import (
+from ldaca_wordflow.models.preferences import (
     ALWAYS_VISIBLE_VIEWS,
     DEFAULT_HIDDEN_VIEWS,
     QuotationPreferences,
@@ -29,7 +29,7 @@ def user_data_dir(tmp_path: Path):
     data_dir = tmp_path / "user_data"
     data_dir.mkdir()
     with patch(
-        "ldaca_web_app.core.preferences.get_user_data_folder", return_value=data_dir
+        "ldaca_wordflow.core.preferences.get_user_data_folder", return_value=data_dir
     ):
         yield tmp_path
 
