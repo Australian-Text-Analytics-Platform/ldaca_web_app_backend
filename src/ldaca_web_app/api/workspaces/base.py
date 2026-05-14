@@ -25,7 +25,7 @@ from ...core.auth import get_current_user
 # Note: DocWorkspace API helpers are not used directly in this HTTP layer
 from ...core.utils import get_user_data_folder, load_data_file
 from ...core.workspace import workspace_manager
-from .schema_filter import frontend_node_info
+from .schema_filter import frontend_node_info, project_visible
 from .utils import stage_dataframe_as_lazy, update_workspace
 
 router = APIRouter(prefix="/workspaces", tags=["workspace"])
@@ -130,7 +130,11 @@ def _export_node_artifact(
     export_dir: Path,
     fmt: str,
 ) -> tuple[str, Path]:
-    data = node.data
+    # Hide ``__derived__.*`` from every export format. The frontend already
+    # filters them out of the data view and Row Details dialog; export was
+    # the last surface still leaking them. Analytics paths that need the
+    # derived columns continue to read ``node.data`` directly.
+    data = project_visible(node.data)
 
     spec = EXPORT_FORMAT_SPECS[fmt]
     stem = _sanitize_export_label(getattr(node, "name", None), node_id)
