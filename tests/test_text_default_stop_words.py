@@ -62,6 +62,26 @@ async def test_default_stop_words_serves_japanese_list():
 
 
 @pytest.mark.asyncio
+async def test_default_stop_words_serves_korean_list():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/text/default-stop-words?language=ko")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data["stopwords"], list)
+        # 그리고 ("and") and 하지만 ("but") are core Korean function
+        # words; both must be present if the ko resource is wired up.
+        assert "그리고" in data["stopwords"]
+        assert "하지만" in data["stopwords"]
+        # ``korean`` alias should resolve to the same list.
+        long_form = await client.get(
+            "/api/text/default-stop-words?language=korean"
+        )
+        assert long_form.status_code == 200
+        assert long_form.json()["stopwords"] == data["stopwords"]
+
+
+@pytest.mark.asyncio
 async def test_default_stop_words_strict_returns_empty_for_unknown_language():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
