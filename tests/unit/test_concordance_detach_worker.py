@@ -27,6 +27,7 @@ def test_concordance_detach_task_forwards_extra_columns_data(monkeypatch):
         extra_columns_data=None,
         extra_columns_dtypes=None,
         materialized_path=None,
+        language=None,
         progress_callback=None,
     ):
         captured["include_document_column"] = include_document_column

@@ -21,6 +21,7 @@ from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.i18n import effective_language
 from ....core.workspace import workspace_manager
 from ....models import (
     ConcordanceAnalysisRequest,
@@ -460,6 +461,12 @@ async def detach_concordance(
                 if extra_columns_dtypes
                 else None,
                 "materialized_path": request.materialized_path,
+                # Per-node language drives Bug-4 whole_word suppression:
+                # CJK nodes ignore the toggle (no \b semantics), EN/other
+                # nodes still honour it.
+                "language": effective_language(
+                    getattr(request, "language", None), node
+                ),
             },
         )
 
@@ -584,6 +591,9 @@ async def detach_concordance_dispersion(
                 "total_bins": request.total_bins,
                 "selected_matched_texts": request.selected_matched_texts,
                 "match_case_insensitive": request.match_case_insensitive,
+                "language": effective_language(
+                    getattr(request, "language", None), node
+                ),
             },
         )
 
@@ -723,6 +733,9 @@ async def materialize_concordance(
                 "extra_columns_dtypes": extra_columns_dtypes,
                 "search_mode": request.search_mode,
                 "node_tokens": node_tokens,
+                "language": effective_language(
+                    getattr(request, "language", None), node
+                ),
             },
         )
         return {

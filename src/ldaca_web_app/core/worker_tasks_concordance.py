@@ -49,6 +49,7 @@ def _build_concordance_occurrence_dataframe(
     include_document_column: bool,
     extra_columns_data: Optional[Dict[str, list]],
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    language: Optional[str] = None,
 ):
     """Compute flattened occurrence rows for one corpus. Returns (df, output_columns)."""
     import polars as pl
@@ -88,6 +89,7 @@ def _build_concordance_occurrence_dataframe(
         search_word,
         regex=regex,
         whole_word=whole_word,
+        language=language,
     )
     result = (
         df.select(
@@ -258,6 +260,7 @@ def run_concordance_detach_task(
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Run concordance detach and return a serialized detached node payload.
@@ -367,6 +370,7 @@ def run_concordance_detach_task(
             include_document_column=include_document_column,
             extra_columns_data=extra_columns_data,
             extra_columns_dtypes=extra_columns_dtypes,
+            language=language,
         )
 
         # Compute frequency columns (same as materialize) so detach always
@@ -608,6 +612,7 @@ def run_concordance_dispersion_detach_task(
     total_bins: Optional[int] = None,
     selected_matched_texts: Optional[list[str]] = None,
     match_case_insensitive: bool = False,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Aggregate concordance hits per document and detach as a workspace node.
@@ -663,6 +668,7 @@ def run_concordance_dispersion_detach_task(
                 include_document_column=True,
                 extra_columns_data=extra_columns_data,
                 extra_columns_dtypes=extra_columns_dtypes,
+                language=language,
             )
             # Match the materialize path: always include CONC_l1_freq /
             # CONC_r1_freq so the aggregated list aggregates have something
@@ -806,6 +812,7 @@ def run_concordance_materialize_task(
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     search_mode: str = "regex",
     node_tokens: Optional[list[Any]] = None,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Run full concordance extraction and persist the flattened parquet.
@@ -856,6 +863,7 @@ def run_concordance_materialize_task(
                 include_document_column=True,
                 extra_columns_data=extra_columns_data,
                 extra_columns_dtypes=extra_columns_dtypes,
+                language=language,
             )
 
         import polars as pl

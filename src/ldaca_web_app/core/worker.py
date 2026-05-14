@@ -150,6 +150,7 @@ def concordance_detach_task(
     extra_columns_data: Optional[Dict[str, list]] = None,
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     materialized_path: Optional[str] = None,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -172,6 +173,7 @@ def concordance_detach_task(
         extra_columns_data=extra_columns_data,
         extra_columns_dtypes=extra_columns_dtypes,
         materialized_path=materialized_path,
+        language=language,
         progress_callback=cb,
     )
 
@@ -199,6 +201,7 @@ def concordance_dispersion_detach_task(
     total_bins: Optional[int] = None,
     selected_matched_texts: Optional[list[str]] = None,
     match_case_insensitive: bool = False,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -225,6 +228,7 @@ def concordance_dispersion_detach_task(
         total_bins=total_bins,
         selected_matched_texts=selected_matched_texts,
         match_case_insensitive=match_case_insensitive,
+        language=language,
         progress_callback=cb,
     )
 
@@ -247,6 +251,7 @@ def concordance_materialize_task(
     extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     search_mode: str = "regex",
     node_tokens: Optional[list[Any]] = None,
+    language: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -268,6 +273,7 @@ def concordance_materialize_task(
         extra_columns_dtypes=extra_columns_dtypes,
         search_mode=search_mode,
         node_tokens=node_tokens,
+        language=language,
         progress_callback=cb,
     )
 
