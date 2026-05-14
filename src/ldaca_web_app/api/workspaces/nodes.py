@@ -313,6 +313,62 @@ def _require_current_workspace(user_id: str) -> Workspace:
     return workspace
 
 
+def _propagated_derived(
+    parents: "Node | list[Node]",
+    result_lf: pl.LazyFrame,
+) -> dict[str, Any]:
+    """Return the parents' derived registry filtered to the child's schema.
+
+    Every node-creating endpoint here calls ``lazy.filter(...) / .slice(...) /
+    pl.concat(...) / .join(...)`` and then constructs a new ``Node(...)``
+    manually. ``Node.__init__`` accepts an optional ``derived=`` dict, but if
+    you forget to pass it the child silently starts with an empty registry
+    — even when the LazyFrame schema still carries the derived column. Every
+    downstream tool that uses ``Node.find_derived_column`` (Tokens-mode
+    concordance, token-frequency, topic-modelling, etc.) then refuses to run:
+
+        "No tokens column registered on node 'X' for source column 'Y'
+         with model 'Z'; re-run Tokenise first."
+
+    The fix is: always thread the parent's derived dict to the child,
+    filtered to the columns that actually survived the operation. This
+    mirrors what ``docworkspace.Node.filter()`` / ``Node.select()`` /
+    ``Node.join()`` already do internally when you call those methods
+    directly — but the backend bypasses those by calling the LazyFrame
+    methods, so we recreate the propagation here at the boundary.
+
+    Multi-parent (concat / join): union both parents' derived entries
+    and filter to the result schema. Same-named entries on both sides
+    are equivalent in practice — concat would have failed at schema
+    validation if the derived columns disagreed in dtype, and join
+    can only produce a single column per name in the output frame.
+    """
+    if isinstance(parents, list):
+        sources = parents
+    else:
+        sources = [parents]
+    try:
+        result_columns = set(result_lf.collect_schema().names())
+    except Exception:
+        # Defensive: if the plan can't be schema-introspected for any
+        # reason, propagate everything rather than silently dropping —
+        # the downstream find_derived_column lookup will still catch a
+        # missing column.
+        result_columns = None
+    merged: dict[str, Any] = {}
+    for parent in sources:
+        derived = getattr(parent, "derived", None)
+        # Guard against Mock-typed test parents where attribute access
+        # auto-vivifies a Mock object instead of returning the dict shape
+        # we'd see in production.
+        if not isinstance(derived, dict):
+            continue
+        for name, meta in derived.items():
+            if result_columns is None or name in result_columns:
+                merged[name] = meta
+    return merged
+
+
 def _build_slice_or_sample_lazy(
     lazy_data: pl.LazyFrame,
     node_name: str,
@@ -898,6 +954,7 @@ async def clone_node(
             workspace=workspace,
             operation=f"clone({getattr(node, 'name', node_id)})",
             parents=[node],
+            derived=_propagated_derived(node, cloned_lazy),
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
@@ -933,6 +990,7 @@ async def filter_node(
         workspace=workspace,
         operation=f"filter({node.name})",
         parents=[node],
+        derived=_propagated_derived(node, filtered_data),
     )
     workspace.add_node(new_node)
     update_workspace(user_id, workspace_id)
@@ -1030,6 +1088,7 @@ async def slice_node(
         workspace=workspace,
         operation=operation,
         parents=[node],
+        derived=_propagated_derived(node, output_data),
     )
     workspace.add_node(new_node)
     update_workspace(user_id, workspace_id)
@@ -1195,6 +1254,7 @@ async def concat_nodes(
             workspace=workspace,
             operation=operation_label,
             parents=parent_nodes,
+            derived=_propagated_derived(list(nodes), concat_lazy),
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
@@ -1344,6 +1404,7 @@ async def join_nodes(
             workspace=workspace,
             operation=f"join({left_node.name}, {right_node.name})",
             parents=[left_node, right_node],
+            derived=_propagated_derived([left_node, right_node], joined_data),
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
@@ -1586,6 +1647,7 @@ async def polars_expression_apply(
         workspace=workspace,
         operation=f"expression({request.context}, {node.name})",
         parents=[node],
+        derived=_propagated_derived(node, result_lazy),
     )
     workspace.add_node(new_node)
     update_workspace(user_id, workspace_id)
