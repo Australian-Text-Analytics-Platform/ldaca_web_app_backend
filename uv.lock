@@ -598,17 +598,15 @@ wheels = [
 
 [[package]]
 name = "docworkspace"
-version = "0.2.7"
-source = { editable = "../docworkspace" }
+version = "0.2.8"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "polars-text" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "polars-text", specifier = ">=0.1.6" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8.0.0" }]
+sdist = { url = "https://files.pythonhosted.org/packages/cf/7d/c7c6446753d35c9092aeb7683facc6c494c41db4872c33fda351e2c6cbb0/docworkspace-0.2.8.tar.gz", hash = "sha256:089fad0c351ce610da00b7504ae98c91161bd4c45ff00649beb096b4e31e3820", size = 35594, upload-time = "2026-05-14T15:16:27.348Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/01/b9938e3520108f10b8708c9eab110acda2ce9168e85f1111e59a34614f1d/docworkspace-0.2.8-py3-none-any.whl", hash = "sha256:05dab8a2f8f75ddef3a715d91e18641ce0a4ffb834fe30bd4ea5db5f5db02c91", size = 19010, upload-time = "2026-05-14T15:16:25.923Z" },
+]
 
 [[package]]
 name = "email-validator"
@@ -1429,7 +1427,7 @@ dependencies = [
 
 [[package]]
 name = "ldaca-web-app"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -1473,7 +1471,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21.0" },
     { name = "bertopic", specifier = ">=0.17.3" },
-    { name = "docworkspace", editable = "../docworkspace" },
+    { name = "docworkspace", specifier = ">=0.2.8" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.0" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14.0.1" },
     { name = "fastexcel", specifier = ">=0.18.0" },

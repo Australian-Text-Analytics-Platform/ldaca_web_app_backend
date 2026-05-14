@@ -1,6 +1,6 @@
 [project]
 name = "ldaca-web-app"
-version = "0.4.0"
+version = "0.4.1"
 description = "LDaCA Web App - FastAPI backend with bundled production frontend for the Language Data Commons of Australia"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -35,7 +35,7 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
     "psutil>=6.1.0",                            # Process management for proper cleanup of child processes
-    "docworkspace>=0.2.7",
+    "docworkspace>=0.2.8",
     # Polars 1.40 splits the Rust runtime into feature tiers; the default
     # `polars-runtime-32` lacks Categorical/Decimal/etc. support, which
     # breaks LazyFrame.deserialize() for plans containing those dtypes.
@@ -130,10 +130,4 @@ include = [
 "src" = ""
 
 [tool.uv.sources]
-# Sibling submodule override: the docworkspace submodule HEAD includes
-# unpublished changes (Node.register_derived_column, etc.) past what
-# PyPI's 0.2.7 wheel carries. The pyproject version label is identical
-# on both, so the pin alone can't differentiate — we install from path
-# for local dev. Drop this line once docworkspace is bumped + republished.
-docworkspace = { path = "../docworkspace", editable = true }
 ldaca-loader = { git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator", branch = "ldaca_web_app_integration" }
