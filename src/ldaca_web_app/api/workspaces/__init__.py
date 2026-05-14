@@ -19,7 +19,7 @@ from fastapi import APIRouter
 from ...core.workspace import (
     workspace_manager,  # re-export for test patches expecting api.workspaces.workspace_manager
 )
-from . import base, lifecycle, nodes
+from . import base, lifecycle, nodes, ui_state
 from .analyses import (
     ai_annotation,
     concordance,
@@ -42,5 +42,6 @@ router.include_router(concordance.router)
 router.include_router(topic_modeling.router)
 router.include_router(ai_annotation.router)
 router.include_router(derived_columns.router)
+router.include_router(ui_state.router)
 
 __all__ = ["router", "workspace_manager"]
