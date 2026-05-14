@@ -99,6 +99,34 @@ class ImportSampleDataResponse(BaseModel):
     bytes_copied: int
     message: str
     sample_dir: Optional[str] = None
+    remote_download_started: bool = False
+
+
+class ImportSampleDataRequest(BaseModel):
+    collection_ids: List[str] = Field(default_factory=list)
+
+
+class SampleDataFileEntry(BaseModel):
+    path: str
+    size: int
+    sha256: str
+
+
+class SampleDataCollection(BaseModel):
+    id: str
+    name: str
+    description: str
+    language: str
+    bundled: bool
+    total_size_bytes: int
+    recommended_for: List[str]
+    files: List[SampleDataFileEntry]
+    status: str  # bundled | downloaded | partial | not_downloaded
+
+
+class SampleDataCatalogueResponse(BaseModel):
+    schema_version: int
+    collections: List[SampleDataCollection]
 
 
 class DataFileInfo(BaseModel):
@@ -1029,6 +1057,19 @@ class TopicModelingResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class TopicMeaningOverrideItem(BaseModel):
+    """One topic's representative-words override for detach.
+
+    Lets the frontend ship exactly what the user sees — post-fit
+    "Words per topic" slice, post-fit stopword filter — instead of
+    forcing the meanings parquet (written at fit time) into the
+    detached node.
+    """
+
+    topic_id: int
+    words: List[str]
+
+
 class TopicModelingDetachRequest(BaseModel):
     """Request payload for detaching topic assignments from cached topic-modeling output."""
 
@@ -1037,6 +1078,7 @@ class TopicModelingDetachRequest(BaseModel):
     new_node_names: Optional[Dict[str, str]] = None
     topic_column_name: Optional[str] = "TOPIC_topic"
     topic_ids: Optional[List[int]] = None
+    topic_meanings_override: Optional[List[TopicMeaningOverrideItem]] = None
 
 
 class TopicModelingDetachNodeOption(BaseModel):

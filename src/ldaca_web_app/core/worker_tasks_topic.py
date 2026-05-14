@@ -107,7 +107,37 @@ def _should_use_online_pipeline(docs: list[str], force_mode: str | None) -> bool
     return sum(len(d) for d in docs) > _ONLINE_THRESHOLD_BYTES
 
 
-def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: Any) -> Any:
+def _resolve_top_n_words(representative_words_count: "int | None") -> int:
+    """Pick BERTopic's ``top_n_words`` from the user-requested display cap.
+
+    BERTopic's default is 10. When the user picks "Words per topic = 35"
+    and toggles on the frontend stopword filter, c-TF-IDF would compute
+    only 10 raw words; the filter would drop most of them as function
+    words (English: by sklearn's stoplist at the vectorizer; non-English:
+    by the post-fit filter); and the user would see 1–3 — even though
+    they asked for 35.
+
+    We pre-compute a generous headroom so the post-filter slice still
+    has enough material:
+
+    - At least 50 candidates, so even a tiny request like 5 has a
+      healthy buffer for the stopword filter.
+    - Otherwise 2× the requested cap.
+
+    Performance impact is negligible — c-TF-IDF already produces a
+    ranked vocabulary per topic; ``top_n_words`` just decides where to
+    truncate.
+    """
+    requested = int(representative_words_count or 0)
+    return max(50, requested * 2) if requested > 0 else 50
+
+
+def _build_classic_pipeline(
+    min_topic_size: int,
+    random_state: int,
+    embedder: Any,
+    top_n_words: int = 50,
+) -> Any:
     """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
     from bertopic import BERTopic
     from umap import UMAP
@@ -123,6 +153,7 @@ def _build_classic_pipeline(min_topic_size: int, random_state: int, embedder: An
             metric="cosine",
             random_state=random_state,
         ),
+        top_n_words=top_n_words,
     )
 
 
@@ -131,6 +162,7 @@ def _build_online_pipeline(
     n_clusters: int | None,
     random_state: int,
     embedder: Any,
+    top_n_words: int = 50,
 ) -> tuple[Any, int]:
     """Build a BERTopic pipeline using IncrementalPCA + MiniBatchKMeans.
 
@@ -157,6 +189,7 @@ def _build_online_pipeline(
         embedding_model=embedder,
         umap_model=dim_model,
         hdbscan_model=cluster_model,
+        top_n_words=top_n_words,
     )
     try:
         from bertopic.vectorizers import OnlineCountVectorizer
@@ -427,17 +460,32 @@ def _build_topic_result_payload(
         ]
 
     topics_by_id = cast(dict[int, list[tuple[str, float]]], topic_model.get_topics())
-    representative_words_by_topic: list[list[str]] = []
+    # Wire-payload slice — matches BERTopic's actual ``top_n_words`` at fit
+    # time, so the frontend can scale "Words per topic" up to this cap
+    # post-fit without a re-run. Keeping ``representative_words`` narrower
+    # than the fit's capacity would make the slider's upper range a lie:
+    # the user would dial it up and see no new words because there'd be
+    # nothing to reveal.
+    payload_words_cap = _resolve_top_n_words(max_representative_words)
+    payload_representative_words_by_topic: list[list[str]] = []
+    # Meaning-column slice — respects the user's chosen display count so
+    # the "Add to Workspace" parquet matches what they saw. The
+    # server-side label fallback uses the same narrow slice for the same
+    # reason: if the frontend can't build its own label, we want a label
+    # that reflects the user's intent, not the full top_n_words buffer.
+    meaning_words_by_topic: list[list[str]] = []
     labels: list[str] = []
     for topic_id in topic_ids:
         words = topics_by_id.get(topic_id, [])
-        top_words = [
+        payload_words = [
             word
-            for word, _score in words[:max_representative_words]
+            for word, _score in words[:payload_words_cap]
             if isinstance(word, str) and word
         ]
-        representative_words_by_topic.append(top_words)
-        labels.append(" | ".join(top_words) if top_words else f"Topic {topic_id}")
+        payload_representative_words_by_topic.append(payload_words)
+        meaning_words = payload_words[:max_representative_words]
+        meaning_words_by_topic.append(meaning_words)
+        labels.append(" | ".join(meaning_words) if meaning_words else f"Topic {topic_id}")
 
     all_topics_sorted = sorted(topics_by_id.keys())
     indices = (
@@ -527,8 +575,8 @@ def _build_topic_result_payload(
             {
                 "id": topic_id,
                 "label": labels[i] if i < len(labels) else f"Topic {topic_id}",
-                "representative_words": representative_words_by_topic[i]
-                if i < len(representative_words_by_topic)
+                "representative_words": payload_representative_words_by_topic[i]
+                if i < len(payload_representative_words_by_topic)
                 else [],
                 "size": per_sizes,
                 "total_size": int(sum(per_sizes)),
@@ -540,7 +588,7 @@ def _build_topic_result_payload(
     pl.DataFrame(
         {
             TOPIC_COLUMN: topic_ids,
-            TOPIC_MEANING_COLUMN: representative_words_by_topic,
+            TOPIC_MEANING_COLUMN: meaning_words_by_topic,
         },
         schema={
             TOPIC_COLUMN: pl.Int64,
@@ -1009,6 +1057,7 @@ def run_topic_modeling_task(
                 progress_start=embed_start, progress_end=embed_end,
             )
 
+            top_n_words = _resolve_top_n_words(representative_words_count)
             if use_online:
                 if progress_callback:
                     progress_callback(
@@ -1017,14 +1066,23 @@ def run_topic_modeling_task(
                         f"(IncrementalPCA + MiniBatchKMeans)...",
                     )
                 topic_model, actual_k = _build_online_pipeline(
-                    len(all_docs), n_clusters, random_state, embedder
+                    len(all_docs),
+                    n_clusters,
+                    random_state,
+                    embedder,
+                    top_n_words=top_n_words,
                 )
             else:
                 if progress_callback:
                     progress_callback(
                         cluster_frac, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
                     )
-                topic_model = _build_classic_pipeline(effective_min_topic_size, random_state, embedder)
+                topic_model = _build_classic_pipeline(
+                    effective_min_topic_size,
+                    random_state,
+                    embedder,
+                    top_n_words=top_n_words,
+                )
                 actual_k = None
 
             assigned_topics, _ = topic_model.fit_transform(all_docs, all_embeddings)

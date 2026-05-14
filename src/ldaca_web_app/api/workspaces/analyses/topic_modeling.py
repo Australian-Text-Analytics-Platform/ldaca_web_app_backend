@@ -818,10 +818,46 @@ async def detach_topic_modeling(
             status_code=404,
             detail="Topic meanings artifact is missing",
         )
-    meanings_lf = pl.scan_parquet(meanings_path)
     selected_topic_ids = sorted(
         {int(topic_id) for topic_id in (request.topic_ids or [])}
     )
+
+    meanings_lf = pl.scan_parquet(meanings_path)
+
+    # Frontend ships ``topic_meanings_override`` when it wants the detached
+    # meanings node to mirror what's currently on screen: post-fit "Words
+    # per topic" slice + post-fit stopword filter. The artifact parquet was
+    # written at fit time with the user's *original* slice and no filter,
+    # so we'd otherwise stamp out a node that doesn't match the visual.
+    # We write a fresh parquet beside the artifact so the resulting
+    # workspace node has the same on-disk lazy backing the artifact path
+    # provides — the workspace's save/reload depends on that.
+    override_meanings_lf: pl.LazyFrame | None = None
+    if request.topic_meanings_override:
+        override_topic_ids = [int(item.topic_id) for item in request.topic_meanings_override]
+        override_words = [list(item.words) for item in request.topic_meanings_override]
+        override_path = (
+            meanings_path.parent
+            / f"{meanings_path.stem}_override_{uuid4().hex[:8]}{meanings_path.suffix}"
+        )
+        pl.DataFrame(
+            {
+                TOPIC_COLUMN: override_topic_ids,
+                TOPIC_MEANING_COLUMN: override_words,
+            },
+            schema={
+                TOPIC_COLUMN: pl.Int64,
+                TOPIC_MEANING_COLUMN: pl.List(pl.String),
+            },
+        ).lazy().sink_parquet(override_path)
+        # The override is already the authoritative meaning set the user
+        # picked — don't re-filter by ``topic_ids`` or by per-corpus topic
+        # set. The frontend keeps the override in sync with topic_ids; being
+        # defensive avoids accidentally dropping rows if a future caller
+        # sends only ``topic_meanings_override``.
+        override_meanings_lf = pl.scan_parquet(override_path).select(
+            pl.col(TOPIC_COLUMN), pl.col(TOPIC_MEANING_COLUMN)
+        )
 
     target_node_ids = request.node_ids or list(assignments_by_node_id.keys())
     if not target_node_ids:
@@ -864,11 +900,16 @@ async def detach_topic_modeling(
             .drop_nulls()
             .to_list()
         )
-        filtered_meanings_lf = (
-            meanings_lf.filter(pl.col(TOPIC_COLUMN).is_in(corpus_topic_ids))
-            if corpus_topic_ids
-            else meanings_lf.filter(pl.lit(False))
-        ).select(pl.col(TOPIC_COLUMN), pl.col(TOPIC_MEANING_COLUMN))
+        if override_meanings_lf is not None:
+            # User-curated meanings are the authoritative source — use the
+            # same override for every corpus, no per-corpus filtering.
+            filtered_meanings_lf = override_meanings_lf
+        else:
+            filtered_meanings_lf = (
+                meanings_lf.filter(pl.col(TOPIC_COLUMN).is_in(corpus_topic_ids))
+                if corpus_topic_ids
+                else meanings_lf.filter(pl.lit(False))
+            ).select(pl.col(TOPIC_COLUMN), pl.col(TOPIC_MEANING_COLUMN))
 
         source_node = ws.nodes[node_id]
         source_data = source_node.data
