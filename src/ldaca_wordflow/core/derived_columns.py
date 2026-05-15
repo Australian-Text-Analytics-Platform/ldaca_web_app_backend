@@ -24,6 +24,25 @@ from ..api.workspaces.analyses.generated_columns import (
     derived_column_name,
 )
 
+# Models whose backend scripts have no case (Chinese, Japanese, Korean).
+# Passing ``lowercase=True`` to these would burn a full Unicode case-fold
+# walk plus a heap allocation per row for zero semantic effect — minutes
+# of CPU on a CJK corpus. The Rust ``preprocess`` helper short-circuits
+# defensively, but being explicit here makes the intent obvious at the
+# call site and survives a future refactor that drops the safety net.
+_CASE_FREE_MODELS: frozenset[str] = frozenset(
+    {
+        "jieba",
+        "lindera-ja-ipadic",
+        "lindera-ja-unidic",
+        "lindera-ko-dic",
+    }
+)
+
+
+def _model_is_case_free(model: str) -> bool:
+    return model in _CASE_FREE_MODELS
+
 
 def tokenise_column(
     node: Node,
@@ -54,8 +73,9 @@ def tokenise_column(
     derived_name = derived_column_name(TOKENS_FORM, source_column, model)
     existing = node.find_derived_column(source_column, form=TOKENS_FORM, model=model)
 
+    lowercase = not _model_is_case_free(model)
     tokenize_expr = pt.tokenize_with_offsets(
-        pl.col(source_column), model=model
+        pl.col(source_column), model=model, lowercase=lowercase
     ).alias(derived_name)
 
     if existing is not None:
