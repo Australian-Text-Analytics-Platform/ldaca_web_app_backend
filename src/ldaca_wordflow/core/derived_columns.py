@@ -118,7 +118,9 @@ def tokenise_column(
         base_lf = node.data
 
     # Upsert: tokenise any rows whose content hash isn't in the cache,
-    # then return the path the join plan needs to read.
+    # then return the canonical bucket path (used purely as a stable
+    # identifier in derived metadata — the actual files for this bucket
+    # live alongside it as ``<bucket>__delta__*.parquet`` siblings).
     cache_path = _upsert_for_node(
         base_lf=base_lf,
         source_column=source_column,
@@ -128,11 +130,13 @@ def tokenise_column(
     )
 
     # Rewrite ``node.data`` to look up the tokens column by content-hash
-    # join — no more tokeniser expression in the lazy plan.
+    # join over the union of every delta file in this bucket.
     new_lf = _build_cache_join(
         base_lf=base_lf,
         source_column=source_column,
-        cache_path=cache_path,
+        user_id=user_id,
+        model=model,
+        params=params,
         derived_name=derived_name,
     )
 
@@ -219,13 +223,14 @@ def _upsert_for_node(
             user_id, model, params, new_tokens_df
         )
 
-    # Nothing new to write. ``write_or_append_cache`` needs at least one
-    # row; if every hash was already cached the file exists and we
-    # return its path directly. The rare edge case where the cache file
-    # vanished between the hash read and now (a parallel sweep, manual
-    # cleanup) is handled by re-running the upsert with an empty cache.
-    path = tokens_cache.cache_path(user_id, model, params)
-    if not path.exists():
+    # Nothing new to write. Normally the bucket already has files from
+    # the cache hit and we can return the canonical bucket path. The
+    # rare edge case where every file vanished between the hash read
+    # and now (a parallel sweep, manual cleanup) is handled by
+    # re-running the upsert with all rows. ``cache_exists`` checks for
+    # *any* bucket file (legacy or delta), not just the canonical
+    # ``<bucket>.parquet`` (which post-refactor is rarely on disk).
+    if not tokens_cache.cache_exists(user_id, model, params):
         # Race recovery: rebuild with all rows.
         all_rows_lf = base_lf.select(
             pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
@@ -243,14 +248,16 @@ def _upsert_for_node(
         return tokens_cache.write_or_append_cache(
             user_id, model, params, all_tokens_df
         )
-    return path
+    return tokens_cache.cache_path(user_id, model, params)
 
 
 def _build_cache_join(
     *,
     base_lf,
     source_column: str,
-    cache_path,
+    user_id: str,
+    model: str,
+    params: dict,
     derived_name: str,
 ):
     """Wrap ``base_lf`` to attach the cached tokens by content hash.
@@ -259,12 +266,26 @@ def _build_cache_join(
     slices and predicates through it: hash → left join → drop the
     helper hash column. The result frame has every original column plus
     one new ``derived_name`` list column.
+
+    Reads the bucket as a deduplicated union of every file owned by
+    this (user, model, params) tuple — see
+    :func:`tokens_cache.tokens_cache_lazyframe`. The lazy plan baked
+    into ``base_lf`` is fresh at every ``tokenise_column`` call, so it
+    always reflects the current set of delta files when the user
+    re-tokenises.
     """
     import polars as pl
 
-    cache_lf = pl.scan_parquet(cache_path).rename(
-        {"tokens": derived_name}
-    )
+    cache_lf = tokens_cache.tokens_cache_lazyframe(user_id, model, params)
+    if cache_lf is None:
+        # Should not happen — ``_upsert_for_node`` guarantees at least one
+        # file exists in the bucket before this is called. Raise rather
+        # than silently masking the bug by joining against an empty frame.
+        raise RuntimeError(
+            f"tokens cache bucket is empty for user={user_id!r} model={model!r}; "
+            "_upsert_for_node should have populated it"
+        )
+    cache_lf = cache_lf.rename({"tokens": derived_name})
     return (
         base_lf.with_columns(
             pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN)

@@ -77,6 +77,7 @@ import os
 import shutil
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -106,6 +107,18 @@ CACHE_ROOT_ENV = "LDACA_TOKENS_CACHE_DIR"
 MANIFEST_FILENAME = "manifest.json"
 TOKENS_CACHE_SUBDIR = "tokens"
 DEFAULT_GRACE_PERIOD_DAYS = 7
+
+# Filename infix that marks a delta file. Each upsert writes one
+# ``<bucket>__delta__<uuid>.parquet`` instead of merging into a single
+# shared file — readers union all files for the bucket. The chosen infix
+# is impossible to produce inside a bucket key (model is sanitised, hash
+# is hex), so the glob never matches across buckets.
+DELTA_INFIX = "__delta__"
+
+# Compact when the bucket has more than this many delta files. Reading
+# many small parquets pays a per-file footer cost; compaction merges
+# them back into one.
+DEFAULT_COMPACTION_THRESHOLD = 16
 
 # The hashed-content key column that the join uses. Kept here so callers
 # don't accidentally collide with a user column of the same name on a
@@ -163,7 +176,82 @@ def cache_filename(model: str, params: dict) -> str:
 
 
 def cache_path(user_id: str, model: str, params: dict) -> Path:
+    """Canonical bucket-path identifier for a (user, model, params) tuple.
+
+    The returned ``Path`` may not exist on disk — after the delta-files
+    refactor, new caches are written as ``<bucket>__delta__<uuid>.parquet``
+    siblings, so the legacy ``<bucket>.parquet`` only exists for buckets
+    that were populated before the refactor. The function is still useful
+    as a stable identifier the caller can store in derived metadata; use
+    :func:`_bucket_files` / :func:`tokens_cache_lazyframe` for actual I/O.
+    """
     return tokens_cache_dir(user_id) / cache_filename(model, params)
+
+
+def _bucket_key_from_filename(filename: str) -> str:
+    """Strip ``.parquet`` from a legacy bucket filename to get the bucket key.
+
+    The bucket key is the prefix shared between the legacy single-file
+    cache (``<bucket>.parquet``) and delta files
+    (``<bucket>__delta__<uuid>.parquet``). Derived metadata persists
+    legacy ``.parquet`` filenames for back-compat; this helper normalises
+    them so manifest / sweep code can key by bucket.
+    """
+    return filename[: -len(".parquet")] if filename.endswith(".parquet") else filename
+
+
+def _bucket_key(model: str, params: dict) -> str:
+    """Bucket key for a (model, params) tuple — the filename stem."""
+    return _bucket_key_from_filename(cache_filename(model, params))
+
+
+def _bucket_files(user_id: str, bucket: str) -> list[Path]:
+    """All cache files belonging to one bucket, ordered oldest-first.
+
+    Includes both the legacy ``<bucket>.parquet`` (if a workspace was
+    created before the delta refactor) and every
+    ``<bucket>__delta__*.parquet`` written since. Order: legacy first
+    (oldest write of all), then deltas sorted by mtime ascending. The
+    read-side ``.unique(keep="first")`` in :func:`tokens_cache_lazyframe`
+    relies on this ordering so the *earliest-written* tokens for a
+    given content hash win — same semantic as the pre-delta single-file
+    cache, which read-merged-replaced in write order.
+    """
+    d = tokens_cache_dir(user_id)
+    files: list[Path] = []
+    legacy = d / f"{bucket}.parquet"
+    if legacy.exists():
+        files.append(legacy)
+    deltas: list[tuple[float, Path]] = []
+    for p in d.glob(f"{bucket}{DELTA_INFIX}*.parquet"):
+        try:
+            deltas.append((p.stat().st_mtime, p))
+        except OSError:
+            continue
+    deltas.sort(key=lambda pair: pair[0])
+    files.extend(p for _, p in deltas)
+    return files
+
+
+def _new_delta_path(user_id: str, bucket: str) -> Path:
+    """Allocate a fresh delta filename for ``bucket``. UUID4 hex is
+    collision-free in practice; no need to coordinate via the manifest."""
+    return tokens_cache_dir(user_id) / f"{bucket}{DELTA_INFIX}{uuid.uuid4().hex}.parquet"
+
+
+def _bucket_from_cache_filename(filename: str) -> str:
+    """Inverse of :func:`_new_delta_path` + the legacy single-file layout.
+
+    Maps either form back to the bucket key it belongs to:
+    * ``<bucket>.parquet`` (legacy) → ``<bucket>``
+    * ``<bucket>__delta__<uuid>.parquet`` (new) → ``<bucket>``
+
+    Used by sweep to map files on disk back to manifest bucket entries.
+    """
+    stem = filename[: -len(".parquet")] if filename.endswith(".parquet") else filename
+    if DELTA_INFIX in stem:
+        return stem.split(DELTA_INFIX, 1)[0]
+    return stem
 
 
 # --------------------------------------------------------------------------- #
@@ -268,6 +356,26 @@ def _read_manifest_unlocked(user_id: str) -> dict:
             "tokens-cache manifest %s has unexpected shape; resetting", path
         )
         return _empty_manifest()
+    # Lazy upgrade: pre-delta manifests keyed entries by ``<bucket>.parquet``
+    # filenames. Re-key them to bucket form so the rest of the module can
+    # treat both shapes uniformly without branching everywhere.
+    entries = data.get("entries", {})
+    if isinstance(entries, dict) and any(k.endswith(".parquet") for k in entries):
+        rekeyed: dict = {}
+        for key, entry in entries.items():
+            bucket = _bucket_key_from_filename(key) if isinstance(key, str) else key
+            # If both the legacy and bucket-form keys somehow exist, merge
+            # references; the union is the safe choice.
+            existing = rekeyed.get(bucket)
+            if existing and isinstance(entry, dict):
+                refs = list(existing.get("references", []))
+                for r in entry.get("references", []):
+                    if r not in refs:
+                        refs.append(r)
+                existing["references"] = refs
+            else:
+                rekeyed[bucket] = entry
+        data["entries"] = rekeyed
     return data
 
 
@@ -291,9 +399,9 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _ensure_entry(manifest: dict, filename: str, *, size_bytes: int = 0) -> dict:
+def _ensure_entry(manifest: dict, bucket: str, *, size_bytes: int = 0) -> dict:
     entries = manifest.setdefault("entries", {})
-    entry = entries.get(filename)
+    entry = entries.get(bucket)
     if entry is None:
         entry = {
             "size_bytes": size_bytes,
@@ -301,18 +409,21 @@ def _ensure_entry(manifest: dict, filename: str, *, size_bytes: int = 0) -> dict
             "last_accessed_at": _now_iso(),
             "references": [],
         }
-        entries[filename] = entry
+        entries[bucket] = entry
     return entry
 
 
 def add_reference(user_id: str, filename: str, ref: CacheReference) -> None:
-    """Record that ``ref`` depends on the cache file named ``filename``.
+    """Record that ``ref`` depends on the bucket the file belongs to.
 
-    Idempotent — calling twice with the same pair inserts one entry.
+    ``filename`` may be the legacy ``<bucket>.parquet`` form (what
+    ``node.derived[col]['cache_filename']`` stores) or the bucket key
+    directly; both are normalised to bucket form. Idempotent.
     """
+    bucket = _bucket_key_from_filename(filename)
     with _file_lock(_manifest_path(user_id)):
         manifest = _read_manifest_unlocked(user_id)
-        entry = _ensure_entry(manifest, filename)
+        entry = _ensure_entry(manifest, bucket)
         ref_dict = ref.to_dict()
         if ref_dict not in entry["references"]:
             entry["references"].append(ref_dict)
@@ -321,14 +432,16 @@ def add_reference(user_id: str, filename: str, ref: CacheReference) -> None:
 
 
 def drop_reference(user_id: str, filename: str, ref: CacheReference) -> None:
-    """Remove one ``(workspace, node)`` claim on the cache file.
+    """Remove one ``(workspace, node)`` claim on the bucket.
 
-    No-op if the manifest doesn't list the reference (idempotent).
+    Like :func:`add_reference`, accepts either the legacy filename or the
+    bucket key. No-op if the manifest doesn't list the reference.
     """
+    bucket = _bucket_key_from_filename(filename)
     with _file_lock(_manifest_path(user_id)):
         manifest = _read_manifest_unlocked(user_id)
         entries = manifest.get("entries", {})
-        entry = entries.get(filename)
+        entry = entries.get(bucket)
         if not entry:
             return
         ref_dict = ref.to_dict()
@@ -379,13 +492,17 @@ def drop_node_references(
 
 def touch_access(user_id: str, filename: str) -> None:
     """Update ``last_accessed_at`` without changing references — call
-    on every cache hit so the LRU-sweep doesn't evict hot files."""
+    on every cache hit so the LRU-sweep doesn't evict hot files.
+
+    Accepts either the legacy filename or the bucket key.
+    """
+    bucket = _bucket_key_from_filename(filename)
     with _file_lock(_manifest_path(user_id)):
         manifest = _read_manifest_unlocked(user_id)
         entries = manifest.get("entries", {})
-        if filename not in entries:
+        if bucket not in entries:
             return
-        entries[filename]["last_accessed_at"] = _now_iso()
+        entries[bucket]["last_accessed_at"] = _now_iso()
         _write_manifest_unlocked(user_id, manifest)
 
 
@@ -395,21 +512,92 @@ def touch_access(user_id: str, filename: str) -> None:
 
 
 def cache_exists(user_id: str, model: str, params: dict) -> bool:
-    return cache_path(user_id, model, params).exists()
+    """True iff *any* cache file exists for the bucket — legacy single
+    file or any of the new delta files."""
+    return len(_bucket_files(user_id, _bucket_key(model, params))) > 0
 
 
 def read_cached_hashes(user_id: str, model: str, params: dict) -> set[int]:
-    """Return the set of content-hashes currently in the cache parquet.
+    """Return the set of content-hashes covered by any file in the bucket.
 
     Used by :func:`derived_columns.tokenise_column` to decide which
-    source rows need fresh tokenisation. Empty set when the cache file
-    doesn't exist yet.
+    source rows need fresh tokenisation. Empty set when the bucket has
+    no files yet.
     """
-    path = cache_path(user_id, model, params)
-    if not path.exists():
+    files = _bucket_files(user_id, _bucket_key(model, params))
+    if not files:
         return set()
-    df = pl.scan_parquet(path).select(CONTENT_HASH_COLUMN).collect()
+    df = (
+        pl.scan_parquet([str(p) for p in files])
+        .select(CONTENT_HASH_COLUMN)
+        .unique()
+        .collect()
+    )
     return set(int(h) for h in df.get_column(CONTENT_HASH_COLUMN).to_list())
+
+
+def _bucket_total_size(user_id: str, bucket: str) -> int:
+    total = 0
+    for p in _bucket_files(user_id, bucket):
+        try:
+            total += p.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _compact_bucket_if_needed(
+    user_id: str,
+    bucket: str,
+    *,
+    threshold: int = DEFAULT_COMPACTION_THRESHOLD,
+) -> None:
+    """Merge a bucket's many small delta files back into one when the
+    file count exceeds ``threshold``.
+
+    Strategy:
+    * Read the union of all current bucket files and dedupe by hash.
+    * Write the merged content to one fresh delta file.
+    * Delete the prior files.
+
+    A reader racing with compaction sees either the old files, the new
+    merged delta, or both — the read-side ``.unique()`` in
+    :func:`tokens_cache_lazyframe` cleans up any duplication, and the
+    files are immutable so no read sees torn bytes. We do not lock here
+    because the new file is brand-new and the old files are only
+    deleted *after* it lands.
+    """
+    files = _bucket_files(user_id, bucket)
+    if len(files) <= threshold:
+        return
+    try:
+        merged = (
+            pl.scan_parquet([str(p) for p in files])
+            .unique(subset=[CONTENT_HASH_COLUMN])
+            .collect()
+        )
+    except Exception as exc:
+        logger.warning("compaction: failed to read bucket %s: %s", bucket, exc)
+        return
+    new_path = _new_delta_path(user_id, bucket)
+    try:
+        _atomic_write_parquet(merged, new_path)
+    except Exception as exc:
+        logger.warning(
+            "compaction: failed to write merged delta for %s: %s", bucket, exc
+        )
+        return
+    for old in files:
+        try:
+            old.unlink()
+        except OSError as exc:
+            # Windows blocks unlink while a reader holds the file open. Skip
+            # quietly; the next compaction (or sweep) will retry.
+            logger.debug(
+                "compaction: failed to remove %s (will retry next time): %s",
+                old,
+                exc,
+            )
 
 
 def write_or_append_cache(
@@ -418,15 +606,18 @@ def write_or_append_cache(
     params: dict,
     new_rows: pl.DataFrame,
 ) -> Path:
-    """Merge ``new_rows`` into the (user, model, params) cache parquet.
+    """Persist freshly-tokenised rows for the (model, params) bucket.
 
     ``new_rows`` must carry exactly ``CONTENT_HASH_COLUMN`` and a
-    ``tokens`` list-of-struct column. Rows whose content-hash is
-    already present are dropped (the existing tokens win — they were
-    computed by the same model/params, so the result is identical).
+    ``tokens`` list-of-struct column. Each call writes a brand-new
+    ``<bucket>__delta__<uuid>.parquet`` rather than read-merging into a
+    single shared file — so concurrent writers never race over the same
+    bytes, and readers can never observe a torn parquet during a
+    rewrite. Cross-row deduplication happens lazily on read.
 
-    Returns the cache file path. Use :func:`tokens_cache_lazyframe` to
-    read it back.
+    Returns the canonical bucket path (``<bucket>.parquet`` — may not
+    exist on disk) so callers can store a stable identifier in derived
+    metadata.
     """
     expected_cols = {CONTENT_HASH_COLUMN, "tokens"}
     missing = expected_cols - set(new_rows.columns)
@@ -436,48 +627,61 @@ def write_or_append_cache(
             f"got {new_rows.columns}"
         )
 
-    path = cache_path(user_id, model, params)
-    with _file_lock(path):
-        if path.exists():
-            existing = pl.read_parquet(path)
-            existing_hashes = set(
-                int(h) for h in existing.get_column(CONTENT_HASH_COLUMN).to_list()
+    bucket = _bucket_key(model, params)
+    bucket_path = cache_path(user_id, model, params)
+
+    if new_rows.height == 0:
+        # Nothing to write — but still bump the manifest's
+        # ``last_accessed_at`` so the sweep doesn't reap a hot bucket.
+        with _file_lock(_manifest_path(user_id)):
+            manifest = _read_manifest_unlocked(user_id)
+            entry = _ensure_entry(
+                manifest, bucket, size_bytes=_bucket_total_size(user_id, bucket)
             )
-            fresh = new_rows.filter(
-                ~pl.col(CONTENT_HASH_COLUMN).is_in(list(existing_hashes))
-            )
-            if fresh.height == 0:
-                # Touch access time anyway — somebody just used the cache.
-                pass
-            else:
-                merged = pl.concat([existing, fresh], how="vertical_relaxed")
-                _atomic_write_parquet(merged, path)
-        else:
-            _atomic_write_parquet(new_rows, path)
+            entry["last_accessed_at"] = _now_iso()
+            _write_manifest_unlocked(user_id, manifest)
+        return bucket_path
+
+    delta_path = _new_delta_path(user_id, bucket)
+    _atomic_write_parquet(new_rows, delta_path)
 
     with _file_lock(_manifest_path(user_id)):
         manifest = _read_manifest_unlocked(user_id)
-        entry = _ensure_entry(manifest, path.name, size_bytes=path.stat().st_size)
-        entry["size_bytes"] = path.stat().st_size
+        entry = _ensure_entry(
+            manifest, bucket, size_bytes=_bucket_total_size(user_id, bucket)
+        )
+        entry["size_bytes"] = _bucket_total_size(user_id, bucket)
         entry["last_accessed_at"] = _now_iso()
         _write_manifest_unlocked(user_id, manifest)
 
-    return path
+    _compact_bucket_if_needed(user_id, bucket)
+
+    return bucket_path
 
 
 def tokens_cache_lazyframe(
     user_id: str, model: str, params: dict
 ) -> Optional[pl.LazyFrame]:
-    """Return a LazyFrame over the cache file, or ``None`` if absent.
+    """LazyFrame unioning every file in the bucket, deduplicated by hash.
 
-    The frame has columns ``CONTENT_HASH_COLUMN, tokens``. Join your
-    source frame on ``CONTENT_HASH_COLUMN`` to attach the tokens column
-    without re-tokenising.
+    Schema: ``CONTENT_HASH_COLUMN, tokens``. Join your source frame on
+    ``CONTENT_HASH_COLUMN`` to attach tokens without re-tokenising.
+    Returns ``None`` when the bucket has no files.
+
+    The read-side ``.unique()`` makes concurrent writers safe: even if
+    two delta files contain the same hash (two requests independently
+    tokenised the same row), the join sees one row per hash.
     """
-    path = cache_path(user_id, model, params)
-    if not path.exists():
+    files = _bucket_files(user_id, _bucket_key(model, params))
+    if not files:
         return None
-    return pl.scan_parquet(path)
+    # ``_bucket_files`` returns oldest-first, so ``keep="first"`` matches the
+    # pre-delta semantics where the earliest write of a given content hash
+    # was the canonical one (later writes were silently skipped by the old
+    # read-merge-replace path).
+    return pl.scan_parquet([str(p) for p in files]).unique(
+        subset=[CONTENT_HASH_COLUMN], keep="first"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -564,6 +768,19 @@ def _sweep_unreferenced_for_user(
     grace_period_days: int,
     now: Optional[datetime],
 ) -> list[str]:
+    """Bucket-driven sweep.
+
+    Each manifest entry is now a *bucket* (after the delta-files
+    refactor); the on-disk parquet files for that bucket are
+    ``<bucket>.parquet`` (legacy, if present) plus
+    ``<bucket>__delta__*.parquet``. When a bucket has no references and
+    is past the grace window, *every* file in the bucket is removed.
+
+    Also reaps:
+    * manifest entries whose bucket has no surviving files on disk;
+    * orphan parquet files whose bucket has no manifest entry — same
+      ``st_mtime`` grace gate as before.
+    """
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(days=grace_period_days)
     removed: list[str] = []
@@ -573,28 +790,42 @@ def _sweep_unreferenced_for_user(
         manifest = _read_manifest_unlocked(user_id)
         entries = manifest.setdefault("entries", {})
 
-        # Pass 1 — manifest-driven sweep.
-        for filename in list(entries.keys()):
-            entry = entries[filename]
-            path = cache_dir / filename
-            if not path.exists():
-                # File gone — drop the manifest entry.
-                del entries[filename]
+        # Pass 1 — manifest-driven, per bucket.
+        for bucket in list(entries.keys()):
+            entry = entries[bucket]
+            bucket_key = (
+                _bucket_key_from_filename(bucket) if isinstance(bucket, str) else bucket
+            )
+            bucket_files = _bucket_files(user_id, bucket_key)
+            if not bucket_files:
+                # No files left on disk — drop the manifest entry.
+                del entries[bucket]
                 continue
             if entry.get("references"):
                 continue
             last_access = _parse_iso(entry.get("last_accessed_at"))
             if last_access is None or last_access <= cutoff:
-                try:
-                    path.unlink()
-                    removed.append(filename)
-                    del entries[filename]
-                except OSError as exc:
-                    logger.warning("sweep: failed to remove %s: %s", path, exc)
+                ok = True
+                for p in bucket_files:
+                    try:
+                        p.unlink()
+                        removed.append(p.name)
+                    except OSError as exc:
+                        logger.warning("sweep: failed to remove %s: %s", p, exc)
+                        ok = False
+                if ok:
+                    del entries[bucket]
 
-        # Pass 2 — orphan parquet sweep (file present, no manifest entry).
+        # Pass 2 — orphan parquet sweep (file on disk, no manifest entry).
+        # Bucket-driven so we don't reap one delta of a still-referenced
+        # bucket: if any sibling file's bucket key is in ``entries``, skip.
+        known_buckets = {
+            _bucket_key_from_filename(b) if isinstance(b, str) else b
+            for b in entries.keys()
+        }
         for path in cache_dir.glob("*.parquet"):
-            if path.name in entries:
+            file_bucket = _bucket_key_from_filename(path.name).split(DELTA_INFIX, 1)[0]
+            if file_bucket in known_buckets:
                 continue
             try:
                 mtime = datetime.fromtimestamp(
