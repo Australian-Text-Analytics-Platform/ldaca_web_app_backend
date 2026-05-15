@@ -4,25 +4,36 @@ Tokens and future analytic derivations live as hidden columns on the source
 Node's LazyFrame (decision 7). This module owns the operation that adds or
 replaces a derived tokens column and keeps ``Node.derived`` in sync.
 
-The operation is synchronous (Polars only adds the expression to the lazy
-plan; no model inference happens until a downstream tool collects the
-LazyFrame). Long-running model **loads** can still be wrapped in a worker
-task for progress UX, but the result mutates the source node — no child
-node is created.
+Phase 5 (perf): the tokens column is now backed by a persistent on-disk
+cache (``tokens_cache``). ``tokenise_column`` eagerly materialises tokens
+for the new content into a per-``(model, params)`` parquet, then rewrites
+``node.data`` to *join* the cache by content hash instead of carrying the
+tokeniser expression in the lazy plan. Result: every downstream collect
+(concordance page, token-freq run, page-size probe) reads cached tokens
+instead of re-running the tokeniser — the structural fix for the CJK
+perf regression. Child blocks derived from this node inherit the join
+plan and share the same cache rows via hash matching.
+
+The call still blocks until tokenisation finishes (it always did — the
+prior version only deferred the cost to the next collect). A future
+revision can wrap the upsert step in a worker task for a progress UX.
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
+from typing import Optional
 
-import polars as pl
-import polars_text as pt
 from docworkspace import Node
 
 from ..api.workspaces.analyses.generated_columns import (
     TOKENS_FORM,
     derived_column_name,
 )
+from . import tokens_cache
+
+logger = logging.getLogger(__name__)
 
 # Models whose backend scripts have no case (Chinese, Japanese, Korean).
 # Passing ``lowercase=True`` to these would burn a full Unicode case-fold
@@ -39,6 +50,11 @@ _CASE_FREE_MODELS: frozenset[str] = frozenset(
     }
 )
 
+# ``polars_text.tokenize_with_offsets`` defaults to ``remove_punct=True``.
+# We don't expose an override yet — keep the value in one place so the
+# cache key and the upsert call always agree.
+_REMOVE_PUNCT_DEFAULT = True
+
 
 def _model_is_case_free(model: str) -> bool:
     return model in _CASE_FREE_MODELS
@@ -49,7 +65,9 @@ def tokenise_column(
     *,
     source_column: str,
     model: str,
-    language: str | None,
+    language: Optional[str],
+    user_id: Optional[str] = None,
+    workspace_id: Optional[str] = None,
 ) -> str:
     """Add or replace a derived tokens column on ``node``.
 
@@ -57,8 +75,19 @@ def tokenise_column(
     ``"__derived__.tokens.text.jieba"``). Idempotent on
     ``(source_column, model)``: re-calling with the same pair replaces the
     existing column; a different model adds a second column on the same
-    source. The node's LazyFrame plan is mutated in place via the ``data``
-    setter, so the prior plan lands on the undo stack.
+    source.
+
+    The node's LazyFrame plan is mutated in place via the ``data`` setter
+    (so the prior plan lands on the undo stack), but the new plan now
+    *joins* the tokens cache parquet by content hash instead of carrying
+    the tokenise expression — the perf fix for repeated collects.
+
+    ``user_id`` / ``workspace_id`` are used only to register a reference
+    in the tokens-cache manifest so the sweep can reclaim the parquet
+    when no node is using it. When either is ``None`` (e.g. unit tests
+    that don't wire up a workspace), the upsert still happens but the
+    manifest entry is skipped — the cache file will then look orphaned
+    to the sweep and may be reclaimed after the grace period.
 
     Raises ``KeyError`` if ``source_column`` isn't present in the node's
     schema.
@@ -71,23 +100,43 @@ def tokenise_column(
         )
 
     derived_name = derived_column_name(TOKENS_FORM, source_column, model)
-    existing = node.find_derived_column(source_column, form=TOKENS_FORM, model=model)
+    existing = node.find_derived_column(
+        source_column, form=TOKENS_FORM, model=model
+    )
 
     lowercase = not _model_is_case_free(model)
-    tokenize_expr = pt.tokenize_with_offsets(
-        pl.col(source_column), model=model, lowercase=lowercase
-    ).alias(derived_name)
+    params = {"lowercase": lowercase, "remove_punct": _REMOVE_PUNCT_DEFAULT}
+
+    # Strip any previously-derived tokens column from the plan before we
+    # rebuild it, so the replacement is unambiguous. Use the un-derived
+    # base plan as the source for hashing — if a prior cache-join is
+    # already present, we want to hash the original ``source_column``,
+    # not the post-join wider frame.
+    if existing is not None:
+        base_lf = node.data.drop(existing, strict=False)
+    else:
+        base_lf = node.data
+
+    # Upsert: tokenise any rows whose content hash isn't in the cache,
+    # then return the (path, key) the join plan needs to read.
+    cache_path = _upsert_for_node(
+        base_lf=base_lf,
+        source_column=source_column,
+        model=model,
+        params=params,
+    )
+
+    # Rewrite ``node.data`` to look up the tokens column by content-hash
+    # join — no more tokeniser expression in the lazy plan.
+    new_lf = _build_cache_join(
+        base_lf=base_lf,
+        source_column=source_column,
+        cache_path=cache_path,
+        derived_name=derived_name,
+    )
 
     if existing is not None:
-        # Replace: drop the prior column from the plan before re-adding so
-        # the resulting frame is unambiguous. strict=False guards against
-        # the rare case where the column name disappeared independently
-        # (e.g. external select).
-        new_lf = node.data.drop(existing, strict=False).with_columns(tokenize_expr)
         node.unregister_derived_column(existing)
-    else:
-        new_lf = node.data.with_columns(tokenize_expr)
-
     node.data = new_lf
 
     node.register_derived_column(
@@ -98,9 +147,124 @@ def tokenise_column(
             "model": model,
             "language": language,
             "generated_at": datetime.now(timezone.utc).isoformat(),
+            "cache_filename": cache_path.name,
         },
     )
+
+    # Reference the cache so the sweep keeps it alive while this node
+    # is using it. Skipped when the caller can't supply identity —
+    # unit-test contexts mostly — so test runs don't leave dangling
+    # references in a developer's home directory.
+    if user_id and workspace_id:
+        tokens_cache.add_reference(
+            cache_path.name,
+            tokens_cache.CacheReference(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                node_id=str(getattr(node, "id", node.name)),
+            ),
+        )
+
     return derived_name
+
+
+def _upsert_for_node(
+    *,
+    base_lf,
+    source_column: str,
+    model: str,
+    params: dict,
+):
+    """Materialise tokens for the node's source column into the cache.
+
+    Reads existing cache content hashes, filters to the rows that aren't
+    cached yet, tokenises those, and appends the result. Returns the
+    cache parquet path.
+    """
+    import polars as pl
+    import polars_text as pt
+
+    cached_hashes = tokens_cache.read_cached_hashes(model, params)
+
+    # Select + hash + dedupe in one lazy plan so the source is only
+    # read once. ``unique`` collapses duplicate documents within the
+    # source so identical strings tokenise exactly once.
+    new_rows_lf = (
+        base_lf.select(
+            pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
+            pl.col(source_column).alias("__src__"),
+        )
+        .unique(subset=[tokens_cache.CONTENT_HASH_COLUMN])
+    )
+    if cached_hashes:
+        new_rows_lf = new_rows_lf.filter(
+            ~pl.col(tokens_cache.CONTENT_HASH_COLUMN).is_in(list(cached_hashes))
+        )
+
+    new_tokens_df = new_rows_lf.select(
+        pl.col(tokens_cache.CONTENT_HASH_COLUMN),
+        pt.tokenize_with_offsets(
+            pl.col("__src__"),
+            model=model,
+            lowercase=params["lowercase"],
+            remove_punct=params["remove_punct"],
+        ).alias("tokens"),
+    ).collect()
+
+    if new_tokens_df.height > 0:
+        return tokens_cache.write_or_append_cache(model, params, new_tokens_df)
+
+    # Nothing new to write. ``write_or_append_cache`` needs at least one
+    # row; if every hash was already cached the file exists and we
+    # return its path directly. The rare edge case where the cache file
+    # vanished between the hash read and now (a parallel sweep, manual
+    # cleanup) is handled by re-running the upsert with an empty cache.
+    path = tokens_cache.cache_path(model, params)
+    if not path.exists():
+        # Race recovery: rebuild with all rows.
+        all_rows_lf = base_lf.select(
+            pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
+            pl.col(source_column).alias("__src__"),
+        ).unique(subset=[tokens_cache.CONTENT_HASH_COLUMN])
+        all_tokens_df = all_rows_lf.select(
+            pl.col(tokens_cache.CONTENT_HASH_COLUMN),
+            pt.tokenize_with_offsets(
+                pl.col("__src__"),
+                model=model,
+                lowercase=params["lowercase"],
+                remove_punct=params["remove_punct"],
+            ).alias("tokens"),
+        ).collect()
+        return tokens_cache.write_or_append_cache(model, params, all_tokens_df)
+    return path
+
+
+def _build_cache_join(
+    *,
+    base_lf,
+    source_column: str,
+    cache_path,
+    derived_name: str,
+):
+    """Wrap ``base_lf`` to attach the cached tokens by content hash.
+
+    The added plan is intentionally simple so the optimiser can push
+    slices and predicates through it: hash → left join → drop the
+    helper hash column. The result frame has every original column plus
+    one new ``derived_name`` list column.
+    """
+    import polars as pl
+
+    cache_lf = pl.scan_parquet(cache_path).rename(
+        {"tokens": derived_name}
+    )
+    return (
+        base_lf.with_columns(
+            pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN)
+        )
+        .join(cache_lf, on=tokens_cache.CONTENT_HASH_COLUMN, how="left")
+        .drop(tokens_cache.CONTENT_HASH_COLUMN)
+    )
 
 
 __all__ = ["tokenise_column"]

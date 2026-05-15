@@ -79,6 +79,8 @@ async def create_derived_tokens(
             source_column=request.source_column,
             model=request.model,
             language=request.language,
+            user_id=user_id,
+            workspace_id=workspace_id,
         )
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

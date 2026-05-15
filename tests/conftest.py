@@ -19,6 +19,29 @@ def anyio_backend():
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _tokens_cache_in_tmpdir(tmp_path_factory):
+    """Redirect the tokens cache to a tmpdir for the whole test session.
+
+    Without this, ``tokenise_column`` would write parquets + a manifest
+    into ``~/.ldaca/tokens-cache/`` on the developer's machine each
+    time the tokens tests ran. Pointing the env var at a per-session
+    tmpdir keeps the cache isolated and cleans up automatically.
+    """
+    import os
+
+    tmp_dir = tmp_path_factory.mktemp("tokens-cache")
+    prev = os.environ.get("LDACA_TOKENS_CACHE_DIR")
+    os.environ["LDACA_TOKENS_CACHE_DIR"] = str(tmp_dir)
+    try:
+        yield tmp_dir
+    finally:
+        if prev is None:
+            os.environ.pop("LDACA_TOKENS_CACHE_DIR", None)
+        else:
+            os.environ["LDACA_TOKENS_CACHE_DIR"] = prev
+
+
+@pytest.fixture(scope="session", autouse=True)
 async def init_test_db():
     """Initialize test database with tables for all tests"""
     # Import after setting up the path
