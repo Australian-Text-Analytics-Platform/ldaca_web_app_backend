@@ -321,3 +321,51 @@ def test_touch_access_resets_grace_window():
     removed = tc.sweep_unreferenced(grace_period_days=7)
     assert path.exists()
     assert removed == []
+
+
+def test_tokenise_column_slice_collect_returns_correct_tokens(isolated_cache_dir):
+    """Pins the slice-pushdown invariant captured in Fix #6 of the PLAN.
+
+    Polars 1.40 doesn't push the slice past the LEFT JOIN to the cache
+    parquet (the join still reads the full file), but the hash match
+    keeps row identity correct so a sliced collect must return tokens
+    matching the corresponding prefix of the full collect. This test
+    locks down the functional contract — any future re-ordering of
+    the cache-build plan must not break it.
+    """
+    from docworkspace import Node
+
+    from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
+        TOKENS_FORM,
+        derived_column_name,
+    )
+    from ldaca_wordflow.core.derived_columns import tokenise_column
+
+    df = pl.DataFrame(
+        {
+            "text": [f"document number {i}" for i in range(20)],
+            "value": list(range(20)),
+        }
+    ).lazy()
+    node = Node(data=df, name="probe")
+
+    tokenise_column(
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+    )
+    derived_name = derived_column_name(
+        TOKENS_FORM, "text", "bert-base-uncased"
+    )
+
+    full = node.data.collect()
+    page = node.data.slice(0, 5).collect()
+
+    assert page.height == 5
+    assert derived_name in page.columns
+    # The first 5 rows of the slice must equal the first 5 rows of the
+    # full collect — tokens included. Proves the hash join keeps the
+    # source→tokens mapping intact under slicing.
+    full_first_five = full.head(5)
+    assert page.equals(full_first_five)
