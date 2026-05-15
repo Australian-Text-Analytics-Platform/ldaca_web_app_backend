@@ -41,19 +41,25 @@ dependencies = [
     # breaks LazyFrame.deserialize() for plans containing those dtypes.
     # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
     "polars[rtcompat]>=1.40.0",
-    # polars-text 0.2.0 ships the multilingual tokenizer additions:
+    # polars-text 0.2.0 shipped the multilingual tokenizer additions:
     # jieba ZH (`model="jieba"`), Lindera JA + KO (`model="lindera-ja-ipadic"`
     # etc.), `tokenize_with_offsets`, and Unicode-aware sentence/word counts.
+    # 0.2.1 is the perf release: single-sweep byte→char conversion (the
+    # Lindera regression fix), `to_lowercase` short-circuit for case-free
+    # backends, and a flat list-of-struct builder. On a 13k-row JP corpus
+    # the Lindera path drops from 1.43s → 0.23s (~6×) with identical
+    # token output. The cache layer in `core.tokens_cache` assumes this
+    # build so pin >=0.2.1.
     # Older wheels (<=0.1.7) fall through to `load_hf_tokenizer` for the
     # lindera model IDs, which then tries to fetch them as HF Hub model repos
     # and dies with "Failed to fetch tokenizer.json for lindera-ja-ipadic"
     # the first time a derived JA/KO tokens column gets lazily evaluated
-    # (e.g. on a concordance call). 0.2.0 also retains the polars-plan
-    # feature set (`random`, `ffi_plugin`, `bitwise`, `is_close`,
-    # `arg_where`, `hive_partitions`, `scan_lines`, `dtype-extension`, ...)
-    # so workspace save/load still covers the full DslPlan surface that
-    # Python polars 1.40 wheels emit.
-    "polars-text>=0.2.0",
+    # (e.g. on a concordance call). The polars-plan feature set
+    # (`random`, `ffi_plugin`, `bitwise`, `is_close`, `arg_where`,
+    # `hive_partitions`, `scan_lines`, `dtype-extension`, ...) is also
+    # retained so workspace save/load still covers the full DslPlan
+    # surface that Python polars 1.40 wheels emit.
+    "polars-text>=0.2.1",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
