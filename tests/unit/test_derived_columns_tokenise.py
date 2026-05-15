@@ -41,6 +41,7 @@ def test_tokenise_adds_derived_column_and_registers_metadata() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
+        user_id="test_user",
     )
 
     assert result_name == expected_name
@@ -63,7 +64,11 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
     node = _make_node()
 
     first = tokenise_column(
-        node, source_column="text", model="bert-base-uncased", language="en"
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
     )
     schema_after_first = node.data.collect_schema().names()
     derived_count_first = sum(
@@ -71,7 +76,11 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
     )
 
     second = tokenise_column(
-        node, source_column="text", model="bert-base-uncased", language="en"
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
     )
     schema_after_second = node.data.collect_schema().names()
     derived_count_second = sum(
@@ -89,13 +98,18 @@ def test_tokenise_with_different_model_adds_second_column() -> None:
     node = _make_node()
 
     bert_name = tokenise_column(
-        node, source_column="text", model="bert-base-uncased", language="en"
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
     )
     multi_name = tokenise_column(
         node,
         source_column="text",
         model="bert-base-multilingual-cased",
         language="en",
+        user_id="test_user",
     )
 
     schema_names = node.data.collect_schema().names()
@@ -110,7 +124,11 @@ def test_tokenise_undo_restores_prior_state() -> None:
     schema_before = set(node.data.collect_schema().names())
 
     tokenise_column(
-        node, source_column="text", model="bert-base-uncased", language="en"
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
     )
     assert node.can_undo
 
@@ -127,7 +145,11 @@ def test_tokenise_rejects_missing_source_column() -> None:
     node = _make_node()
     with pytest.raises(KeyError):
         tokenise_column(
-            node, source_column="nonexistent", model="bert-base-uncased", language="en"
+            node,
+            source_column="nonexistent",
+            model="bert-base-uncased",
+            language="en",
+            user_id="test_user",
         )
 
 
@@ -140,7 +162,11 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
 
     node = _make_node()
     derived_name = tokenise_column(
-        node, source_column="text", model="bert-base-uncased", language="en"
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
     )
     schema = node.data.collect_schema()
     assert schema[derived_name] == tokens_struct_dtype()
@@ -153,8 +179,9 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
     node = Node(data=df, name="zh_root")
 
     derived_name = tokenise_column(
-        node, source_column="text", model="jieba", language="zh"
-    )
+        node, source_column="text", model="jieba", language="zh",
+            user_id="test_user",
+        )
 
     collected = cast(pl.DataFrame, node.data.collect())
     tokens_lists = collected[derived_name].to_list()

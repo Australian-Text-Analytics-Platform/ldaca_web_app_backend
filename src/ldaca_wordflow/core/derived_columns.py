@@ -66,7 +66,7 @@ def tokenise_column(
     source_column: str,
     model: str,
     language: Optional[str],
-    user_id: Optional[str] = None,
+    user_id: str,
     workspace_id: Optional[str] = None,
 ) -> str:
     """Add or replace a derived tokens column on ``node``.
@@ -82,12 +82,12 @@ def tokenise_column(
     *joins* the tokens cache parquet by content hash instead of carrying
     the tokenise expression — the perf fix for repeated collects.
 
-    ``user_id`` / ``workspace_id`` are used only to register a reference
-    in the tokens-cache manifest so the sweep can reclaim the parquet
-    when no node is using it. When either is ``None`` (e.g. unit tests
-    that don't wire up a workspace), the upsert still happens but the
-    manifest entry is skipped — the cache file will then look orphaned
-    to the sweep and may be reclaimed after the grace period.
+    The cache is per-user (lives at ``{user_root}/user_cache/tokens/``),
+    so ``user_id`` is required for path resolution. ``workspace_id`` is
+    optional — when supplied, a manifest reference is registered so the
+    sweep can reclaim the parquet when no node is using it; when
+    ``None`` (e.g. unit tests that don't wire up a workspace) the
+    upsert still happens but no reference is recorded.
 
     Raises ``KeyError`` if ``source_column`` isn't present in the node's
     schema.
@@ -118,12 +118,13 @@ def tokenise_column(
         base_lf = node.data
 
     # Upsert: tokenise any rows whose content hash isn't in the cache,
-    # then return the (path, key) the join plan needs to read.
+    # then return the path the join plan needs to read.
     cache_path = _upsert_for_node(
         base_lf=base_lf,
         source_column=source_column,
         model=model,
         params=params,
+        user_id=user_id,
     )
 
     # Rewrite ``node.data`` to look up the tokens column by content-hash
@@ -152,14 +153,15 @@ def tokenise_column(
     )
 
     # Reference the cache so the sweep keeps it alive while this node
-    # is using it. Skipped when the caller can't supply identity —
-    # unit-test contexts mostly — so test runs don't leave dangling
-    # references in a developer's home directory.
-    if user_id and workspace_id:
+    # is using it. ``workspace_id`` is optional in unit-test contexts
+    # that don't wire up a workspace — skipping the reference there
+    # means the test cache file looks orphaned to the sweep, which is
+    # bounded by the tmpdir the autouse fixture isolates.
+    if workspace_id:
         tokens_cache.add_reference(
+            user_id,
             cache_path.name,
             tokens_cache.CacheReference(
-                user_id=user_id,
                 workspace_id=workspace_id,
                 node_id=str(getattr(node, "id", node.name)),
             ),
@@ -174,17 +176,18 @@ def _upsert_for_node(
     source_column: str,
     model: str,
     params: dict,
+    user_id: str,
 ):
     """Materialise tokens for the node's source column into the cache.
 
-    Reads existing cache content hashes, filters to the rows that aren't
-    cached yet, tokenises those, and appends the result. Returns the
-    cache parquet path.
+    Reads existing cache content hashes for this user, filters to the
+    rows that aren't cached yet, tokenises those, and appends the
+    result. Returns the cache parquet path.
     """
     import polars as pl
     import polars_text as pt
 
-    cached_hashes = tokens_cache.read_cached_hashes(model, params)
+    cached_hashes = tokens_cache.read_cached_hashes(user_id, model, params)
 
     # Select + hash + dedupe in one lazy plan so the source is only
     # read once. ``unique`` collapses duplicate documents within the
@@ -212,14 +215,16 @@ def _upsert_for_node(
     ).collect()
 
     if new_tokens_df.height > 0:
-        return tokens_cache.write_or_append_cache(model, params, new_tokens_df)
+        return tokens_cache.write_or_append_cache(
+            user_id, model, params, new_tokens_df
+        )
 
     # Nothing new to write. ``write_or_append_cache`` needs at least one
     # row; if every hash was already cached the file exists and we
     # return its path directly. The rare edge case where the cache file
     # vanished between the hash read and now (a parallel sweep, manual
     # cleanup) is handled by re-running the upsert with an empty cache.
-    path = tokens_cache.cache_path(model, params)
+    path = tokens_cache.cache_path(user_id, model, params)
     if not path.exists():
         # Race recovery: rebuild with all rows.
         all_rows_lf = base_lf.select(
@@ -235,7 +240,9 @@ def _upsert_for_node(
                 remove_punct=params["remove_punct"],
             ).alias("tokens"),
         ).collect()
-        return tokens_cache.write_or_append_cache(model, params, all_tokens_df)
+        return tokens_cache.write_or_append_cache(
+            user_id, model, params, all_tokens_df
+        )
     return path
 
 

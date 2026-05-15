@@ -1,8 +1,9 @@
-"""Unit tests for the tokens cache primitives.
+"""Unit tests for the tokens-cache primitives.
 
-These tests stub out the cache root via the ``LDACA_TOKENS_CACHE_DIR``
-env variable so they touch only tmp directories — never the user's
-real ``~/.ldaca/tokens-cache`` even when run locally.
+The cache is per-user — every fn takes a ``user_id`` first. The
+autouse fixture redirects ``LDACA_TOKENS_CACHE_DIR`` at a tmpdir so
+each test gets a fresh base and the per-user subdir layout is still
+exercised under the override (``{base}/{user_id}/tokens/...``).
 """
 
 from __future__ import annotations
@@ -16,13 +17,18 @@ import pytest
 
 from ldaca_wordflow.core import tokens_cache as tc
 
+# Single canonical test user; switching to a different one would exercise
+# multi-user isolation and is done explicitly in
+# ``test_sweep_walks_all_users``.
+TEST_USER = "test_user"
+
 
 @pytest.fixture(autouse=True)
-def isolated_cache_dir(tmp_path, monkeypatch):
-    """Each test gets a clean cache dir under ``tmp_path``."""
-    cache_dir = tmp_path / "tokens-cache"
-    monkeypatch.setenv(tc.CACHE_ROOT_ENV, str(cache_dir))
-    yield cache_dir
+def isolated_cache_root(tmp_path, monkeypatch):
+    """Point the env var at a per-test tmpdir so tests don't leak between
+    each other and never touch the developer's real ``user_cache``."""
+    monkeypatch.setenv(tc.CACHE_ROOT_ENV, str(tmp_path / "tokens-cache"))
+    yield tmp_path / "tokens-cache"
 
 
 def _toy_rows(hash_to_tokens: dict[int, list[dict]]) -> pl.DataFrame:
@@ -47,14 +53,32 @@ def _toy_rows(hash_to_tokens: dict[int, list[dict]]) -> pl.DataFrame:
     )
 
 
+def _ref(workspace: str, node: str) -> tc.CacheReference:
+    return tc.CacheReference(workspace_id=workspace, node_id=node)
+
+
 # --------------------------------------------------------------------------- #
 # Path / filename derivation                                                  #
 # --------------------------------------------------------------------------- #
 
 
-def test_cache_dir_honours_env(isolated_cache_dir):
-    assert tc.tokens_cache_dir() == isolated_cache_dir
-    assert isolated_cache_dir.exists()
+def test_cache_dir_honours_env_with_per_user_subdir(isolated_cache_root):
+    """The env var supplies the base; the per-user subdir layout is still
+    applied so production multi-user behaviour is exercised under the
+    override."""
+    got = tc.tokens_cache_dir(TEST_USER)
+    expected = isolated_cache_root / TEST_USER / tc.TOKENS_CACHE_SUBDIR
+    assert got == expected
+    assert got.exists()
+
+
+def test_cache_dir_isolates_users(isolated_cache_root):
+    """Two different users get two different cache directories — the
+    privacy contract this refactor was about."""
+    a = tc.tokens_cache_dir("alice")
+    b = tc.tokens_cache_dir("bob")
+    assert a != b
+    assert a.parent.parent == b.parent.parent  # same base
 
 
 def test_cache_filename_stable_across_param_orderings():
@@ -94,28 +118,38 @@ def test_write_creates_parquet_and_round_trips():
             2: [{"token": "world", "start": 0, "end": 5}],
         }
     )
-    path = tc.write_or_append_cache("jieba", {"lowercase": False}, rows)
+    path = tc.write_or_append_cache(
+        TEST_USER, "jieba", {"lowercase": False}, rows
+    )
     assert path.exists()
 
-    lf = tc.tokens_cache_lazyframe("jieba", {"lowercase": False})
+    lf = tc.tokens_cache_lazyframe(TEST_USER, "jieba", {"lowercase": False})
     assert lf is not None
     got = lf.collect().sort(tc.CONTENT_HASH_COLUMN)
     assert got.get_column(tc.CONTENT_HASH_COLUMN).to_list() == [1, 2]
 
 
+def test_write_isolates_users():
+    """Same model/params/hash on two users → two different files; neither
+    sees the other's tokens."""
+    params = {"lowercase": False}
+    rows = _toy_rows({1: [{"token": "alice-tok", "start": 0, "end": 1}]})
+    tc.write_or_append_cache("alice", "jieba", params, rows)
+
+    bob_hashes = tc.read_cached_hashes("bob", "jieba", params)
+    assert bob_hashes == set()
+
+
 def test_append_dedups_on_content_hash():
     params = {"lowercase": False}
     first = _toy_rows({1: [{"token": "hello", "start": 0, "end": 5}]})
-    tc.write_or_append_cache("jieba", params, first)
+    tc.write_or_append_cache(TEST_USER, "jieba", params, first)
 
-    # Re-write the same hash with different tokens — first write should
-    # win. (Both writes correspond to the same source content, so the
-    # tokens *should* be identical; we test the dedup contract rather
-    # than the equivalence of those tokens.)
+    # Re-write the same hash with different tokens — first write wins.
     second = _toy_rows({1: [{"token": "OVERWRITTEN", "start": 0, "end": 9}]})
-    tc.write_or_append_cache("jieba", params, second)
+    tc.write_or_append_cache(TEST_USER, "jieba", params, second)
 
-    got = tc.tokens_cache_lazyframe("jieba", params).collect()
+    got = tc.tokens_cache_lazyframe(TEST_USER, "jieba", params).collect()
     assert got.height == 1
     only_tokens = got.get_column("tokens").to_list()[0]
     assert only_tokens[0]["token"] == "hello"
@@ -124,27 +158,38 @@ def test_append_dedups_on_content_hash():
 def test_append_extends_existing_cache():
     params = {"lowercase": False}
     tc.write_or_append_cache(
-        "jieba", params, _toy_rows({1: [{"token": "a", "start": 0, "end": 1}]})
+        TEST_USER,
+        "jieba",
+        params,
+        _toy_rows({1: [{"token": "a", "start": 0, "end": 1}]}),
     )
     tc.write_or_append_cache(
-        "jieba", params, _toy_rows({2: [{"token": "b", "start": 0, "end": 1}]})
+        TEST_USER,
+        "jieba",
+        params,
+        _toy_rows({2: [{"token": "b", "start": 0, "end": 1}]}),
     )
-    hashes = tc.read_cached_hashes("jieba", params)
+    hashes = tc.read_cached_hashes(TEST_USER, "jieba", params)
     assert hashes == {1, 2}
 
 
 def test_write_or_append_rejects_missing_columns():
     bad = pl.DataFrame({"foo": [1, 2]})
     with pytest.raises(ValueError, match="missing columns"):
-        tc.write_or_append_cache("jieba", {}, bad)
+        tc.write_or_append_cache(TEST_USER, "jieba", {}, bad)
 
 
 def test_tokens_cache_lazyframe_returns_none_when_absent():
-    assert tc.tokens_cache_lazyframe("jieba", {"lowercase": False}) is None
+    assert (
+        tc.tokens_cache_lazyframe(TEST_USER, "jieba", {"lowercase": False})
+        is None
+    )
 
 
 def test_read_cached_hashes_empty_when_absent():
-    assert tc.read_cached_hashes("jieba", {"lowercase": False}) == set()
+    assert (
+        tc.read_cached_hashes(TEST_USER, "jieba", {"lowercase": False}) == set()
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -152,81 +197,71 @@ def test_read_cached_hashes_empty_when_absent():
 # --------------------------------------------------------------------------- #
 
 
+def _manifest(user: str) -> dict:
+    return json.loads(
+        (tc.tokens_cache_dir(user) / tc.MANIFEST_FILENAME).read_text()
+    )
+
+
 def test_add_reference_creates_entry_and_dedups():
     params = {"lowercase": False}
     fname = tc.cache_filename("jieba", params)
-    # The manifest entry is created on the first add even without a
-    # cache file — write paths set the size, the reference path only
-    # needs the entry's references list.
-    ref = tc.CacheReference(user_id="u1", workspace_id="ws1", node_id="n1")
-    tc.add_reference(fname, ref)
-    tc.add_reference(fname, ref)  # dedup
+    ref = _ref("ws1", "n1")
+    tc.add_reference(TEST_USER, fname, ref)
+    tc.add_reference(TEST_USER, fname, ref)  # dedup
 
-    manifest = json.loads(
-        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
-    )
-    refs = manifest["entries"][fname]["references"]
+    refs = _manifest(TEST_USER)["entries"][fname]["references"]
     assert refs == [ref.to_dict()]
 
 
 def test_drop_reference_removes_one_claim():
     params = {"lowercase": False}
     fname = tc.cache_filename("jieba", params)
-    ref_a = tc.CacheReference("u1", "ws1", "n1")
-    ref_b = tc.CacheReference("u1", "ws1", "n2")
-    tc.add_reference(fname, ref_a)
-    tc.add_reference(fname, ref_b)
+    ref_a = _ref("ws1", "n1")
+    ref_b = _ref("ws1", "n2")
+    tc.add_reference(TEST_USER, fname, ref_a)
+    tc.add_reference(TEST_USER, fname, ref_b)
 
-    tc.drop_reference(fname, ref_a)
-    manifest = json.loads(
-        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
-    )
-    refs = manifest["entries"][fname]["references"]
+    tc.drop_reference(TEST_USER, fname, ref_a)
+    refs = _manifest(TEST_USER)["entries"][fname]["references"]
     assert refs == [ref_b.to_dict()]
 
 
 def test_drop_node_references_drops_only_that_node():
     fname = tc.cache_filename("jieba", {})
-    tc.add_reference(fname, tc.CacheReference("u1", "ws1", "nA"))
-    tc.add_reference(fname, tc.CacheReference("u1", "ws1", "nB"))
-    tc.add_reference(fname, tc.CacheReference("u2", "ws1", "nA"))
+    tc.add_reference(TEST_USER, fname, _ref("ws1", "nA"))
+    tc.add_reference(TEST_USER, fname, _ref("ws1", "nB"))
+    tc.add_reference(TEST_USER, fname, _ref("ws2", "nA"))
 
-    tc.drop_node_references("u1", "ws1", "nA")
+    tc.drop_node_references(TEST_USER, "ws1", "nA")
 
-    manifest = json.loads(
-        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
-    )
-    refs = manifest["entries"][fname]["references"]
-    # u1/ws1/nA gone; u1/ws1/nB and u2/ws1/nA survive.
-    assert {(r["user_id"], r["workspace_id"], r["node_id"]) for r in refs} == {
-        ("u1", "ws1", "nB"),
-        ("u2", "ws1", "nA"),
+    refs = _manifest(TEST_USER)["entries"][fname]["references"]
+    # ws1/nA gone; ws1/nB and ws2/nA survive.
+    assert {(r["workspace_id"], r["node_id"]) for r in refs} == {
+        ("ws1", "nB"),
+        ("ws2", "nA"),
     }
 
 
 def test_drop_workspace_references_drops_only_that_workspace():
     fname = tc.cache_filename("jieba", {})
-    tc.add_reference(fname, tc.CacheReference("u1", "wsA", "n1"))
-    tc.add_reference(fname, tc.CacheReference("u1", "wsB", "n2"))
-    tc.add_reference(fname, tc.CacheReference("u2", "wsA", "n3"))
+    tc.add_reference(TEST_USER, fname, _ref("wsA", "n1"))
+    tc.add_reference(TEST_USER, fname, _ref("wsB", "n2"))
+    tc.add_reference(TEST_USER, fname, _ref("wsA", "n3"))
 
-    tc.drop_workspace_references("u1", "wsA")
+    tc.drop_workspace_references(TEST_USER, "wsA")
 
-    manifest = json.loads(
-        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
-    )
-    refs = manifest["entries"][fname]["references"]
-    # u1/wsA gone; u1/wsB and u2/wsA survive.
-    assert {(r["user_id"], r["workspace_id"]) for r in refs} == {
-        ("u1", "wsB"),
-        ("u2", "wsA"),
+    refs = _manifest(TEST_USER)["entries"][fname]["references"]
+    # wsA refs gone; wsB survives.
+    assert {(r["workspace_id"], r["node_id"]) for r in refs} == {
+        ("wsB", "n2"),
     }
 
 
 def test_drop_reference_is_idempotent_for_unknown_file():
     # Must not raise — node-delete path may run against a cache that
     # was already swept.
-    tc.drop_reference("nonexistent.parquet", tc.CacheReference("u", "w", "n"))
+    tc.drop_reference(TEST_USER, "nonexistent.parquet", _ref("w", "n"))
 
 
 # --------------------------------------------------------------------------- #
@@ -234,8 +269,11 @@ def test_drop_reference_is_idempotent_for_unknown_file():
 # --------------------------------------------------------------------------- #
 
 
-def _write_minimal_cache(model: str, params: dict, hash_value: int) -> Path:
+def _write_minimal_cache(
+    user: str, model: str, params: dict, hash_value: int
+) -> Path:
     return tc.write_or_append_cache(
+        user,
         model,
         params,
         _toy_rows({hash_value: [{"token": "x", "start": 0, "end": 1}]}),
@@ -244,94 +282,110 @@ def _write_minimal_cache(model: str, params: dict, hash_value: int) -> Path:
 
 def test_sweep_keeps_referenced_files():
     params = {"lowercase": False}
-    path = _write_minimal_cache("jieba", params, 1)
-    tc.add_reference(path.name, tc.CacheReference("u", "w", "n"))
+    path = _write_minimal_cache(TEST_USER, "jieba", params, 1)
+    tc.add_reference(TEST_USER, path.name, _ref("w", "n"))
 
-    removed = tc.sweep_unreferenced(now=datetime.now(timezone.utc) + timedelta(days=30))
-    assert removed == []
+    removed = tc.sweep_unreferenced(
+        TEST_USER, now=datetime.now(timezone.utc) + timedelta(days=30)
+    )
+    assert removed == {TEST_USER: []}
     assert path.exists()
 
 
 def test_sweep_keeps_unreferenced_files_inside_grace_period():
     params = {"lowercase": False}
-    path = _write_minimal_cache("jieba", params, 1)
-    # No add_reference; just-written so within the default 7-day grace.
-    removed = tc.sweep_unreferenced()
-    assert removed == []
+    path = _write_minimal_cache(TEST_USER, "jieba", params, 1)
+    removed = tc.sweep_unreferenced(TEST_USER)
+    assert removed == {TEST_USER: []}
     assert path.exists()
 
 
 def test_sweep_removes_unreferenced_files_past_grace_period():
     params = {"lowercase": False}
-    path = _write_minimal_cache("jieba", params, 1)
-    # Simulate elapsed time by jumping ``now`` forward past the grace
-    # period; ``last_accessed_at`` in the manifest was set at write
-    # time, so this triggers eviction.
+    path = _write_minimal_cache(TEST_USER, "jieba", params, 1)
     far_future = datetime.now(timezone.utc) + timedelta(days=30)
-    removed = tc.sweep_unreferenced(grace_period_days=7, now=far_future)
-    assert removed == [path.name]
+    removed = tc.sweep_unreferenced(
+        TEST_USER, grace_period_days=7, now=far_future
+    )
+    assert removed == {TEST_USER: [path.name]}
     assert not path.exists()
 
 
 def test_sweep_reaps_orphan_parquets_past_grace():
     # File on disk without any manifest entry — possible if a tokenise
     # write succeeded but the manifest update crashed.
-    cache_dir = tc.tokens_cache_dir()
+    cache_dir = tc.tokens_cache_dir(TEST_USER)
     orphan = cache_dir / "ghost__abc.parquet"
     pl.DataFrame({"x": [1]}).write_parquet(orphan)
-    # Backdate mtime past the grace period.
     old = (datetime.now(timezone.utc) - timedelta(days=30)).timestamp()
     import os as _os
 
     _os.utime(orphan, (old, old))
 
-    removed = tc.sweep_unreferenced(grace_period_days=7)
-    assert orphan.name in removed
+    removed = tc.sweep_unreferenced(TEST_USER, grace_period_days=7)
+    assert orphan.name in removed[TEST_USER]
     assert not orphan.exists()
 
 
 def test_sweep_cleans_manifest_entries_for_vanished_files():
     fname = tc.cache_filename("jieba", {})
-    tc.add_reference(fname, tc.CacheReference("u", "w", "n"))  # creates entry
-    # Drop the reference so the entry has no claims; but never wrote
-    # the parquet → vanished file.
-    tc.drop_reference(fname, tc.CacheReference("u", "w", "n"))
+    tc.add_reference(TEST_USER, fname, _ref("w", "n"))  # creates entry
+    tc.drop_reference(TEST_USER, fname, _ref("w", "n"))  # vanished file
 
-    tc.sweep_unreferenced()
-    manifest = json.loads(
-        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
-    )
-    assert fname not in manifest["entries"]
+    tc.sweep_unreferenced(TEST_USER)
+    assert fname not in _manifest(TEST_USER)["entries"]
 
 
 def test_touch_access_resets_grace_window():
     params = {"lowercase": False}
-    path = _write_minimal_cache("jieba", params, 1)
-    # Simulate the file aging out by manually backdating its
-    # last_accessed_at, then touch it.
-    manifest_path = tc.tokens_cache_dir() / tc.MANIFEST_FILENAME
+    path = _write_minimal_cache(TEST_USER, "jieba", params, 1)
+    # Manually backdate, then touch.
+    manifest_path = tc.tokens_cache_dir(TEST_USER) / tc.MANIFEST_FILENAME
     manifest = json.loads(manifest_path.read_text())
     manifest["entries"][path.name]["last_accessed_at"] = (
         (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
     )
     manifest_path.write_text(json.dumps(manifest))
 
-    tc.touch_access(path.name)
+    tc.touch_access(TEST_USER, path.name)
 
-    removed = tc.sweep_unreferenced(grace_period_days=7)
+    removed = tc.sweep_unreferenced(TEST_USER, grace_period_days=7)
     assert path.exists()
-    assert removed == []
+    assert removed == {TEST_USER: []}
 
 
-def test_tokenise_column_slice_collect_returns_correct_tokens(isolated_cache_dir):
-    """Pins the slice-pushdown invariant captured in Fix #6 of the PLAN.
+def test_sweep_walks_all_users_when_user_id_omitted():
+    """The startup-hook path: ``sweep_unreferenced()`` without a user
+    must iterate every user that has a cache directory on disk."""
+    params = {"lowercase": False}
+    # Two users, both with unreferenced caches eligible for eviction.
+    pa = _write_minimal_cache("alice", "jieba", params, 1)
+    pb = _write_minimal_cache("bob", "jieba", params, 1)
+
+    far_future = datetime.now(timezone.utc) + timedelta(days=30)
+    removed = tc.sweep_unreferenced(grace_period_days=7, now=far_future)
+
+    assert set(removed.keys()) >= {"alice", "bob"}
+    assert pa.name in removed["alice"]
+    assert pb.name in removed["bob"]
+    assert not pa.exists()
+    assert not pb.exists()
+
+
+# --------------------------------------------------------------------------- #
+# tokenise_column integration                                                 #
+# --------------------------------------------------------------------------- #
+
+
+def test_tokenise_column_slice_collect_returns_correct_tokens(
+    isolated_cache_root,
+):
+    """Pins the slice-correctness invariant from Fix #6 of the PLAN.
 
     Polars 1.40 doesn't push the slice past the LEFT JOIN to the cache
     parquet (the join still reads the full file), but the hash match
     keeps row identity correct so a sliced collect must return tokens
-    matching the corresponding prefix of the full collect. This test
-    locks down the functional contract — any future re-ordering of
-    the cache-build plan must not break it.
+    matching the corresponding prefix of the full collect.
     """
     from docworkspace import Node
 
@@ -354,6 +408,7 @@ def test_tokenise_column_slice_collect_returns_correct_tokens(isolated_cache_dir
         source_column="text",
         model="bert-base-uncased",
         language="en",
+        user_id=TEST_USER,
     )
     derived_name = derived_column_name(
         TOKENS_FORM, "text", "bert-base-uncased"
@@ -365,7 +420,6 @@ def test_tokenise_column_slice_collect_returns_correct_tokens(isolated_cache_dir
     assert page.height == 5
     assert derived_name in page.columns
     # The first 5 rows of the slice must equal the first 5 rows of the
-    # full collect — tokens included. Proves the hash join keeps the
-    # source→tokens mapping intact under slicing.
+    # full collect — tokens included.
     full_first_five = full.head(5)
     assert page.equals(full_first_five)

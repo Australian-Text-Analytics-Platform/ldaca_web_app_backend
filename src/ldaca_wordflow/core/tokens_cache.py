@@ -1,4 +1,4 @@
-"""User-scoped, content-addressed cache of tokenisation results.
+"""Per-user, content-addressed cache of tokenisation results.
 
 Tokenising a column is expensive — especially for the new CJK backends
 (Jieba for Chinese, Lindera for Japanese / Korean) where a single 10 k
@@ -11,32 +11,50 @@ from scratch. This module amortises that cost to once per (model,
 params, source content) tuple by writing the per-row tokens to a
 parquet that persists across workspace open/close.
 
-Design (mirrors PLAN-cjk-tokeniser-perf.md §"Tokens cache"):
+Design:
 
-* **Location.** ``~/.ldaca/tokens-cache/`` — outside every per-user /
-  per-workspace directory so workspace deletion or workspace GC never
-  touches the cache. Path is user-scoped (one cache per OS user).
+* **Per-user location.** ``{user_root}/user_cache/tokens/`` — a sibling
+  of the embeddings cache, scoped to one LDaCA user. Resolved via
+  :func:`core.utils.get_user_cache_folder` so it lives under the same
+  ``Documents/ldaca/users/<id>/`` tree as the rest of that user's
+  data and never lands inside ``user_data`` (which the data-loader UI
+  would surface). Workspace-GC paths can't touch it because they only
+  walk inside individual workspace folders.
 * **Filename.** ``{model}__{params_hash}.parquet`` — one parquet per
-  (model, params) globally. New tokens are appended; cache hit rate
-  improves over time as the user explores related corpora.
+  (model, params) for a given user. New tokens are appended; cache
+  hit rate improves over time as the user explores related corpora.
 * **Schema.** ``__content_hash: u64`` (``pl.col(source).hash()``) and
-  ``tokens: List<Struct<token, start, end>>``. Source rows that share
-  content (duplicate documents within or across corpora) share one
-  cache row.
+  ``tokens: List<Struct<token, start, end>>``. Within a single user's
+  cache, source rows that share content (duplicate documents within
+  or across corpora) share one cache row.
 * **Lookup.** The lazy plan joins the source frame to the cached
   frame on ``__content_hash``. Filter / sort / select downstream is
   free: surviving rows automatically retrieve their tokens; dropped
   columns trigger projection pushdown and never read the cache.
-* **References.** A sidecar ``manifest.json`` tracks which
-  ``(user_id, workspace_id, node_id)`` triples reference each cache
-  file. ``tokenise_column`` calls :func:`add_reference`; node and
-  workspace deletion paths call :func:`drop_reference` /
-  :func:`drop_workspace_references`. :func:`sweep_unreferenced` then
-  deletes any cache file whose ``references`` is empty AND that has
-  not been accessed in ``grace_period_days`` days (default 7).
+* **References.** A sidecar ``manifest.json`` (per user) tracks which
+  ``(workspace_id, node_id)`` pairs reference each cache file.
+  ``tokenise_column`` calls :func:`add_reference`; node and workspace
+  deletion paths call :func:`drop_reference` /
+  :func:`drop_node_references` / :func:`drop_workspace_references`.
+  :func:`sweep_unreferenced` then deletes any cache file whose
+  ``references`` is empty AND that has not been accessed in
+  ``grace_period_days`` days (default 7).
+
+Why per-user (not machine-wide):
+
+The original draft stored the cache under ``~/.ldaca/tokens-cache/``
+shared across LDaCA users. The trade-off — cross-user dedup vs scoped
+storage that matches the existing ``{user_root}/user_cache/``
+convention used by the embeddings cache — falls clearly on the
+per-user side: real LDaCA installs are either single-user Tauri
+desktops or per-researcher cloud accounts working on their own
+corpora, so the dedup benefit is mostly theoretical, while privacy
+(content-hash leakage across users) and conventional layout
+(``user_cache`` already contains ``embeddings/``; tokens sits beside
+it) are real wins.
 
 Concurrency: per-cache-file ``fcntl.flock`` over a ``.lock`` sidecar
-serialises writers. The manifest has its own lock. Atomic
+serialises writers. The per-user manifest has its own lock. Atomic
 write-to-temp + ``os.replace`` makes partial writes invisible to
 concurrent readers. Windows (Tauri build) does not have ``fcntl``;
 the lock acquisition is best-effort there — multiple concurrent
@@ -66,6 +84,9 @@ from typing import Iterator, Optional
 
 import polars as pl
 
+from .utils import _user_root_folder, get_user_cache_folder
+from ..settings import settings
+
 logger = logging.getLogger(__name__)
 
 # POSIX file-lock support; on Windows the import is absent and the
@@ -76,10 +97,14 @@ except ImportError:  # pragma: no cover — Windows path
     fcntl = None  # type: ignore[assignment]
 
 
+# When set, points at a base directory under which each user gets a
+# ``{base}/{user_id}/`` subdir. Used by the test suite (autouse fixture
+# in conftest) and by Tauri builds that need to relocate caches away
+# from the bundle.
 CACHE_ROOT_ENV = "LDACA_TOKENS_CACHE_DIR"
-DEFAULT_CACHE_ROOT = Path.home() / ".ldaca" / "tokens-cache"
 
 MANIFEST_FILENAME = "manifest.json"
+TOKENS_CACHE_SUBDIR = "tokens"
 DEFAULT_GRACE_PERIOD_DAYS = 7
 
 # The hashed-content key column that the join uses. Kept here so callers
@@ -93,19 +118,28 @@ CONTENT_HASH_COLUMN = "__ldaca_content_hash__"
 # --------------------------------------------------------------------------- #
 
 
-def tokens_cache_dir() -> Path:
-    """Return the user-scoped cache directory, creating it on first use.
+def tokens_cache_dir(user_id: str) -> Path:
+    """Return ``{user_root}/user_cache/tokens`` for ``user_id``.
 
-    Honours ``LDACA_TOKENS_CACHE_DIR`` for tests and for non-default
-    Tauri install layouts.
+    Sibling of ``user_cache/embeddings`` so a user wiping their
+    ``user_cache`` clears everything together. Created on first use.
+
+    Override the storage root with ``LDACA_TOKENS_CACHE_DIR`` for tests
+    and non-default Tauri install layouts — the env var supplies the
+    base path; the per-user subdir layout is still applied so multi-
+    user behaviour is exercised even under the override.
     """
-    root = Path(os.environ.get(CACHE_ROOT_ENV) or DEFAULT_CACHE_ROOT).expanduser()
+    override = os.environ.get(CACHE_ROOT_ENV)
+    if override:
+        root = Path(override).expanduser() / user_id / TOKENS_CACHE_SUBDIR
+    else:
+        root = get_user_cache_folder(user_id) / TOKENS_CACHE_SUBDIR
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
-def _manifest_path() -> Path:
-    return tokens_cache_dir() / MANIFEST_FILENAME
+def _manifest_path(user_id: str) -> Path:
+    return tokens_cache_dir(user_id) / MANIFEST_FILENAME
 
 
 def _params_hash(params: dict) -> str:
@@ -118,16 +152,18 @@ def _params_hash(params: dict) -> str:
 
 
 def cache_filename(model: str, params: dict) -> str:
-    """Filename for the cache parquet covering one (model, params) tuple."""
-    # Sanitise the model id so a hypothetical "../etc/passwd" model name
-    # can't escape the cache dir. Models we ship use simple alnum + dash
-    # but external callers might be hostile.
+    """Filename for the cache parquet covering one (model, params) tuple.
+
+    Filename only — no user_id component, because the file already lives
+    under a per-user directory. Sanitises the model id so a hypothetical
+    ``../etc/passwd`` model name can't escape the cache dir.
+    """
     safe_model = "".join(c if c.isalnum() or c in "-._" else "_" for c in model)
     return f"{safe_model}__{_params_hash(params)}.parquet"
 
 
-def cache_path(model: str, params: dict) -> Path:
-    return tokens_cache_dir() / cache_filename(model, params)
+def cache_path(user_id: str, model: str, params: dict) -> Path:
+    return tokens_cache_dir(user_id) / cache_filename(model, params)
 
 
 # --------------------------------------------------------------------------- #
@@ -192,26 +228,29 @@ def _atomic_write_parquet(df: pl.DataFrame, dest: Path) -> None:
 
 @dataclass(frozen=True)
 class CacheReference:
-    """One node's claim on a cache file."""
+    """One node's claim on a cache file within a single user's cache.
 
-    user_id: str
+    The owning user is implicit in the cache directory the manifest
+    lives in, so the reference itself only carries the workspace +
+    node pair.
+    """
+
     workspace_id: str
     node_id: str
 
     def to_dict(self) -> dict:
         return {
-            "user_id": self.user_id,
             "workspace_id": self.workspace_id,
             "node_id": self.node_id,
         }
 
 
 def _empty_manifest() -> dict:
-    return {"version": 1, "entries": {}}
+    return {"version": 2, "entries": {}}
 
 
-def _read_manifest_unlocked() -> dict:
-    path = _manifest_path()
+def _read_manifest_unlocked(user_id: str) -> dict:
+    path = _manifest_path(user_id)
     if not path.exists():
         return _empty_manifest()
     try:
@@ -225,14 +264,18 @@ def _read_manifest_unlocked() -> dict:
         )
         return _empty_manifest()
     if not isinstance(data, dict) or "entries" not in data:
-        logger.warning("tokens-cache manifest %s has unexpected shape; resetting", path)
+        logger.warning(
+            "tokens-cache manifest %s has unexpected shape; resetting", path
+        )
         return _empty_manifest()
     return data
 
 
-def _write_manifest_unlocked(manifest: dict) -> None:
-    path = _manifest_path()
-    fd, tmp_path = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+def _write_manifest_unlocked(user_id: str, manifest: dict) -> None:
+    path = _manifest_path(user_id)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+    )
     os.close(fd)
     try:
         with open(tmp_path, "w") as fh:
@@ -262,35 +305,35 @@ def _ensure_entry(manifest: dict, filename: str, *, size_bytes: int = 0) -> dict
     return entry
 
 
-def add_reference(filename: str, ref: CacheReference) -> None:
+def add_reference(user_id: str, filename: str, ref: CacheReference) -> None:
     """Record that ``ref`` depends on the cache file named ``filename``.
 
-    Idempotent — calling twice with the same triple inserts one entry.
+    Idempotent — calling twice with the same pair inserts one entry.
     """
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         entry = _ensure_entry(manifest, filename)
         ref_dict = ref.to_dict()
         if ref_dict not in entry["references"]:
             entry["references"].append(ref_dict)
         entry["last_accessed_at"] = _now_iso()
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
 
-def drop_reference(filename: str, ref: CacheReference) -> None:
-    """Remove one ``(user, workspace, node)`` claim on the cache file.
+def drop_reference(user_id: str, filename: str, ref: CacheReference) -> None:
+    """Remove one ``(workspace, node)`` claim on the cache file.
 
     No-op if the manifest doesn't list the reference (idempotent).
     """
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         entries = manifest.get("entries", {})
         entry = entries.get(filename)
         if not entry:
             return
         ref_dict = ref.to_dict()
         entry["references"] = [r for r in entry["references"] if r != ref_dict]
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
 
 def drop_workspace_references(user_id: str, workspace_id: str) -> None:
@@ -299,18 +342,20 @@ def drop_workspace_references(user_id: str, workspace_id: str) -> None:
     Called by the workspace-delete path so the sweep can reclaim files
     that no other workspace still references.
     """
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         for entry in manifest.get("entries", {}).values():
             entry["references"] = [
                 r
                 for r in entry["references"]
-                if not (r.get("user_id") == user_id and r.get("workspace_id") == workspace_id)
+                if r.get("workspace_id") != workspace_id
             ]
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
 
-def drop_node_references(user_id: str, workspace_id: str, node_id: str) -> None:
+def drop_node_references(
+    user_id: str, workspace_id: str, node_id: str
+) -> None:
     """Drop every cache reference owned by one node within one workspace.
 
     Called from the node-delete path. Walks all manifest entries rather
@@ -318,31 +363,30 @@ def drop_node_references(user_id: str, workspace_id: str, node_id: str) -> None:
     so a node with mixed-model derived columns is cleaned up in one call
     and so the cleanup is robust to partial-write metadata corruption.
     """
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         for entry in manifest.get("entries", {}).values():
             entry["references"] = [
                 r
                 for r in entry["references"]
                 if not (
-                    r.get("user_id") == user_id
-                    and r.get("workspace_id") == workspace_id
+                    r.get("workspace_id") == workspace_id
                     and r.get("node_id") == node_id
                 )
             ]
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
 
-def touch_access(filename: str) -> None:
+def touch_access(user_id: str, filename: str) -> None:
     """Update ``last_accessed_at`` without changing references — call
     on every cache hit so the LRU-sweep doesn't evict hot files."""
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         entries = manifest.get("entries", {})
         if filename not in entries:
             return
         entries[filename]["last_accessed_at"] = _now_iso()
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
 
 # --------------------------------------------------------------------------- #
@@ -350,17 +394,18 @@ def touch_access(filename: str) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def cache_exists(model: str, params: dict) -> bool:
-    return cache_path(model, params).exists()
+def cache_exists(user_id: str, model: str, params: dict) -> bool:
+    return cache_path(user_id, model, params).exists()
 
 
-def read_cached_hashes(model: str, params: dict) -> set[int]:
+def read_cached_hashes(user_id: str, model: str, params: dict) -> set[int]:
     """Return the set of content-hashes currently in the cache parquet.
 
-    Used by :func:`ensure_tokens_cache` to decide which source rows need
-    fresh tokenisation. Empty set when the cache file doesn't exist yet.
+    Used by :func:`derived_columns.tokenise_column` to decide which
+    source rows need fresh tokenisation. Empty set when the cache file
+    doesn't exist yet.
     """
-    path = cache_path(model, params)
+    path = cache_path(user_id, model, params)
     if not path.exists():
         return set()
     df = pl.scan_parquet(path).select(CONTENT_HASH_COLUMN).collect()
@@ -368,11 +413,12 @@ def read_cached_hashes(model: str, params: dict) -> set[int]:
 
 
 def write_or_append_cache(
+    user_id: str,
     model: str,
     params: dict,
     new_rows: pl.DataFrame,
 ) -> Path:
-    """Merge ``new_rows`` into the (model, params) cache parquet.
+    """Merge ``new_rows`` into the (user, model, params) cache parquet.
 
     ``new_rows`` must carry exactly ``CONTENT_HASH_COLUMN`` and a
     ``tokens`` list-of-struct column. Rows whose content-hash is
@@ -390,7 +436,7 @@ def write_or_append_cache(
             f"got {new_rows.columns}"
         )
 
-    path = cache_path(model, params)
+    path = cache_path(user_id, model, params)
     with _file_lock(path):
         if path.exists():
             existing = pl.read_parquet(path)
@@ -409,24 +455,26 @@ def write_or_append_cache(
         else:
             _atomic_write_parquet(new_rows, path)
 
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         entry = _ensure_entry(manifest, path.name, size_bytes=path.stat().st_size)
         entry["size_bytes"] = path.stat().st_size
         entry["last_accessed_at"] = _now_iso()
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
     return path
 
 
-def tokens_cache_lazyframe(model: str, params: dict) -> Optional[pl.LazyFrame]:
+def tokens_cache_lazyframe(
+    user_id: str, model: str, params: dict
+) -> Optional[pl.LazyFrame]:
     """Return a LazyFrame over the cache file, or ``None`` if absent.
 
     The frame has columns ``CONTENT_HASH_COLUMN, tokens``. Join your
     source frame on ``CONTENT_HASH_COLUMN`` to attach the tokens column
     without re-tokenising.
     """
-    path = cache_path(model, params)
+    path = cache_path(user_id, model, params)
     if not path.exists():
         return None
     return pl.scan_parquet(path)
@@ -437,13 +485,59 @@ def tokens_cache_lazyframe(model: str, params: dict) -> Optional[pl.LazyFrame]:
 # --------------------------------------------------------------------------- #
 
 
+def _all_user_ids_with_cache() -> list[str]:
+    """Enumerate every user that has a tokens-cache directory on disk.
+
+    Used by the all-users sweep on backend startup. Looks at both the
+    env-overridden base (tests / Tauri sandbox) and the production
+    ``{data_root}/{user_data_folder}/`` tree.
+    """
+    override = os.environ.get(CACHE_ROOT_ENV)
+    if override:
+        base = Path(override).expanduser()
+        if not base.exists():
+            return []
+        return sorted(
+            p.name for p in base.iterdir()
+            if p.is_dir() and (p / TOKENS_CACHE_SUBDIR).exists()
+        )
+
+    # Production: walk the same per-user tree that get_user_cache_folder
+    # writes into. Single-user mode collapses to one ``user_root`` dir;
+    # multi-user mode has one entry per user.
+    users_root = settings.get_data_root() / settings.user_data_folder
+    if not users_root.exists():
+        return []
+    out: list[str] = []
+    for entry in sorted(users_root.iterdir()):
+        if not entry.is_dir():
+            continue
+        if not (entry / "user_cache" / TOKENS_CACHE_SUBDIR).exists():
+            continue
+        # In single-user mode the folder is literally "user_root";
+        # in multi-user mode it is "user_<id>" — the bare folder name
+        # is what get_user_cache_folder uses to identify the user.
+        name = entry.name
+        if name.startswith("user_"):
+            out.append(name[len("user_"):] if name != "user_root" else "root")
+        else:
+            out.append(name)
+    return out
+
+
 def sweep_unreferenced(
+    user_id: Optional[str] = None,
     *,
     grace_period_days: int = DEFAULT_GRACE_PERIOD_DAYS,
     now: Optional[datetime] = None,
-) -> list[str]:
+) -> dict[str, list[str]]:
     """Delete cache files with no references that are also past the grace
-    window. Returns the names of the files removed.
+    window. Returns ``{user_id: [removed_filenames, ...]}``.
+
+    When ``user_id`` is ``None`` (the startup-hook path), walks every
+    user that has a tokens-cache directory on disk and sweeps each in
+    turn. Pass a concrete ``user_id`` to scope the sweep to one user
+    (e.g. for a per-user maintenance trigger).
 
     Also reaps:
     * orphan cache files that the manifest doesn't know about (e.g.
@@ -452,13 +546,31 @@ def sweep_unreferenced(
     * manifest entries pointing at vanished files (e.g. user deleted
       the parquet by hand) — entry is removed.
     """
+    if user_id is None:
+        results: dict[str, list[str]] = {}
+        for uid in _all_user_ids_with_cache():
+            results[uid] = _sweep_unreferenced_for_user(
+                uid, grace_period_days=grace_period_days, now=now
+            )
+        return results
+    return {user_id: _sweep_unreferenced_for_user(
+        user_id, grace_period_days=grace_period_days, now=now
+    )}
+
+
+def _sweep_unreferenced_for_user(
+    user_id: str,
+    *,
+    grace_period_days: int,
+    now: Optional[datetime],
+) -> list[str]:
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(days=grace_period_days)
     removed: list[str] = []
 
-    cache_dir = tokens_cache_dir()
-    with _file_lock(_manifest_path()):
-        manifest = _read_manifest_unlocked()
+    cache_dir = tokens_cache_dir(user_id)
+    with _file_lock(_manifest_path(user_id)):
+        manifest = _read_manifest_unlocked(user_id)
         entries = manifest.setdefault("entries", {})
 
         # Pass 1 — manifest-driven sweep.
@@ -485,7 +597,9 @@ def sweep_unreferenced(
             if path.name in entries:
                 continue
             try:
-                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(
+                    path.stat().st_mtime, tz=timezone.utc
+                )
             except OSError:
                 continue
             if mtime > cutoff:
@@ -494,9 +608,11 @@ def sweep_unreferenced(
                 path.unlink()
                 removed.append(path.name)
             except OSError as exc:
-                logger.warning("sweep: failed to remove orphan %s: %s", path, exc)
+                logger.warning(
+                    "sweep: failed to remove orphan %s: %s", path, exc
+                )
 
-        _write_manifest_unlocked(manifest)
+        _write_manifest_unlocked(user_id, manifest)
 
     return removed
 
@@ -518,17 +634,21 @@ def _parse_iso(text: Optional[str]) -> Optional[datetime]:
 # --------------------------------------------------------------------------- #
 
 
-def _reset_for_tests() -> None:
-    """Wipe the cache directory. Test-only — never call from production
-    code paths. The :envvar:`LDACA_TOKENS_CACHE_DIR` should point at a
-    tmpdir during tests so this is bounded."""
-    root = tokens_cache_dir()
+def _reset_for_tests(user_id: str) -> None:
+    """Wipe the cache directory for one test user.
+
+    Test-only — never call from production code paths. The
+    :envvar:`LDACA_TOKENS_CACHE_DIR` should point at a tmpdir during
+    tests so this is bounded.
+    """
+    root = tokens_cache_dir(user_id)
     if root.exists():
         shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
 
 
 __all__ = [
+    "CACHE_ROOT_ENV",
     "CONTENT_HASH_COLUMN",
     "CacheReference",
     "add_reference",

@@ -22,10 +22,14 @@ def anyio_backend():
 def _tokens_cache_in_tmpdir(tmp_path_factory):
     """Redirect the tokens cache to a tmpdir for the whole test session.
 
-    Without this, ``tokenise_column`` would write parquets + a manifest
-    into ``~/.ldaca/tokens-cache/`` on the developer's machine each
-    time the tokens tests ran. Pointing the env var at a per-session
-    tmpdir keeps the cache isolated and cleans up automatically.
+    The cache is per-user (lives at ``{user_root}/user_cache/tokens/``
+    in production). When ``LDACA_TOKENS_CACHE_DIR`` is set, the module
+    treats it as the BASE and still applies the per-user subdir layout
+    (``{base}/{user_id}/tokens/``) — so tests exercise the same path
+    structure as production while staying isolated under a tmpdir.
+
+    Without this fixture, ``tokenise_column`` would write parquets
+    into the developer's real ``{user_root}/user_cache/tokens/``.
     """
     import os
 

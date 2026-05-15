@@ -79,17 +79,21 @@ async def lifespan(app: FastAPI):
     # the grace period — we only delete cache files that have had zero
     # node references for the default 7 days. Best-effort: a failure here
     # must not block backend startup, since the cache is purely a perf
-    # optimisation.
+    # optimisation. The cache is per-user (lives at
+    # ``{user_root}/user_cache/tokens/``) so the sweep walks every user
+    # that has a cache directory on disk.
     try:
         from .core.tokens_cache import sweep_unreferenced
 
-        removed = sweep_unreferenced()
-        if removed:
-            logger.info(
-                "tokens-cache startup sweep removed %d unreferenced file(s): %s",
-                len(removed),
-                ", ".join(removed),
-            )
+        per_user_removed = sweep_unreferenced()
+        for uid, removed in per_user_removed.items():
+            if removed:
+                logger.info(
+                    "tokens-cache startup sweep removed %d unreferenced file(s) for user %s: %s",
+                    len(removed),
+                    uid,
+                    ", ".join(removed),
+                )
     except Exception:  # pragma: no cover — best-effort
         logger.exception("tokens-cache startup sweep failed; cache may be stale")
 

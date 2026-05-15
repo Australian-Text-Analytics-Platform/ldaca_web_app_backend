@@ -135,9 +135,9 @@ async def delete_derived_column(
 
     if cache_filename:
         drop_cache_reference(
+            user_id,
             cache_filename,
             CacheReference(
-                user_id=user_id,
                 workspace_id=workspace_id,
                 node_id=str(getattr(node, "id", node.name)),
             ),
