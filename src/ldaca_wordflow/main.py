@@ -74,6 +74,25 @@ async def lifespan(app: FastAPI):
 
     start_model_prefetch()
 
+    # Sweep orphaned tokens-cache parquets at startup. Cheap on a fresh
+    # install (no manifest, no files) and bounded on long-running ones by
+    # the grace period — we only delete cache files that have had zero
+    # node references for the default 7 days. Best-effort: a failure here
+    # must not block backend startup, since the cache is purely a perf
+    # optimisation.
+    try:
+        from .core.tokens_cache import sweep_unreferenced
+
+        removed = sweep_unreferenced()
+        if removed:
+            logger.info(
+                "tokens-cache startup sweep removed %d unreferenced file(s): %s",
+                len(removed),
+                ", ".join(removed),
+            )
+    except Exception:  # pragma: no cover — best-effort
+        logger.exception("tokens-cache startup sweep failed; cache may be stale")
+
     logger.info(
         "Backend ready: docs=http://%s:%s/api/docs health=http://%s:%s/health",
         current_settings.server_host,
