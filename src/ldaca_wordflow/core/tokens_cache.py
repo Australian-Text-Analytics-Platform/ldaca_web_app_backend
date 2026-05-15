@@ -310,6 +310,29 @@ def drop_workspace_references(user_id: str, workspace_id: str) -> None:
         _write_manifest_unlocked(manifest)
 
 
+def drop_node_references(user_id: str, workspace_id: str, node_id: str) -> None:
+    """Drop every cache reference owned by one node within one workspace.
+
+    Called from the node-delete path. Walks all manifest entries rather
+    than asking the caller to enumerate ``node.derived[*]['cache_filename']``
+    so a node with mixed-model derived columns is cleaned up in one call
+    and so the cleanup is robust to partial-write metadata corruption.
+    """
+    with _file_lock(_manifest_path()):
+        manifest = _read_manifest_unlocked()
+        for entry in manifest.get("entries", {}).values():
+            entry["references"] = [
+                r
+                for r in entry["references"]
+                if not (
+                    r.get("user_id") == user_id
+                    and r.get("workspace_id") == workspace_id
+                    and r.get("node_id") == node_id
+                )
+            ]
+        _write_manifest_unlocked(manifest)
+
+
 def touch_access(filename: str) -> None:
     """Update ``last_accessed_at`` without changing references — call
     on every cache hit so the LRU-sweep doesn't evict hot files."""
@@ -512,6 +535,7 @@ __all__ = [
     "cache_exists",
     "cache_filename",
     "cache_path",
+    "drop_node_references",
     "drop_reference",
     "drop_workspace_references",
     "read_cached_hashes",

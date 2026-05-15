@@ -24,6 +24,10 @@ from pydantic import BaseModel
 
 from ....core.auth import get_current_user
 from ....core.derived_columns import tokenise_column
+from ....core.tokens_cache import (
+    CacheReference,
+    drop_reference as drop_cache_reference,
+)
 from ....core.workspace import workspace_manager
 from ..utils import update_workspace
 from .generated_columns import TOKENS_FORM
@@ -114,10 +118,30 @@ async def delete_derived_column(
             detail=f"Derived column {column_name!r} not registered on this node",
         )
 
+    # Capture the cache_filename before unregister so we can drop the
+    # corresponding manifest reference. Older derived entries from before
+    # the cache landed won't have this field — handle absence as "no
+    # reference to drop" rather than an error.
+    cache_filename: Optional[str] = (
+        node.derived[column_name].get("cache_filename")
+        if isinstance(node.derived[column_name], dict)
+        else None
+    )
+
     schema_names = node.data.collect_schema().names()
     if column_name in schema_names:
         node.data = node.data.drop(column_name, strict=False)
     node.unregister_derived_column(column_name)
+
+    if cache_filename:
+        drop_cache_reference(
+            cache_filename,
+            CacheReference(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                node_id=str(getattr(node, "id", node.name)),
+            ),
+        )
 
     update_workspace(user_id, workspace_id, best_effort=True)
     return {"state": "successful", "deleted_column": column_name}
