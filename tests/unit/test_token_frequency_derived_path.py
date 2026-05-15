@@ -114,6 +114,66 @@ def test_worker_mixes_tokens_and_text_paths(tmp_path, monkeypatch):
     assert tokens_counts == {"beta": 1, "gamma": 2}
 
 
+def test_worker_uses_node_token_streams_when_provided(tmp_path, monkeypatch):
+    """Phase 5 perf path: the API endpoint spills one row per token to a
+    parquet via ``sink_parquet``, then hands the path to the worker.
+    Worker scans + group_by.len in Polars — no Python list materialisation.
+    """
+    _stub_polars_text(monkeypatch)
+
+    # Simulate the spill the endpoint produces — one row per token, in
+    # the ``token`` column, post-explode + post-null-filter.
+    stream_path = tmp_path / "stream.parquet"
+    pl.DataFrame(
+        {"token": ["alpha", "beta", "alpha", "alpha", "gamma", "gamma"]}
+    ).write_parquet(stream_path)
+
+    result = run_token_frequencies_task(
+        configure_worker_environment=lambda: None,
+        user_id="user-1",
+        workspace_id="ws-1",
+        node_corpora={},
+        node_token_streams={"node-1": str(stream_path)},
+        node_display_names={"node-1": "ZH Corpus"},
+        artifact_dir=str(tmp_path),
+        artifact_prefix="token_freq_stream",
+    )
+
+    assert result["state"] == "successful"
+    parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
+    counts = pl.read_parquet(parquet_path).to_dicts()
+    counts_map = {row["token"]: row["frequency"] for row in counts}
+    assert counts_map == {"alpha": 3, "beta": 1, "gamma": 2}
+
+
+def test_worker_stream_takes_precedence_over_legacy_tokens(tmp_path, monkeypatch):
+    """When both ``node_tokens`` and ``node_token_streams`` carry the
+    same node id, the stream wins — the legacy payload is only the
+    fallback for queued tasks that predate the stream path."""
+    _stub_polars_text(monkeypatch)
+
+    stream_path = tmp_path / "stream.parquet"
+    pl.DataFrame({"token": ["stream-only"]}).write_parquet(stream_path)
+
+    result = run_token_frequencies_task(
+        configure_worker_environment=lambda: None,
+        user_id="user-1",
+        workspace_id="ws-1",
+        node_corpora={},
+        node_tokens={"n": [["legacy-only"]]},
+        node_token_streams={"n": str(stream_path)},
+        node_display_names={"n": "Corpus"},
+        artifact_dir=str(tmp_path),
+        artifact_prefix="token_freq_pref",
+    )
+
+    parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
+    counts = pl.read_parquet(parquet_path).to_dicts()
+    counts_map = {row["token"]: row["frequency"] for row in counts}
+    assert counts_map == {"stream-only": 1}
+    assert "legacy-only" not in counts_map
+
+
 def test_worker_token_path_matches_manual_explode(tmp_path, monkeypatch):
     """Consistency proof for decision 7: the worker tokens-path frequency
     equals the polars equivalent of ``col.list.explode().value_counts()``

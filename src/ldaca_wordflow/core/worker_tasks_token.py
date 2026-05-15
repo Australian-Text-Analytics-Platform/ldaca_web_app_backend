@@ -27,6 +27,7 @@ def run_token_frequencies_task(
     stop_words: Optional[list[str]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     node_tokens: Optional[Dict[str, list[list[str]]]] = None,
+    node_token_streams: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
 
@@ -74,9 +75,14 @@ def run_token_frequencies_task(
         )
 
         tokens_payload = node_tokens or {}
-        # Union of node ids reachable through either path. Order preserved to
-        # match the request payload (Python 3.7+ dict order is insertion).
-        node_ids = list({**node_corpora, **tokens_payload}.keys())
+        token_streams = node_token_streams or {}
+        # Union of node ids reachable through any of the three input shapes.
+        # The stream path supersedes ``node_tokens`` when both appear —
+        # newer callers ship only the stream; older queued tasks may
+        # still arrive with the in-memory payload.
+        node_ids = list(
+            {**node_corpora, **tokens_payload, **token_streams}.keys()
+        )
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
@@ -97,9 +103,33 @@ def run_token_frequencies_task(
         frequency_results: dict[str, dict[str, int]] = {}
         stats_df = None
         for node_id in node_ids:
-            if node_id in tokens_payload:
-                # Decision 7 tokens path: derived tokens column already on the
-                # source node — count directly without re-tokenising raw text.
+            if node_id in token_streams:
+                # Phase 5 perf path: the API endpoint spilled one row per
+                # token (post-explode, post-null-filter) to a parquet via
+                # ``sink_parquet`` so we count in Polars without
+                # round-tripping through Python objects. The endpoint
+                # guarantees the column name is ``token``.
+                # ``scan_parquet`` + ``group_by`` + ``len`` stays lazy
+                # until the final ``collect`` returns a small N×2 frame.
+                freq_df = (
+                    pl.scan_parquet(token_streams[node_id])
+                    .group_by("token")
+                    .len()
+                    .rename({"len": "frequency"})
+                    .with_columns(
+                        pl.col("token").cast(pl.Utf8),
+                        pl.col("frequency").cast(pl.Int64),
+                    )
+                    .collect()
+                )
+                frequency_results[node_id] = {
+                    str(row["token"]): int(row["frequency"])
+                    for row in freq_df.to_dicts()
+                }
+            elif node_id in tokens_payload:
+                # Legacy in-memory tokens payload for queued tasks from
+                # before the stream path landed. Kept until the queue
+                # drains; new callers won't take this branch.
                 counter: Counter[str] = Counter()
                 for token_list in tokens_payload[node_id]:
                     counter.update(

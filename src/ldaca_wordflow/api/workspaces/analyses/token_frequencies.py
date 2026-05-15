@@ -431,8 +431,16 @@ async def calculate_token_frequencies(
             status_code=400, detail="token_limit must be a positive integer"
         )
 
+    # Prepare the artifact target early so the tokens-mode spill files
+    # share a parent directory with the eventual frequency parquets and
+    # get cleaned up together when the workspace's artifact dir is
+    # cleared. Computing it here also unifies the resume-from-error path.
+    artifact_dir, artifact_prefix = _prepare_token_artifact_target(
+        user_id, workspace_id
+    )
+
     node_corpora: dict[str, list[str]] = {}
-    node_tokens: dict[str, list[list[str]]] = {}
+    node_token_streams: dict[str, str] = {}
     node_display_names: dict[str, str] = {}
     document_column_updated = False
     for node_id in request.node_ids:
@@ -462,15 +470,27 @@ async def calculate_token_frequencies(
             column_name, form=TOKENS_FORM, model=request.model
         )
         if derived_tokens_col is not None:
-            tokens_df = node_data.select(
-                pl.col(derived_tokens_col)
-                .list.eval(pl.element().struct.field("token"))
-                .alias("__tokens__")
-            ).collect()
-            node_tokens[node_id] = [
-                [str(tok) for tok in (row or []) if tok is not None]
-                for row in tokens_df["__tokens__"].to_list()
-            ]
+            # Phase 5 perf fix: spill the explode-flattened tokens to a
+            # parquet via streaming sink instead of materialising a
+            # ``list[list[str]]`` of Python str objects (which for 10 k
+            # CJK docs with ~1 k tokens each was ~500 MB of pure PyObject
+            # overhead). The worker scans the parquet and computes
+            # frequencies via ``group_by.len()`` in Polars — never
+            # touching Python until the small summary frame at the end.
+            stream_path = (
+                artifact_dir / f"{artifact_prefix}_tokens_stream_{node_id}.parquet"
+            )
+            (
+                node_data.select(
+                    pl.col(derived_tokens_col)
+                    .list.eval(pl.element().struct.field("token"))
+                    .explode()
+                    .alias("token")
+                )
+                .filter(pl.col("token").is_not_null())
+                .sink_parquet(stream_path)
+            )
+            node_token_streams[node_id] = str(stream_path)
         else:
             docs_df = node_data.select(
                 pl.col(column_name).alias("__doc_col__")
@@ -519,17 +539,13 @@ async def calculate_token_frequencies(
             user_id, workspace_id, ["token_frequencies", "token-frequencies"]
         )
 
-        artifact_dir, artifact_prefix = _prepare_token_artifact_target(
-            user_id, workspace_id
-        )
-
         task_info = await tm.submit_task(
             user_id=user_id,
             workspace_id=workspace_id,
             task_type="token_frequencies",
             task_args={
                 "node_corpora": node_corpora,
-                "node_tokens": node_tokens,
+                "node_token_streams": node_token_streams,
                 "node_display_names": node_display_names,
                 "artifact_dir": str(artifact_dir),
                 "artifact_prefix": artifact_prefix,
