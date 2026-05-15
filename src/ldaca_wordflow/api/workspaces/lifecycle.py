@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ...core.auth import get_current_user
+from ...core.tokens_cache import drop_workspace_references
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
@@ -134,6 +135,9 @@ async def delete_workspace(
     success = workspace_manager.delete_workspace(user_id, workspace_id)
     if not success:
         raise HTTPException(status_code=404, detail="Workspace not found")
+    # Release every tokens-cache reference owned by this workspace so
+    # the sweep can reclaim any cache parquet that nothing else uses.
+    drop_workspace_references(user_id, workspace_id)
     return {
         "state": "successful",
         "message": f"Workspace {workspace_id} deleted successfully",

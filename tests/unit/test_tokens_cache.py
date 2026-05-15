@@ -185,6 +185,25 @@ def test_drop_reference_removes_one_claim():
     assert refs == [ref_b.to_dict()]
 
 
+def test_drop_node_references_drops_only_that_node():
+    fname = tc.cache_filename("jieba", {})
+    tc.add_reference(fname, tc.CacheReference("u1", "ws1", "nA"))
+    tc.add_reference(fname, tc.CacheReference("u1", "ws1", "nB"))
+    tc.add_reference(fname, tc.CacheReference("u2", "ws1", "nA"))
+
+    tc.drop_node_references("u1", "ws1", "nA")
+
+    manifest = json.loads(
+        (tc.tokens_cache_dir() / tc.MANIFEST_FILENAME).read_text()
+    )
+    refs = manifest["entries"][fname]["references"]
+    # u1/ws1/nA gone; u1/ws1/nB and u2/ws1/nA survive.
+    assert {(r["user_id"], r["workspace_id"], r["node_id"]) for r in refs} == {
+        ("u1", "ws1", "nB"),
+        ("u2", "ws1", "nA"),
+    }
+
+
 def test_drop_workspace_references_drops_only_that_workspace():
     fname = tc.cache_filename("jieba", {})
     tc.add_reference(fname, tc.CacheReference("u1", "wsA", "n1"))
