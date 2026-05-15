@@ -606,18 +606,48 @@ def _serialize_materialized_rows(
     df: pl.DataFrame,
     *,
     node_label: Optional[str] = None,
+    document_column: Optional[str] = None,
 ) -> tuple[list[list[dict[str, Any]]], list[str]]:
-    """Wrap each flat occurrence row as a single-hit group for UI compatibility."""
+    """Convert a materialised concordance slice into per-document groups.
+
+    When ``document_column`` is provided and present in the frame, consecutive
+    rows that share the same document value are folded into one group — so the
+    dispersion view renders one horizontal bar per document with every hit
+    marked along it. The materialise worker writes rows in document order, so
+    a single linear ``groupby`` is enough; we don't re-sort.
+
+    When ``document_column`` is missing (legacy materialised parquets from
+    before the document column was always recorded) we fall back to the
+    pre-fix shape: one singleton group per hit, which keeps the table view
+    looking correct but degrades dispersion to bar-per-hit.
+    """
     if df.height == 0:
         return [], list(df.columns)
 
     columns = list(df.columns)
     grouped_rows: list[list[dict[str, Any]]] = []
-    for row in df.to_dicts():
-        hit = dict(row)
-        if node_label:
-            hit["__source_node"] = node_label
-        grouped_rows.append([hit])
+    can_group = bool(document_column) and document_column in df.columns
+
+    if can_group:
+        from itertools import groupby
+
+        for _, group in groupby(
+            df.to_dicts(), key=lambda r: r.get(document_column)
+        ):
+            hits: list[dict[str, Any]] = []
+            for row in group:
+                hit = dict(row)
+                if node_label:
+                    hit["__source_node"] = node_label
+                hits.append(hit)
+            if hits:
+                grouped_rows.append(hits)
+    else:
+        for row in df.to_dicts():
+            hit = dict(row)
+            if node_label:
+                hit["__source_node"] = node_label
+            grouped_rows.append([hit])
 
     if node_label and "__source_node" not in columns:
         columns.append("__source_node")
@@ -632,6 +662,7 @@ def compute_materialized_page(
     sort_by: Optional[str],
     descending: bool,
     node_label: Optional[str] = None,
+    document_column: Optional[str] = None,
 ) -> dict[str, Any]:
     """Paginate a materialized concordance parquet as occurrence rows."""
     effective_page_size = (
@@ -658,7 +689,9 @@ def compute_materialized_page(
 
     start = max(page - 1, 0) * effective_page_size
     slice_df = cast(pl.DataFrame, lazy.slice(start, effective_page_size).collect())
-    rows, columns = _serialize_materialized_rows(slice_df, node_label=node_label)
+    rows, columns = _serialize_materialized_rows(
+        slice_df, node_label=node_label, document_column=document_column
+    )
 
     total_source_pages = (
         max(1, math.ceil(total_rows / effective_page_size)) if total_rows else 0
@@ -1084,6 +1117,7 @@ def build_concordance_response(
                     sort_by=sort_by,
                     descending=descending,
                     node_label=src.get("label"),
+                    document_column=src.get("column"),
                 )
                 continue
             data[node_id] = compute_node_concordance_page(

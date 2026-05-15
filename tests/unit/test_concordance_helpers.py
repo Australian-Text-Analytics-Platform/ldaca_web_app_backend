@@ -2,6 +2,7 @@ import polars as pl
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
+    _serialize_materialized_rows,
     build_concordance_search_pattern,
     collect_interleaved_combined,
     compute_concordance_page,
@@ -211,3 +212,52 @@ def test_collect_interleaved_combined_interleaves_grouped_rows():
     assert result["data"][1][0]["__source_node"] == "right"
     assert result["data"][2][0]["__source_node"] == "left"
     assert result["data"][3][0]["__source_node"] == "right"
+
+
+def test_serialize_materialized_rows_groups_by_document_for_dispersion():
+    """The materialise worker writes one parquet row per hit but the
+    dispersion view needs one *group* per document so each horizontal
+    bar carries every hit from that document. Verify consecutive same-
+    document hits collapse into one group.
+    """
+    df = pl.DataFrame(
+        {
+            "context": [
+                "doc-A",  # 3 hits
+                "doc-A",
+                "doc-A",
+                "doc-B",  # 1 hit
+                "doc-C",  # 2 hits
+                "doc-C",
+            ],
+            "CONC_matched_text": ["wa", "wo", "ga", "no", "to", "de"],
+            "CONC_start_idx": [10, 30, 50, 5, 100, 200],
+        }
+    )
+
+    grouped, columns = _serialize_materialized_rows(
+        df, node_label="jp_corpus", document_column="context"
+    )
+
+    assert "__source_node" in columns
+    assert [len(g) for g in grouped] == [3, 1, 2]
+    assert all(hit["__source_node"] == "jp_corpus" for g in grouped for hit in g)
+    # Every hit in a group must share the same document value.
+    assert all(
+        len({hit["context"] for hit in g}) == 1 for g in grouped
+    ), "consecutive same-document rows must end up in one group"
+
+
+def test_serialize_materialized_rows_falls_back_to_singleton_groups_without_document_column():
+    """When the caller doesn't provide ``document_column`` (legacy parquets
+    or unknown column), keep the pre-fix shape: one singleton group per
+    hit, so the table view still works."""
+    df = pl.DataFrame(
+        {
+            "CONC_matched_text": ["a", "b", "c"],
+            "CONC_start_idx": [0, 1, 2],
+        }
+    )
+
+    grouped, _ = _serialize_materialized_rows(df, node_label="n")
+    assert [len(g) for g in grouped] == [1, 1, 1]
