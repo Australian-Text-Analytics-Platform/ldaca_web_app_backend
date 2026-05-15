@@ -19,6 +19,7 @@ from ldaca_wordflow.api.workspaces.analyses.concordance_tokens_mode import (
     build_token_hit,
     compute_tokens_concordance_page,
     find_token_matches,
+    parse_tokens_mode_alternatives,
 )
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
@@ -183,3 +184,71 @@ def test_compute_tokens_page_with_english_word_aware_context() -> None:
     ]
     assert hit[CONC_LEFT_CONTEXT_COLUMN] == expected_left
     assert hit[CONC_RIGHT_CONTEXT_COLUMN] == expected_right
+
+
+def test_parse_tokens_mode_alternatives_splits_on_pipe_comma_space() -> None:
+    """All three delimiters should produce the same alternative set so the
+    user can mix them however they're used to (regex-style ``|`` vs
+    CSV-style ``,`` vs natural ``space``).
+    """
+    expected = {"cat", "dog", "fish"}
+    assert (
+        parse_tokens_mode_alternatives("cat|dog|fish", case_sensitive=False)
+        == expected
+    )
+    assert (
+        parse_tokens_mode_alternatives("cat, dog ,fish", case_sensitive=False)
+        == expected
+    )
+    assert (
+        parse_tokens_mode_alternatives("cat dog fish", case_sensitive=False)
+        == expected
+    )
+    # Mixed separators + collapsed runs.
+    assert (
+        parse_tokens_mode_alternatives("cat,  dog | fish", case_sensitive=False)
+        == expected
+    )
+
+
+def test_parse_tokens_mode_alternatives_drops_empty_pieces() -> None:
+    """Stray separators must not produce an empty needle that would match
+    nothing-strings everywhere (or, worse, every empty token)."""
+    assert (
+        parse_tokens_mode_alternatives("|cat||dog,,", case_sensitive=False)
+        == {"cat", "dog"}
+    )
+    assert parse_tokens_mode_alternatives("   ", case_sensitive=False) == set()
+    assert parse_tokens_mode_alternatives("", case_sensitive=False) == set()
+
+
+def test_parse_tokens_mode_alternatives_casefolds_when_insensitive() -> None:
+    assert parse_tokens_mode_alternatives(
+        "Cat|DOG", case_sensitive=False
+    ) == {"cat", "dog"}
+    assert parse_tokens_mode_alternatives(
+        "Cat|DOG", case_sensitive=True
+    ) == {"Cat", "DOG"}
+
+
+def test_find_token_matches_handles_multiple_alternatives() -> None:
+    """The big-deal change: tokens-mode now supports multi-keyword input."""
+    matches = find_token_matches(ZH_TOKENS, "今天|玩", case_sensitive=False)
+    # 今天 hits at index 0 and 4; 玩 hits at index 7 — returned in token
+    # order regardless of the alternative ordering in the query.
+    assert matches == [0, 4, 7]
+
+
+def test_find_token_matches_alternatives_with_no_hits_returns_empty() -> None:
+    # The query parses but none of the alternatives are present.
+    assert (
+        find_token_matches(ZH_TOKENS, "cat|dog|fish", case_sensitive=False)
+        == []
+    )
+
+
+def test_find_token_matches_empty_query_returns_empty() -> None:
+    # Without this guard a bare ``|`` could be parsed as "match anything".
+    assert find_token_matches(ZH_TOKENS, "", case_sensitive=False) == []
+    assert find_token_matches(ZH_TOKENS, "|", case_sensitive=False) == []
+    assert find_token_matches(ZH_TOKENS, " , ", case_sensitive=False) == []

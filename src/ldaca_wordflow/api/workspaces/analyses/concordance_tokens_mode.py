@@ -19,9 +19,15 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from typing import Any, Optional, cast
 
 import polars as pl
+
+# Pipe, comma, or any whitespace can separate alternatives in the search
+# input. Runs collapse so ``cat,  dog | fish`` and ``cat dog fish`` parse the
+# same way. Exposed at module level so the unit tests can pin the contract.
+TOKENS_MODE_ALT_SEPARATOR_RE = re.compile(r"[\s,|]+")
 
 from ....core.utils import stringify_unsafe_integers
 from .generated_columns import (
@@ -39,25 +45,55 @@ from .generated_columns import (
 logger = logging.getLogger(__name__)
 
 
+def parse_tokens_mode_alternatives(
+    search_word: str, *, case_sensitive: bool
+) -> set[str]:
+    """Split a tokens-mode search query into a set of alternatives.
+
+    The user can express multi-keyword search using any of space, comma,
+    or ``|`` between alternatives (mix-and-match is fine) — mirroring the
+    way regex-mode users write ``cat|dog|fish`` but without the
+    surrounding-text regex semantics that tokens mode by design rejects.
+    Empty / whitespace-only alternatives are silently dropped so a stray
+    separator doesn't accidentally widen the match set.
+    """
+    alternatives: set[str] = set()
+    for raw in TOKENS_MODE_ALT_SEPARATOR_RE.split(str(search_word or "")):
+        alt = raw.strip()
+        if not alt:
+            continue
+        alternatives.add(alt if case_sensitive else alt.casefold())
+    return alternatives
+
+
 def find_token_matches(
     tokens: list[dict[str, Any] | None],
     search_word: str,
     *,
     case_sensitive: bool,
 ) -> list[int]:
-    """Return indices of tokens whose ``token`` field equals ``search_word``.
+    """Return indices of tokens matching any of the user's alternatives.
 
-    Exact-token match — no substring or regex semantics. ``case_sensitive``
-    toggles ``str.lower()`` comparison.
+    ``search_word`` is parsed by :func:`parse_tokens_mode_alternatives`
+    so the user can supply one or many tokens separated by space, comma,
+    or ``|`` — the same alternation regex-mode users get for free via
+    regex syntax. Each alternative is an exact-token equality match
+    against the derived tokens column; substring / partial matches are
+    intentionally not supported in tokens mode (that's what text mode
+    is for).
     """
-    needle = search_word if case_sensitive else search_word.casefold()
+    needles = parse_tokens_mode_alternatives(
+        search_word, case_sensitive=case_sensitive
+    )
+    if not needles:
+        return []
     matches: list[int] = []
     for i, struct in enumerate(tokens):
         if struct is None:
             continue
         token = str(struct.get("token") or "")
         candidate = token if case_sensitive else token.casefold()
-        if candidate == needle:
+        if candidate in needles:
             matches.append(i)
     return matches
 
