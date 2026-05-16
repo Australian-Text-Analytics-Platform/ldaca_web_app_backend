@@ -244,6 +244,7 @@ def run_quotation_materialize_task(
     document_column: str,
     engine_config: Dict[str, Any],
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
 ) -> Dict[str, Any]:
     """Run full quotation extraction and persist the flattened parquet."""
@@ -265,6 +266,7 @@ def run_quotation_materialize_task(
             document_column=document_column,
             include_document_column=True,
             extra_columns_data=extra_columns_data,
+            extra_columns_dtypes=extra_columns_dtypes,
         )
 
         if progress_callback:

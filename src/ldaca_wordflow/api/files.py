@@ -21,6 +21,7 @@ from ..core.utils import (
     detect_file_type,
     download_remote_sample_data,
     get_user_data_folder,
+    get_user_snapshots_folder,
     import_sample_data_for_user,
     read_text_file,
     read_zip_file,
@@ -39,6 +40,11 @@ from ..models import (
     FilesTasksListResponse,
     FileTreeNodeResponse,
     FileUploadResponse,
+    DemoSnapshotEntry,
+    DemoSnapshotImportResult,
+    DemoSnapshotsCatalogueResponse,
+    ImportDemoSnapshotsRequest,
+    ImportDemoSnapshotsResponse,
     ImportSampleDataRequest,
     ImportSampleDataResponse,
     LDaCAImportRequest,
@@ -639,6 +645,306 @@ async def import_sample_data(
             else "Sample data imported successfully."
         ),
     }
+
+
+# ── Demo-snapshot catalogue + import ─────────────────────────────────────
+#
+# Parallel to the sample-data plumbing above. Demo snapshots live in
+# ``demo_snapshots/`` inside the sample-data repo; the catalogue.json
+# lists each bundle with its expected SHA. Imported bundles land in the
+# user's snapshot folder (``get_user_snapshots_folder``) so each tool's
+# Load dialog discovers them via the existing snapshot list endpoint.
+
+_DEMO_SNAPSHOT_REMOTE_DIR = "demo_snapshots"
+
+
+def _compute_demo_snapshot_status(entry: dict, snapshots_dir: Path) -> str:
+    """Return ``downloaded`` / ``conflict`` / ``not_downloaded`` for one entry."""
+    filename = entry.get("filename") or ""
+    expected_sha256 = entry.get("sha256") or ""
+    if not filename:
+        return "not_downloaded"
+    dest = snapshots_dir / filename
+    if not dest.exists() or not dest.is_file():
+        return "not_downloaded"
+    try:
+        digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+    except OSError:
+        return "not_downloaded"
+    if digest == expected_sha256:
+        return "downloaded"
+    return "conflict"
+
+
+@router.get(
+    "/demo-snapshots/catalogue",
+    response_model=DemoSnapshotsCatalogueResponse,
+)
+async def get_demo_snapshots_catalogue(
+    current_user: dict = Depends(get_current_user),
+):
+    """Return the demo-snapshot catalogue, augmented with per-bundle status.
+
+    Fetches ``demo_snapshots/catalogue.json`` from the configured sample-data
+    remote. Each entry is annotated with the user-specific status
+    (``downloaded`` / ``conflict`` / ``not_downloaded``) so the frontend can
+    render conflict warnings without a second round-trip.
+
+    Returns an empty list (not 404) when the catalogue is absent so the
+    frontend tab can render an empty-state instead of erroring out — the
+    sample-data repo can ship without the demo-snapshots block until
+    bundles are authored.
+    """
+    import httpx
+
+    from ..settings import settings
+
+    remote_base = (settings.sample_data_remote_url or "").rstrip("/")
+    if not remote_base:
+        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+
+    url = f"{remote_base}/{_DEMO_SNAPSHOT_REMOTE_DIR}/catalogue.json"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+
+    # Catalogue missing → return an empty list. Anything else 4xx/5xx is
+    # surfaced so misconfiguration is visible rather than silently empty.
+    if resp.status_code == 404:
+        return DemoSnapshotsCatalogueResponse(schema_version=1, snapshots=[])
+    try:
+        resp.raise_for_status()
+        catalogue = resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+
+    user_id = current_user["id"]
+    snapshots_dir = get_user_snapshots_folder(user_id)
+
+    snapshots: List[DemoSnapshotEntry] = []
+    for entry in catalogue.get("snapshots", []):
+        status = _compute_demo_snapshot_status(entry, snapshots_dir)
+        snapshots.append(
+            DemoSnapshotEntry(
+                id=entry.get("id", ""),
+                filename=entry.get("filename", ""),
+                path=entry.get("path", ""),
+                tool=entry.get("tool", ""),
+                name=entry.get("name", ""),
+                description=entry.get("description", ""),
+                size=int(entry.get("size", 0) or 0),
+                sha256=entry.get("sha256", ""),
+                tool_version=entry.get("tool_version"),
+                recommended_dataset=entry.get("recommended_dataset"),
+                status=status,
+            )
+        )
+
+    return DemoSnapshotsCatalogueResponse(
+        schema_version=int(catalogue.get("schema_version", 1) or 1),
+        snapshots=snapshots,
+    )
+
+
+@router.post(
+    "/import-demo-snapshots",
+    response_model=ImportDemoSnapshotsResponse,
+)
+async def import_demo_snapshots(
+    request: ImportDemoSnapshotsRequest = ImportDemoSnapshotsRequest(),
+    current_user: dict = Depends(get_current_user),
+):
+    """Download selected demo-snapshot bundles into the user's snapshot folder.
+
+    Behaviour per bundle:
+      - ``not_downloaded`` → download, verify SHA, write to snapshot folder
+      - ``downloaded`` → skip (matching local copy already present)
+      - ``conflict`` → skip unless the bundle id is also in ``replace_ids``,
+        in which case the local copy is deleted and the bundle re-downloaded
+
+    Failures (network, SHA mismatch, write error) are recorded per-entry as
+    ``failed`` so a partial run still reports what landed and what didn't.
+    The user's own snapshot saves are never touched unless explicitly
+    opted in via ``replace_ids``.
+    """
+    import httpx
+    from pathlib import PurePosixPath
+
+    from ..settings import settings
+
+    user_id = current_user["id"]
+    snapshots_dir = get_user_snapshots_folder(user_id)
+    replace_ids = set(request.replace_ids or [])
+
+    remote_base = (settings.sample_data_remote_url or "").rstrip("/")
+    if not remote_base:
+        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+
+    # Refetch the catalogue server-side so we authoritatively know which
+    # path + sha256 to fetch. The frontend's ``snapshot_ids`` are the
+    # only client-supplied input we trust.
+    catalogue_url = f"{remote_base}/{_DEMO_SNAPSHOT_REMOTE_DIR}/catalogue.json"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            cat_resp = await client.get(catalogue_url)
+            cat_resp.raise_for_status()
+            catalogue = cat_resp.json()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+
+    by_id: Dict[str, dict] = {
+        e.get("id", ""): e for e in catalogue.get("snapshots", []) if e.get("id")
+    }
+
+    results: List[DemoSnapshotImportResult] = []
+    for snap_id in request.snapshot_ids:
+        entry = by_id.get(snap_id)
+        if not entry:
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename="",
+                    status="failed",
+                    message="Snapshot id not present in catalogue.",
+                )
+            )
+            continue
+
+        filename = entry.get("filename", "")
+        rel_path = entry.get("path", "")
+        expected_sha = entry.get("sha256", "")
+        if not filename or not rel_path or not expected_sha:
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="failed",
+                    message="Catalogue entry missing filename, path, or sha256.",
+                )
+            )
+            continue
+
+        # Reject filenames that would escape the snapshot folder.
+        try:
+            safe_filename = PurePosixPath(filename)
+        except Exception:
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="failed",
+                    message="Invalid filename.",
+                )
+            )
+            continue
+        if (
+            safe_filename.is_absolute()
+            or any(part == ".." for part in safe_filename.parts)
+            or "/" in filename
+            or "\\" in filename
+        ):
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="failed",
+                    message="Invalid filename.",
+                )
+            )
+            continue
+
+        dest = snapshots_dir / filename
+        status = _compute_demo_snapshot_status(entry, snapshots_dir)
+
+        if status == "downloaded":
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="skipped_existing",
+                    message="Matching local copy already present.",
+                )
+            )
+            continue
+
+        if status == "conflict" and snap_id not in replace_ids:
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="skipped_conflict",
+                    message=(
+                        "A local snapshot with this filename already exists "
+                        "but differs from the demo. Tick Replace to overwrite."
+                    ),
+                )
+            )
+            continue
+
+        # not_downloaded, or conflict + replace_ids → fetch and write.
+        url = f"{remote_base}/{rel_path}"
+        outcome_status = "replaced" if status == "conflict" else "imported"
+
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                async with client.stream("GET", url) as stream:
+                    stream.raise_for_status()
+                    tmp = dest.with_suffix(dest.suffix + f".tmp_{hashlib.sha256(snap_id.encode()).hexdigest()[:12]}")
+                    hasher = hashlib.sha256()
+                    try:
+                        with tmp.open("wb") as fh:
+                            async for chunk in stream.aiter_bytes(chunk_size=1 << 20):
+                                hasher.update(chunk)
+                                fh.write(chunk)
+                        digest = hasher.hexdigest()
+                        if digest != expected_sha:
+                            tmp.unlink(missing_ok=True)
+                            results.append(
+                                DemoSnapshotImportResult(
+                                    id=snap_id,
+                                    filename=filename,
+                                    status="failed",
+                                    message=(
+                                        "Downloaded bundle SHA mismatch — refusing to install."
+                                    ),
+                                )
+                            )
+                            continue
+                        # Replace any conflicting local copy atomically.
+                        import os
+                        os.replace(tmp, dest)
+                    except Exception:
+                        tmp.unlink(missing_ok=True)
+                        raise
+        except Exception as exc:
+            logger.warning(
+                "Failed to download demo snapshot %s from %s", snap_id, url, exc_info=True
+            )
+            results.append(
+                DemoSnapshotImportResult(
+                    id=snap_id,
+                    filename=filename,
+                    status="failed",
+                    message=f"Download failed: {exc}",
+                )
+            )
+            continue
+
+        results.append(
+            DemoSnapshotImportResult(
+                id=snap_id,
+                filename=filename,
+                status=outcome_status,
+                message=None,
+            )
+        )
+
+    return ImportDemoSnapshotsResponse(
+        results=results,
+        snapshot_dir=str(snapshots_dir),
+    )
 
 
 @router.post("/import-ldaca", response_model=FilesImportTaskStartResponse)

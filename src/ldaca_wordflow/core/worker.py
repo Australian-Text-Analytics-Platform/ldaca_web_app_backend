@@ -323,6 +323,7 @@ def quotation_materialize_task(
     document_column: str,
     engine_config: Dict[str, Any],
     extra_columns_data: Optional[Dict[str, list]] = None,
+    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     progress_queue: Optional[Any] = None,
 ) -> Dict[str, Any]:
@@ -336,6 +337,7 @@ def quotation_materialize_task(
         document_column,
         engine_config,
         extra_columns_data=extra_columns_data,
+        extra_columns_dtypes=extra_columns_dtypes,
         progress_callback=cb,
     )
 

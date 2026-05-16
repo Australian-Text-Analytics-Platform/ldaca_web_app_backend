@@ -48,6 +48,12 @@ DEFAULT_PAGE_SIZE = qcore.DEFAULT_PAGE_SIZE
 DEFAULT_DESCENDING = qcore.DEFAULT_DESCENDING
 CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
 
+# Hard cap on the rows returned when the snapshot capture path
+# requests ``page_size: 'all'``. Mirrors the concordance constant of
+# the same name so the front-end's capture-time guards translate
+# cleanly across tools.
+SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000
+
 # Phase 3.6: quotation extractor is English-only. Vendored GenderGapTracker
 # rules / spaCy model only work for English; running them on other
 # languages produces garbage rather than a useful refusal. Frontend shows
@@ -305,12 +311,24 @@ async def update_quotation_task_result(
         max(1, int(query.page)) if isinstance(query.page, int) and query.page else 1
     )
 
+    # Snapshot capture path passes the literal ``'all'`` so we ship
+    # the entire result in one response; cap at SNAPSHOT_ALL_PAGE_SIZE_CAP
+    # so a pathological materialised parquet can't blow the response
+    # budget. Other callers pass an int (or omit it for default sizing).
+    effective_page_size: Optional[int]
+    if query.page_size == "all":
+        effective_page_size = SNAPSHOT_ALL_PAGE_SIZE_CAP
+    elif query.page_size is None:
+        effective_page_size = None
+    else:
+        effective_page_size = int(query.page_size)
+
     page_payload = await _compute_on_demand_page(
         node,
         column,
         engine,
         page=normalized_page,
-        page_size=query.page_size,
+        page_size=effective_page_size,
         sort_by=query.sort_by or None,
         descending=(
             query.descending if query.descending is not None else DEFAULT_DESCENDING
@@ -660,8 +678,26 @@ async def materialize_quotation(
     tm = workspace_manager.get_task_manager(user_id)
     node_data = node.data
 
+    # Materialise should preserve EVERY source-node column so the table
+    # view's metadata-column selector still has the original columns to
+    # pick from after Process All (the live unmaterialised path joins
+    # the source rows back to each quote-row, so they're visible there).
+    # Without this, the materialised parquet only carries the document
+    # column + QUOTE_* derivatives, and the table loses all metadata
+    # the moment the user clicks Process All — and the snapshot capture
+    # inherits the same loss.
+    source_schema = node_data.collect_schema()
+    source_columns = list(source_schema.names())
+    extra_metadata_columns = [
+        col
+        for col in source_columns
+        if col != request.column and not is_derived_column_name(col)
+    ]
+
     corpus_df = (
-        node_data.select([pl.col(request.column)])
+        node_data.select(
+            [pl.col(request.column)] + [pl.col(col) for col in extra_metadata_columns]
+        )
         .filter(
             pl.col(request.column)
             .cast(pl.Utf8, strict=False)
@@ -676,6 +712,12 @@ async def materialize_quotation(
         str(value) if value is not None else ""
         for value in corpus_df.get_column(request.column).to_list()
     ]
+    extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
+    for col in extra_metadata_columns:
+        series = corpus_df.get_column(col)
+        extra_columns_data[col] = series.to_list()
+        extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -693,7 +735,8 @@ async def materialize_quotation(
                 "parent_node_id": node_id,
                 "document_column": request.column,
                 "engine_config": request.engine.model_dump() if request.engine else {},
-                "extra_columns_data": None,
+                "extra_columns_data": extra_columns_data or None,
+                "extra_columns_dtypes": extra_columns_dtypes or None,
             },
             task_name="Materialize Quotation",
         )

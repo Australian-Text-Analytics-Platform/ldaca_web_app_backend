@@ -12,7 +12,7 @@ Refactor note:
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
@@ -127,6 +127,77 @@ class SampleDataCollection(BaseModel):
 class SampleDataCatalogueResponse(BaseModel):
     schema_version: int
     collections: List[SampleDataCollection]
+
+
+# ── Demo-snapshot catalogue ───────────────────────────────────────────────
+#
+# Parallel to the sample-data catalogue above, but each entry describes a
+# single ``.ldaca-snapshot`` bundle hosted in the sample-data repo under
+# ``demo_snapshots/``. The frontend renders these as a second tab in the
+# import dialog; the importer downloads selected bundles into the user's
+# snapshot folder (``get_user_snapshots_folder``) so each tool's Load
+# dialog picks them up automatically.
+
+class DemoSnapshotEntry(BaseModel):
+    """A single demo-snapshot bundle in the catalogue."""
+
+    id: str
+    """Stable identifier (e.g. ``concordance-scl-tutorial``)."""
+    filename: str
+    """Bundle filename written to the user's snapshot folder. Must match
+    the tool's filename convention (``<tool>-<name>.ldaca-snapshot``) so
+    the tool-scoped Load dialog finds it."""
+    path: str
+    """Relative path inside the sample-data repo (e.g.
+    ``demo_snapshots/concordance-scl-tutorial.ldaca-snapshot``)."""
+    tool: str
+    """Tool key from ``SnapshotToolKey`` (concordance / quotation /
+    token_frequencies / sequential_analysis / topic_modeling)."""
+    name: str
+    """Human-readable label shown in the catalogue list."""
+    description: str
+    """One-line description shown under the name."""
+    size: int
+    """Bundle size in bytes."""
+    sha256: str
+    """Expected SHA-256 of the bundle. Verified on download and used for
+    status computation (downloaded / conflict / not_downloaded)."""
+    tool_version: Optional[str] = None
+    """App version that captured the bundle. Informational."""
+    recommended_dataset: Optional[str] = None
+    """Catalogue collection id (e.g. ``SCL``) the snapshot was built on
+    — informational so users can import the matching dataset alongside."""
+    status: str = "not_downloaded"
+    """Computed per-user: ``downloaded`` | ``not_downloaded`` | ``conflict``.
+    ``conflict`` means a file with the same name exists locally but its
+    SHA differs (older bundle, or the user's own save). The importer
+    skips ``conflict`` rows unless the user opts in via ``replace_ids``."""
+
+
+class DemoSnapshotsCatalogueResponse(BaseModel):
+    schema_version: int
+    snapshots: List[DemoSnapshotEntry]
+
+
+class ImportDemoSnapshotsRequest(BaseModel):
+    snapshot_ids: List[str] = Field(default_factory=list)
+    """Snapshot ids to import. Empty list = no-op."""
+    replace_ids: List[str] = Field(default_factory=list)
+    """Subset of ``snapshot_ids`` for which the importer should replace an
+    existing ``conflict`` local copy. Entries outside this list with a
+    conflict are skipped."""
+
+
+class DemoSnapshotImportResult(BaseModel):
+    id: str
+    filename: str
+    status: str  # imported | replaced | skipped_existing | skipped_conflict | failed
+    message: Optional[str] = None
+
+
+class ImportDemoSnapshotsResponse(BaseModel):
+    results: List[DemoSnapshotImportResult]
+    snapshot_dir: str
 
 
 class DataFileInfo(BaseModel):
@@ -607,7 +678,10 @@ class QuotationDetachOptionsResponse(BaseModel):
 
 class QuotationResultQuery(BaseModel):
     page: Optional[int] = None
-    page_size: Optional[int] = None
+    # Accepts the literal ``'all'`` for the snapshot capture path —
+    # server caps at ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` (see
+    # api/workspaces/analyses/quotation.py).
+    page_size: Optional[Union[int, Literal["all"]]] = None
     sort_by: Optional[str] = None
     descending: Optional[bool] = None
     context_length: Optional[int] = None
