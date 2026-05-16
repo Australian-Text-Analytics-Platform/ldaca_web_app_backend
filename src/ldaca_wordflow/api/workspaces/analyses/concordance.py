@@ -10,7 +10,7 @@ Includes:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Literal, Optional, Union
 from uuid import uuid4
 
 import polars as pl
@@ -52,6 +52,16 @@ router = APIRouter(prefix="/workspaces", tags=["concordance"])
 logger = logging.getLogger(__name__)
 
 
+#: Server-side hard cap when the client requests ``page_size: "all"``
+#: (snapshot-view capture path). Matches the frontend hard cap in
+#: ``frontend/src/features/snapshot-view/caps.ts``. A client asking
+#: for the whole result will get at most this many rows; the frontend
+#: pre-checks total row count and refuses to issue an "all" request
+#: when the result exceeds it, so this cap doubles as a defensive
+#: silent-truncation guard for hand-crafted requests.
+SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000
+
+
 class ConcordanceResultQuery(BaseModel):
     """Query overrides for reading persisted concordance results.
 
@@ -61,13 +71,18 @@ class ConcordanceResultQuery(BaseModel):
 
     Why:
     - Allows pagination and sorting updates without recomputing concordance.
+    - ``page_size`` accepts the literal string ``"all"`` for the
+      snapshot-view capture flow — translated server-side to
+      ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` rows by
+      :func:`_apply_result_query_overrides`. Downstream code continues
+      to see an ``int`` for ``page_size``.
     """
 
     node_id: Optional[str] = None
     combined: Optional[bool] = None
     page: Optional[int] = None
     page_number: Optional[int] = None
-    page_size: Optional[int] = None
+    page_size: Optional[Union[int, Literal["all"]]] = None
     sort_by: Optional[str] = None
     descending: Optional[bool] = None
     show_metadata: Optional[bool] = None
@@ -91,7 +106,12 @@ def _apply_result_query_overrides(
     if page is not None:
         normalized_request["page"] = page
     if query.page_size is not None:
-        normalized_request["page_size"] = query.page_size
+        if query.page_size == "all":
+            # Snapshot-view capture path: deliver the whole result up to
+            # the server-side hard cap. Downstream code expects an int.
+            normalized_request["page_size"] = SNAPSHOT_ALL_PAGE_SIZE_CAP
+        else:
+            normalized_request["page_size"] = query.page_size
     if query.sort_by is not None:
         normalized_request["sort_by"] = query.sort_by
     if query.descending is not None:
