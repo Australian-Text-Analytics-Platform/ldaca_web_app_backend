@@ -208,7 +208,17 @@ def _list_user_snapshots(user_id: str, tool_filter: Optional[str]) -> list[dict]
             continue
         if tool_filter is not None and manifest.get("tool") != tool_filter:
             continue
-        items.append({"filename": bundle_path.name, "manifest": manifest})
+        try:
+            size_bytes = bundle_path.stat().st_size
+        except OSError:
+            size_bytes = 0
+        items.append(
+            {
+                "filename": bundle_path.name,
+                "manifest": manifest,
+                "size_bytes": size_bytes,
+            }
+        )
     return items
 
 

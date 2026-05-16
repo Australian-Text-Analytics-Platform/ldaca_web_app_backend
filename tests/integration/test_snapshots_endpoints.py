@@ -97,6 +97,10 @@ async def test_upload_and_list_round_trip(authenticated_client) -> None:
     assert len(items) == 1
     assert items[0]["filename"] == "concordance-demo-1.ldaca-snapshot"
     assert items[0]["manifest"]["title"] == "test snapshot"
+    # size_bytes is included in the list response (load dialog renders
+    # it alongside the version chip — plan §5.7.2).
+    assert isinstance(items[0]["size_bytes"], int)
+    assert items[0]["size_bytes"] > 0
 
 
 @pytest.mark.asyncio
