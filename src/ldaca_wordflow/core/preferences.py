@@ -60,5 +60,7 @@ def merge_preferences(
         overrides["default_language"] = update.default_language
     if update.default_tokenizer_model is not None:
         overrides["default_tokenizer_model"] = update.default_tokenizer_model
+    if update.demo_snapshots_enabled is not None:
+        overrides["demo_snapshots_enabled"] = update.demo_snapshots_enabled
     merged = current.model_copy(update=overrides)
     return merged.validated()
