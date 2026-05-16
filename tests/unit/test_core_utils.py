@@ -8,12 +8,16 @@ from unittest.mock import MagicMock, patch
 
 import polars as pl
 import pytest
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 from ldaca_wordflow.core.utils import (
     detect_file_type,
     generate_workspace_id,
     get_user_data_folder,
     get_user_workspace_folder,
     load_data_file,
+    normalize_dtypes,
     read_zip_file,
     setup_user_folders,
     validate_file_path,
@@ -266,3 +270,90 @@ class TestUtilityFunctions:
         malicious_path = user_folder / ".." / "secret.txt"
 
         assert validate_file_path(malicious_path, user_folder) is False
+
+
+class TestNormalizeDtypes:
+    """Tests for the canonical dtype profile applied on data load."""
+
+    def test_no_changes_for_already_canonical_frame(self):
+        df = pl.DataFrame(
+            {
+                "text": ["a", "b"],
+                "count": pl.Series([1, 2], dtype=pl.Int64),
+                "score": pl.Series([1.0, 2.0], dtype=pl.Float64),
+            }
+        )
+        normalized, changes = normalize_dtypes(df)
+        assert changes == []
+        assert normalized.schema == df.schema
+
+    def test_naive_datetime_ns_assumed_utc_and_collapsed_to_us(self):
+        df = pl.DataFrame(
+            {"ts": pl.Series([datetime(2026, 5, 17, 10, 0, 0)], dtype=pl.Datetime("ns"))}
+        )
+        normalized, changes = normalize_dtypes(df)
+        assert normalized.schema["ts"] == pl.Datetime("us", "UTC")
+        assert len(changes) == 1
+        change = changes[0]
+        assert change["column"] == "ts"
+        assert change["to_dtype"] == str(pl.Datetime("us", "UTC"))
+        assert "naive" in change["reason"]
+        assert "ns" in change["reason"]
+        # Naive 10:00 is interpreted as 10:00 UTC, not converted.
+        assert normalized["ts"][0] == datetime(2026, 5, 17, 10, 0, 0, tzinfo=timezone.utc)
+
+    def test_aware_datetime_converted_to_utc(self):
+        sydney_ts = datetime(2026, 5, 17, 20, 0, 0, tzinfo=ZoneInfo("Australia/Sydney"))
+        df = pl.DataFrame(
+            {"ts": pl.Series([sydney_ts], dtype=pl.Datetime("us", "Australia/Sydney"))}
+        )
+        normalized, changes = normalize_dtypes(df)
+        assert normalized.schema["ts"] == pl.Datetime("us", "UTC")
+        assert len(changes) == 1
+        assert "Australia/Sydney" in changes[0]["reason"]
+        # 20:00 Sydney (UTC+10) → 10:00 UTC.
+        assert normalized["ts"][0] == sydney_ts.astimezone(timezone.utc)
+
+    def test_unsigned_and_narrow_signed_integers_promoted_to_int64(self):
+        df = pl.DataFrame(
+            {
+                "u32": pl.Series([1, 2], dtype=pl.UInt32),
+                "i16": pl.Series([-1, 2], dtype=pl.Int16),
+                "already_i64": pl.Series([1, 2], dtype=pl.Int64),
+            }
+        )
+        normalized, changes = normalize_dtypes(df)
+        assert normalized.schema["u32"] == pl.Int64
+        assert normalized.schema["i16"] == pl.Int64
+        assert normalized.schema["already_i64"] == pl.Int64
+        changed_cols = {c["column"] for c in changes}
+        assert changed_cols == {"u32", "i16"}
+        reasons = {c["column"]: c["reason"] for c in changes}
+        assert "unsigned" in reasons["u32"]
+        assert "narrower signed" in reasons["i16"]
+
+    def test_float32_widened_to_float64(self):
+        df = pl.DataFrame({"x": pl.Series([1.5, 2.5], dtype=pl.Float32)})
+        normalized, changes = normalize_dtypes(df)
+        assert normalized.schema["x"] == pl.Float64
+        assert len(changes) == 1
+        assert changes[0]["to_dtype"] == "Float64"
+
+    def test_leaves_date_string_bool_categorical_unchanged(self):
+        df = pl.DataFrame(
+            {
+                "d": pl.Series(["2026-05-17"]).str.to_date(),
+                "s": pl.Series(["x"], dtype=pl.Utf8),
+                "b": pl.Series([True], dtype=pl.Boolean),
+                "c": pl.Series(["x"], dtype=pl.Categorical),
+            }
+        )
+        normalized, changes = normalize_dtypes(df)
+        assert changes == []
+        assert normalized.schema == df.schema
+
+    def test_empty_frame_returns_empty_changes(self):
+        df = pl.DataFrame()
+        normalized, changes = normalize_dtypes(df)
+        assert changes == []
+        assert normalized.width == 0

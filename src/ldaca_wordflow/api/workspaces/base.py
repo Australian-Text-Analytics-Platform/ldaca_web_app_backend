@@ -23,7 +23,7 @@ from docworkspace import Node
 from ...core.auth import get_current_user
 
 # Note: DocWorkspace API helpers are not used directly in this HTTP layer
-from ...core.utils import get_user_data_folder, load_data_file
+from ...core.utils import get_user_data_folder, load_data_file, normalize_dtypes
 from ...core.workspace import workspace_manager
 from .schema_filter import frontend_node_info, project_visible
 from .utils import stage_dataframe_as_lazy, update_workspace
@@ -451,6 +451,8 @@ async def add_node_to_workspace(
             detail=f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}",
         )
 
+    eager_data, dtype_changes = normalize_dtypes(eager_data)
+
     # Resolve workspace folder and stage parquet copy
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -505,7 +507,10 @@ async def add_node_to_workspace(
     workspace.add_node(node)
     update_workspace(user_id, workspace_id, workspace)
 
-    return frontend_node_info(node)
+    info = frontend_node_info(node)
+    if dtype_changes:
+        info["dtype_normalization"] = dtype_changes
+    return info
 
 
 @router.post("/nodes/{node_id}/cast")

@@ -425,6 +425,95 @@ def read_text_file(file_path: Path) -> pl.DataFrame:
     return pl.DataFrame({"text": lines})
 
 
+# Canonical dtype profile — see project_dtype_normalization in agent memory.
+# Datetime[μs, UTC], Int64, Float64, Utf8. Naive datetimes are assumed UTC.
+_CANONICAL_DATETIME = pl.Datetime(time_unit="us", time_zone="UTC")
+_INTEGERS_TO_PROMOTE: set[pl.DataType] = {
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.UInt8,
+    pl.UInt16,
+    pl.UInt32,
+    pl.UInt64,
+}
+
+
+def normalize_dtypes(
+    df: pl.DataFrame,
+) -> tuple[pl.DataFrame, list[dict[str, str]]]:
+    """Coerce columns to the project's canonical dtype profile.
+
+    Returns the normalized frame plus a per-column change log
+    ``[{"column", "from_dtype", "to_dtype", "reason"}, ...]`` so callers can
+    surface a consolidated warning to the user. The change log is empty when
+    nothing needed casting.
+    """
+    if df.width == 0:
+        return df, []
+
+    changes: list[dict[str, str]] = []
+    casts: list[pl.Expr] = []
+
+    for col, dtype in df.schema.items():
+        if isinstance(dtype, pl.Datetime):
+            time_unit = getattr(dtype, "time_unit", "us")
+            time_zone = getattr(dtype, "time_zone", None)
+            if time_unit == "us" and time_zone == "UTC":
+                continue
+            expr = pl.col(col)
+            reason_parts: list[str] = []
+            if time_zone is None:
+                expr = expr.dt.replace_time_zone("UTC")
+                reason_parts.append("naive datetime assumed UTC")
+            elif time_zone != "UTC":
+                expr = expr.dt.convert_time_zone("UTC")
+                reason_parts.append(f"converted from {time_zone} to UTC")
+            if time_unit != "us":
+                expr = expr.dt.cast_time_unit("us")
+                reason_parts.append(
+                    f"precision {time_unit}→us "
+                    "(text analytics does not need sub-microsecond resolution)"
+                )
+            casts.append(expr.alias(col))
+            changes.append(
+                {
+                    "column": col,
+                    "from_dtype": str(dtype),
+                    "to_dtype": str(_CANONICAL_DATETIME),
+                    "reason": "; ".join(reason_parts),
+                }
+            )
+        elif dtype in _INTEGERS_TO_PROMOTE:
+            casts.append(pl.col(col).cast(pl.Int64).alias(col))
+            kind = "unsigned" if str(dtype).startswith("UInt") else "narrower signed"
+            changes.append(
+                {
+                    "column": col,
+                    "from_dtype": str(dtype),
+                    "to_dtype": "Int64",
+                    "reason": (
+                        f"{kind} integer promoted to Int64 so joins/stacks "
+                        "across heterogeneous sources align"
+                    ),
+                }
+            )
+        elif dtype == pl.Float32:
+            casts.append(pl.col(col).cast(pl.Float64).alias(col))
+            changes.append(
+                {
+                    "column": col,
+                    "from_dtype": "Float32",
+                    "to_dtype": "Float64",
+                    "reason": "Float32 widened to Float64 for cross-source alignment",
+                }
+            )
+
+    if casts:
+        df = df.with_columns(casts)
+    return df, changes
+
+
 def read_zip_file(
     file_path: str | Path,
     *,
