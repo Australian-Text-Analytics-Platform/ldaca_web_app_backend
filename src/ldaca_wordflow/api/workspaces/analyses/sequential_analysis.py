@@ -13,7 +13,7 @@ from typing import Any, Optional, cast
 
 import polars as pl
 from docworkspace import Node
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ....analysis.implementations.sequential_analysis import (
@@ -182,7 +182,13 @@ def _run_sequential_analysis(
     numeric_origin_value: float | None = None
 
     if normalized_column_type == "datetime":
-        if frequency == "hourly":
+        if frequency == "second":
+            time_expr = pl.col(time_column).dt.truncate("1s").alias("time_period")
+            time_format = "%Y-%m-%d %H:%M:%S"
+        elif frequency == "minute":
+            time_expr = pl.col(time_column).dt.truncate("1m").alias("time_period")
+            time_format = "%Y-%m-%d %H:%M"
+        elif frequency == "hourly":
             time_expr = pl.col(time_column).dt.truncate("1h").alias("time_period")
             time_format = "%Y-%m-%d %H:%M"
         elif frequency == "daily":
@@ -358,6 +364,89 @@ def _run_sequential_analysis(
         result_df = result_df.sort(sort_cols)
 
     return result_df
+
+
+@router.post("/nodes/{node_id}/sequential-analysis/preview")
+async def preview_sequential_analysis(
+    node_id: str,
+    request: SequentialAnalysisRequest,
+    include_data: bool = Query(
+        False,
+        description="If true, returns the full aggregated rows (as the standard endpoint does) in addition to the row count. The Trends snapshot capture sets this; the snapshot-dialog dry-run leaves it off.",
+    ),
+    current_user: dict = Depends(get_current_user),
+):
+    """Run the aggregation server-side but skip task registration and
+    conflict checks.
+
+    Used by:
+    - Trends snapshot-capture dialog ("Verify actual row count") —
+      ``include_data=false`` returns just the row count.
+    - Trends snapshot capture itself — ``include_data=true`` returns
+      the full result (matching the regular endpoint's payload shape)
+      without disturbing the live task store. The captured rows ship
+      verbatim into the snapshot bundle.
+
+    Why a separate endpoint rather than a flag on the existing one:
+    the existing endpoint is task-aware (rejects conflicting requests,
+    inherits chart_type, writes the result into the task store). All
+    of that machinery is wrong for a snapshot capture or a preview —
+    each is a pure query for a specific captured config, not a
+    competing analysis run.
+    """
+    user_id = current_user["id"]
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    try:
+        node = ws.nodes[node_id]
+        node_data = node.data
+
+        if request.group_by_columns and len(request.group_by_columns) > 3:
+            raise HTTPException(
+                status_code=400, detail="Maximum 3 group by columns allowed"
+            )
+
+        sequential_result = _run_sequential_analysis(
+            node_data,
+            time_column=request.time_column,
+            group_by_columns=request.group_by_columns,
+            frequency=request.frequency,
+            # Sort is cheap and lets snapshot data ship chronologically
+            # ordered when ``include_data=true``.
+            sort_by_time=include_data,
+            column_type=request.column_type,
+            numeric_origin=request.numeric_origin,
+            numeric_interval=request.numeric_interval,
+            custom_interval_value=request.custom_interval_value,
+            custom_interval_unit=request.custom_interval_unit,
+            case_sensitive=request.case_sensitive,
+        )
+
+        payload: dict[str, Any] = {
+            "state": "successful",
+            "total_records": len(sequential_result),
+            "columns": list(sequential_result.columns),
+        }
+        if include_data:
+            payload["data"] = sequential_result.to_dicts()
+            payload["analysis_params"] = {
+                "time_column": request.time_column,
+                "group_by_columns": request.group_by_columns or [],
+                "frequency": request.frequency,
+                "column_type": request.column_type,
+                "numeric_origin": request.numeric_origin,
+                "numeric_interval": request.numeric_interval,
+                "case_sensitive": request.case_sensitive,
+            }
+        return payload
+    except HTTPException:
+        raise
+    except Exception as exc:  # pragma: no cover
+        logger.error("Sequential analysis preview error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
 
 
 @router.post("/nodes/{node_id}/sequential-analysis")

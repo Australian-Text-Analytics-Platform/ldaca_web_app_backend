@@ -693,8 +693,14 @@ class QuotationResultQuery(BaseModel):
 class SequentialAnalysisRequest(BaseModel):
     time_column: str
     group_by_columns: Optional[List[str]] = None
+    # ``second`` and ``minute`` are valid backend frequencies but the
+    # live UI's preset dropdown intentionally hides them — they're only
+    # exposed in the Trends snapshot-capture dialog as the "finest time
+    # bin" option, since fine-grained snapshots enable richer
+    # client-side coarsening in the viewer. Live users wanting per-second
+    # buckets can still reach them via the ``custom`` flow.
     frequency: Literal[
-        "hourly", "daily", "weekly", "monthly", "quarterly", "yearly", "custom"
+        "second", "minute", "hourly", "daily", "weekly", "monthly", "quarterly", "yearly", "custom"
     ] = "monthly"
     sort_by_time: bool = True
     column_type: Literal["datetime", "numeric"] = "datetime"
