@@ -1,0 +1,2 @@
+import{c as e,n as t}from"./jsx-runtime-BjieVXav.js";import{p as n}from"./tutorialRegistry-BfNwXxkz.js";var r=e(t(),1),i=()=>{let e=(0,r.useContext)(n);if(!e)throw Error(`useWorkspaceSelection must be used within a WorkspaceProvider`);return e};export{i as t};
+//# sourceMappingURL=useWorkspaceSelection-DaxIgEYJ.js.map

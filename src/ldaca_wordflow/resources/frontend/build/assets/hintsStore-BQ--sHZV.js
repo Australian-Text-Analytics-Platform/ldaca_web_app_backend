@@ -1,0 +1,2 @@
+import{C as e,c as t,m as n,p as r}from"./utils-B4duQoCf.js";var i=e()(r(n(t(e=>({dismissedHints:[],hintsEnabled:!0,dismissHint:t=>e(e=>{e.dismissedHints.includes(t)||e.dismissedHints.push(t)}),resetHints:()=>e(e=>{e.dismissedHints=[]}),setHintsEnabled:t=>e(e=>{e.hintsEnabled=t})})),{name:`ldaca-hints`,partialize:e=>({dismissedHints:e.dismissedHints,hintsEnabled:e.hintsEnabled})}),{name:`hints-store`}));export{i as t};
+//# sourceMappingURL=hintsStore-BQ--sHZV.js.map

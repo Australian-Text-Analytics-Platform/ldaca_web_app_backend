@@ -1,0 +1,2 @@
+import{n as e,t}from"./jsx-runtime-BjieVXav.js";import{T as n}from"./utils-B4duQoCf.js";import{n as r}from"./HelpIcon-Ds9YOkD2.js";var i=n();e();var a=t(),o=e=>{let t=(0,i.c)(2),n;return t[0]===e?n=t[1]:(n=(0,a.jsx)(r,{kind:`info`,...e}),t[0]=e,t[1]=n),n};export{o as t};
+//# sourceMappingURL=InfoIcon-DV7FuAXc.js.map
