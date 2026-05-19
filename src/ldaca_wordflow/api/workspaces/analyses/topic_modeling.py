@@ -419,8 +419,6 @@ async def run_topic_modeling(
                 "embedding_cache_dir": str(
                     get_user_cache_folder(user_id) / "embeddings"
                 ),
-                "force_mode": request.force_mode,
-                "n_clusters": request.n_clusters,
                 "sample_fractions": request.sample_fractions,
                 "topic_size_mode": request.topic_size_mode,
                 "topic_size_value": request.topic_size_value,
@@ -446,8 +444,6 @@ async def run_topic_modeling(
         min_topic_size=min_topic_size,
         random_seed=random_seed,
         representative_words_count=representative_words_count,
-        force_mode=request.force_mode,
-        n_clusters=request.n_clusters,
         sample_fractions=request.sample_fractions,
         topic_size_mode=request.topic_size_mode,
         topic_size_value=request.topic_size_value,
@@ -902,12 +898,13 @@ async def detach_topic_modeling(
         # selected set can include topic IDs absent from one corpus, which
         # previously produced a topic_meanings block that wasn't a subset of
         # the associated detached topics block.
+        assignment_topics_df = cast(
+            pl.DataFrame,
+            assignments_lf.select(pl.col(TOPIC_COLUMN)).unique().collect(),
+        )
         corpus_topic_ids = sorted(
             int(value)
-            for value in assignments_lf.select(pl.col(TOPIC_COLUMN))
-            .unique()
-            .collect()
-            .get_column(TOPIC_COLUMN)
+            for value in assignment_topics_df.get_column(TOPIC_COLUMN)
             .drop_nulls()
             .to_list()
         )

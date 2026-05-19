@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, cast
 
-from docworkspace import Node
+from docworkspace import DerivedColumnMeta, Node
 
 from ..api.workspaces.analyses.generated_columns import (
     TOKENS_FORM,
@@ -144,9 +144,9 @@ def tokenise_column(
         node.unregister_derived_column(existing)
     node.data = new_lf
 
-    node.register_derived_column(
-        derived_name,
-        {  # type: ignore[arg-type]
+    derived_meta = cast(
+        DerivedColumnMeta,
+        {
             "source_column": source_column,
             "form": TOKENS_FORM,
             "model": model,
@@ -155,6 +155,7 @@ def tokenise_column(
             "cache_filename": cache_path.name,
         },
     )
+    node.register_derived_column(derived_name, derived_meta)
 
     # Reference the cache so the sweep keeps it alive while this node
     # is using it. ``workspace_id`` is optional in unit-test contexts
@@ -188,35 +189,10 @@ def _upsert_for_node(
     rows that aren't cached yet, tokenises those, and appends the
     result. Returns the cache parquet path.
     """
-    import polars as pl
-    import polars_text as pt
-
     cached_hashes = tokens_cache.read_cached_hashes(user_id, model, params)
-
-    # Select + hash + dedupe in one lazy plan so the source is only
-    # read once. ``unique`` collapses duplicate documents within the
-    # source so identical strings tokenise exactly once.
-    new_rows_lf = (
-        base_lf.select(
-            pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
-            pl.col(source_column).alias("__src__"),
-        )
-        .unique(subset=[tokens_cache.CONTENT_HASH_COLUMN])
-    )
-    if cached_hashes:
-        new_rows_lf = new_rows_lf.filter(
-            ~pl.col(tokens_cache.CONTENT_HASH_COLUMN).is_in(list(cached_hashes))
-        )
-
-    new_tokens_df = new_rows_lf.select(
-        pl.col(tokens_cache.CONTENT_HASH_COLUMN),
-        pt.tokenize_with_offsets(
-            pl.col("__src__"),
-            model=model,
-            lowercase=params["lowercase"],
-            remove_punct=params["remove_punct"],
-        ).alias("tokens"),
-    ).collect()
+    source_rows_lf = _unique_source_rows(base_lf, source_column)
+    new_rows_lf = _exclude_cached_hashes(source_rows_lf, cached_hashes)
+    new_tokens_df = _tokenize_source_rows(new_rows_lf, model=model, params=params)
 
     if new_tokens_df.height > 0:
         return tokens_cache.write_or_append_cache(
@@ -231,24 +207,49 @@ def _upsert_for_node(
     # *any* bucket file (legacy or delta), not just the canonical
     # ``<bucket>.parquet`` (which post-refactor is rarely on disk).
     if not tokens_cache.cache_exists(user_id, model, params):
-        # Race recovery: rebuild with all rows.
-        all_rows_lf = base_lf.select(
-            pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
-            pl.col(source_column).alias("__src__"),
-        ).unique(subset=[tokens_cache.CONTENT_HASH_COLUMN])
-        all_tokens_df = all_rows_lf.select(
-            pl.col(tokens_cache.CONTENT_HASH_COLUMN),
-            pt.tokenize_with_offsets(
-                pl.col("__src__"),
-                model=model,
-                lowercase=params["lowercase"],
-                remove_punct=params["remove_punct"],
-            ).alias("tokens"),
-        ).collect()
+        all_tokens_df = _tokenize_source_rows(source_rows_lf, model=model, params=params)
         return tokens_cache.write_or_append_cache(
             user_id, model, params, all_tokens_df
         )
     return tokens_cache.cache_path(user_id, model, params)
+
+
+def _unique_source_rows(base_lf, source_column: str):
+    """Return unique source texts keyed by the cache content hash."""
+    import polars as pl
+
+    return base_lf.select(
+        pl.col(source_column).hash().alias(tokens_cache.CONTENT_HASH_COLUMN),
+        pl.col(source_column).alias("__src__"),
+    ).unique(subset=[tokens_cache.CONTENT_HASH_COLUMN])
+
+
+def _exclude_cached_hashes(source_rows_lf, cached_hashes: set[int]):
+    """Skip rows already present in the token cache."""
+    if not cached_hashes:
+        return source_rows_lf
+
+    import polars as pl
+
+    return source_rows_lf.filter(
+        ~pl.col(tokens_cache.CONTENT_HASH_COLUMN).is_in(list(cached_hashes))
+    )
+
+
+def _tokenize_source_rows(rows_lf, *, model: str, params: dict):
+    """Tokenise hash/source rows into the cache write schema."""
+    import polars as pl
+    import polars_text as pt
+
+    return rows_lf.select(
+        pl.col(tokens_cache.CONTENT_HASH_COLUMN),
+        pt.tokenize_with_offsets(
+            pl.col("__src__"),
+            model=model,
+            lowercase=params["lowercase"],
+            remove_punct=params["remove_punct"],
+        ).alias("tokens"),
+    ).collect()
 
 
 def _build_cache_join(

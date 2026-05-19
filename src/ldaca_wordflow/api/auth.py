@@ -8,7 +8,7 @@ from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, Cookie, Depends, Form, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Request
 from google.auth.transport import requests as grequests
 from google.oauth2 import id_token
 from starlette.responses import RedirectResponse

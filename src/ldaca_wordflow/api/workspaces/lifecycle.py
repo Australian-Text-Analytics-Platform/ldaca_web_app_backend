@@ -237,7 +237,6 @@ async def start_workspace_download(
         workspace_id=workspace_id,
         task_type="workspace_download",
         task_args={
-            "target_workspace_id": workspace_id,
             "target_workspace_dir": str(workspace_dir),
         },
         task_name=f"Download: {ws_name}",

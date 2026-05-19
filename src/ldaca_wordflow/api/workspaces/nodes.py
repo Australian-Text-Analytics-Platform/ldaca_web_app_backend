@@ -863,11 +863,11 @@ async def describe_column(
 
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt.isoformat()
-                except ValueError, AttributeError:
+                except (ValueError, AttributeError):
                     return val
             try:
                 return float(val)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 return val
 
         return ColumnDescribeResponse(

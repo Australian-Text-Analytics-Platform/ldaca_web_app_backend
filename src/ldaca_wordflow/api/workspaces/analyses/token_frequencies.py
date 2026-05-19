@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -50,6 +51,19 @@ def _token_freq_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock
 DEFAULT_TOKEN_LIMIT = 25
 SERVER_LIMIT_MULTIPLIER = 5
 MAX_SERVER_TOKEN_LIMIT = 5000
+
+
+@dataclass(frozen=True)
+class TokenNodeArtifact:
+    node_id: str
+    node_name: str
+    token_parquet_path: Path
+
+
+@dataclass(frozen=True)
+class TokenFrequencyArtifacts:
+    nodes: tuple[TokenNodeArtifact, ...]
+    statistics_parquet_path: Path | None
 
 
 @router.delete("/token-frequencies")
@@ -99,7 +113,7 @@ def _coerce_limit_value(value) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
         candidate = int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return DEFAULT_TOKEN_LIMIT
     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
 
@@ -123,7 +137,33 @@ def _task_result_payload(task: AnalysisTask) -> dict:
     return payload
 
 
-def _token_artifacts_from_task(task: AnalysisTask) -> dict:
+def _invalid_artifact_manifest() -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail="Token-frequency artifact manifest is invalid",
+    )
+
+
+def _node_artifact_from_entry(entry: object) -> TokenNodeArtifact:
+    if not isinstance(entry, dict):
+        raise _invalid_artifact_manifest()
+
+    raw_entry = cast(dict[str, object], entry)
+    node_id = str(raw_entry.get("node_id") or "")
+    token_path = str(raw_entry.get("token_parquet_path") or "")
+    if not node_id or not token_path:
+        raise _invalid_artifact_manifest()
+
+    return TokenNodeArtifact(
+        node_id=node_id,
+        node_name=str(raw_entry.get("node_name") or node_id),
+        token_parquet_path=Path(token_path),
+    )
+
+
+def _token_artifacts_from_task(
+    task: AnalysisTask,
+) -> tuple[dict, TokenFrequencyArtifacts]:
     payload = _task_result_payload(task)
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
@@ -133,11 +173,16 @@ def _token_artifacts_from_task(task: AnalysisTask) -> dict:
         )
     node_artifacts = artifacts.get("nodes")
     if not isinstance(node_artifacts, list):
-        raise HTTPException(
-            status_code=500,
-            detail="Token-frequency artifact manifest is invalid",
-        )
-    return payload
+        raise _invalid_artifact_manifest()
+
+    stats_path = artifacts.get("statistics_parquet_path")
+    if stats_path is not None and not isinstance(stats_path, str):
+        raise _invalid_artifact_manifest()
+
+    return payload, TokenFrequencyArtifacts(
+        nodes=tuple(_node_artifact_from_entry(entry) for entry in node_artifacts),
+        statistics_parquet_path=Path(stats_path) if stats_path else None,
+    )
 
 
 def _server_limit(token_limit: int) -> int:
@@ -152,7 +197,7 @@ def _safe_float(value) -> float | str | None:
         return None
     try:
         numeric = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
     if math.isnan(numeric):
         return None
@@ -164,8 +209,7 @@ def _safe_float(value) -> float | str | None:
 
 
 def _rebuild_token_result(task: AnalysisTask) -> dict:
-    payload = _token_artifacts_from_task(task)
-    artifacts = payload["artifacts"]
+    payload, artifacts = _token_artifacts_from_task(task)
 
     request_payload = task.request.model_dump()
     token_limit = _coerce_limit_value(request_payload.get("token_limit"))
@@ -173,24 +217,19 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
     stop_word_set = set(stop_words)
 
     node_results: dict[str, dict] = {}
-    for node_entry in artifacts.get("nodes", []):
-        if not isinstance(node_entry, dict):
-            continue
-        node_id = str(node_entry.get("node_id") or "")
-        if not node_id:
-            continue
-        token_path = Path(str(node_entry.get("token_parquet_path") or ""))
-        if not token_path.exists():
+    for node_artifact in artifacts.nodes:
+        if not node_artifact.token_parquet_path.exists():
             raise HTTPException(
                 status_code=404,
-                detail=f"Token artifact missing for node {node_id}",
+                detail=f"Token artifact missing for node {node_artifact.node_id}",
             )
 
-        token_df = cast(pl.DataFrame, pl.scan_parquet(token_path).collect())
+        token_df = cast(
+            pl.DataFrame, pl.scan_parquet(node_artifact.token_parquet_path).collect()
+        )
         rows = token_df.to_dicts()
         total_tokens = len(rows)
-        display_name = str(node_entry.get("node_name") or node_id)
-        node_results[node_id] = {
+        node_results[node_artifact.node_id] = {
             "data": [
                 {
                     "token": str(row.get("token") or ""),
@@ -205,21 +244,21 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
                 "total_tokens_returned": total_tokens,
                 "truncated": False,
                 "token_limit": token_limit,
-                "node_id": node_id,
-                "display_name": display_name,
-                "node_name": display_name,
+                "node_id": node_artifact.node_id,
+                "display_name": node_artifact.node_name,
+                "node_name": node_artifact.node_name,
             },
         }
 
     statistics_payload = None
-    stats_path_str = artifacts.get("statistics_parquet_path")
-    if isinstance(stats_path_str, str) and stats_path_str:
-        stats_path = Path(stats_path_str)
-        if not stats_path.exists():
+    if artifacts.statistics_parquet_path is not None:
+        if not artifacts.statistics_parquet_path.exists():
             raise HTTPException(
                 status_code=404, detail="Token statistics artifact is missing"
             )
-        stats_df = cast(pl.DataFrame, pl.scan_parquet(stats_path).collect())
+        stats_df = cast(
+            pl.DataFrame, pl.scan_parquet(artifacts.statistics_parquet_path).collect()
+        )
         statistics_payload = [
             {
                 "token": str(row.get("token") or ""),
@@ -256,11 +295,8 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         "server_limit": server_limit,
         "stop_words": stop_words,
         "node_display_names": {
-            str(entry.get("node_id")): str(
-                entry.get("node_name") or entry.get("node_id")
-            )
-            for entry in artifacts.get("nodes", [])
-            if isinstance(entry, dict) and entry.get("node_id")
+            node.node_id: node.node_name
+            for node in artifacts.nodes
         },
     }
 

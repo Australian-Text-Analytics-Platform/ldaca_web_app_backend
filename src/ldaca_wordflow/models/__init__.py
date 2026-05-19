@@ -1133,8 +1133,6 @@ class TopicModelingRequest(BaseModel):
     min_topic_size: Optional[int] = 10  # kept for backwards compat; ignored when topic_size_mode != "min"
     random_seed: Optional[int] = 42
     representative_words_count: Optional[int] = 5
-    force_mode: Optional[Literal["auto", "classic", "online"]] = None
-    n_clusters: Optional[int] = None
     # Sampling: one entry per corpus in node_ids order. None = no sampling for that corpus.
     sample_fractions: Optional[List[Optional[float]]] = None
     # Topic size mode: controls how min_topic_size is derived

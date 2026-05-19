@@ -50,7 +50,7 @@ def normalize_context_length(value: Any) -> int:
     """
     try:
         numeric = int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         logger.debug("Non-numeric context length %r, using default", value)
         return DEFAULT_CONTEXT_LENGTH
     if numeric < 0:
@@ -74,7 +74,7 @@ def normalize_pagination(
     normalized_page = max(1, int(page)) if isinstance(page, int) else 1
     try:
         normalized_size = int(page_size) if page_size is not None else DEFAULT_PAGE_SIZE
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         logger.debug("Non-numeric page_size %r, using default", page_size)
         normalized_size = DEFAULT_PAGE_SIZE
     if normalized_size <= 0:
@@ -161,7 +161,7 @@ def stable_document_items(
         identifier = pair[0]
         try:
             return (0, int(identifier))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             logger.debug("Non-numeric document key %r, sorting as string", identifier)
             return (1, identifier)
 

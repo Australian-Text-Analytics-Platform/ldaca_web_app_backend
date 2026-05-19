@@ -1,10 +1,9 @@
-"""Phase 3.5: label-stage CountVectorizer stop_words is language-routed.
+"""Label-stage CountVectorizer stop_words is language-routed.
 
 BERTopic's clustering stage works on document embeddings (no stopwords
 involved), but the per-topic label stage uses a CountVectorizer to pick
-"topic-distinguishing" terms via c-TF-IDF. ``OnlineCountVectorizer`` was
-hardwired to ``stop_words="english"``, which on a Chinese corpus is wrong
-in two ways:
+"topic-distinguishing" terms via c-TF-IDF. A language-agnostic English
+stopword setting on a Chinese corpus is wrong in two ways:
 
 1. It silently keeps every Chinese function word (的 / 是 / 了 / 在 / 我 /
    你) as a candidate, so they dominate every topic label.
@@ -23,7 +22,6 @@ from ldaca_wordflow.core.worker_tasks_topic import (
     _bertopic_language_kwarg,
     _build_classic_pipeline,
     _build_label_vectorizer,
-    _build_online_pipeline,
     _resolve_top_n_words,
 )
 
@@ -48,84 +46,13 @@ def _vectorizer(topic_model):
     )
 
 
-def test_english_keeps_sklearn_english_stopwords() -> None:
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language="en",
-    )
-    vec = _vectorizer(model)
-    assert vec is not None, (
-        "online pipeline should attach an OnlineCountVectorizer"
-    )
-    # sklearn's English stopword list path: vec.stop_words is the string
-    # "english" until fit() expands it.
-    assert vec.stop_words == "english"
-
-
-def test_chinese_disables_english_stopwords() -> None:
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language="zh",
-    )
-    vec = _vectorizer(model)
-    assert vec is not None
-    assert vec.stop_words is None
-
-
-def test_japanese_disables_english_stopwords() -> None:
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language="ja",
-    )
-    vec = _vectorizer(model)
-    assert vec is not None
-    assert vec.stop_words is None
-
-
-def test_language_none_defaults_to_english_for_backward_compat() -> None:
-    """A worker called without ``language`` (older API client) keeps the
-    legacy English-stopword behaviour — no regression for EN flows."""
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language=None,
-    )
-    vec = _vectorizer(model)
-    assert vec is not None
-    assert vec.stop_words == "english"
-
-
-def test_language_normalisation_handles_case_and_whitespace() -> None:
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language=" EN ",
-    )
-    vec = _vectorizer(model)
-    assert vec is not None
-    assert vec.stop_words == "english"
-
-
 # ---------------------------------------------------------------------------
 # Classic-pipeline + label-vectorizer coverage for the multilingual fix.
 # Before the fix, the classic pipeline passed no ``vectorizer_model`` so
 # BERTopic defaulted to ``CountVectorizer(stop_words="english")`` whose
 # ``\b\w\w+\b`` regex can't segment CJK. After the fix, the classic
-# pipeline picks the same language-aware vectorizer the online pipeline
-# uses and forwards ``language="multilingual"`` to BERTopic.
+# pipeline picks the language-aware vectorizer and forwards
+# ``language="multilingual"`` to BERTopic.
 # ---------------------------------------------------------------------------
 
 
@@ -220,14 +147,3 @@ def test_classic_pipeline_forwards_top_n_words_to_bertopic() -> None:
     )
     assert getattr(model, "top_n_words", None) == 70
 
-
-def test_online_pipeline_forwards_top_n_words_to_bertopic() -> None:
-    model, _k = _build_online_pipeline(
-        n_docs=100,
-        n_clusters=5,
-        random_state=42,
-        embedder=_make_dummy_embedder(),
-        language="zh",
-        top_n_words=70,
-    )
-    assert getattr(model, "top_n_words", None) == 70

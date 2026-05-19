@@ -89,7 +89,7 @@ def _setup_signal_handlers() -> None:
         except Exception as e:
             logger.warning("Error during child process cleanup: %s", e)
 
-    def _signal_handler(signum, frame):
+    def _signal_handler(signum, _frame):
         logger.info("Received signal %s, shutting down gracefully...", signum)
         _cleanup_child_processes()
         sys.exit(0)
