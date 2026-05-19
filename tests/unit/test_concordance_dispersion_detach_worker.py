@@ -154,6 +154,42 @@ def test_aggregate_hits_per_document_empty_selected_matched_texts_is_zero_rows()
     assert agg.height == 0
 
 
+def test_aggregate_hits_per_document_strips_internal_newlines_from_extracts():
+    """Embedded newlines in the raw document slice must not split a bullet.
+
+    The KWIC extract is a raw character slice of the document, so if the
+    left/right context spans a line break the extract carries the literal
+    "\\n". Joining bulleted extracts with newlines would then render the
+    continuation lines without a leading "- ", breaking the dot-point shape.
+    Internal whitespace runs collapse to a single space per element.
+    """
+    df = pl.DataFrame(
+        {
+            "document": ["Line one\nLine two has match here"],
+            "CONC_left_context": ["Line one\nLine two has"],
+            "CONC_matched_text": ["match"],
+            "CONC_right_context": ["here"],
+            "CONC_start_idx": [22],
+            "CONC_end_idx": [27],
+            "CONC_l1": ["has"],
+            "CONC_r1": ["here"],
+            "CONC_l1_freq": [1],
+            "CONC_r1_freq": [1],
+        }
+    )
+
+    agg, _ = _aggregate_hits_per_document(
+        df,
+        document_column="document",
+        selected_bins=None,
+        total_bins=None,
+    )
+
+    row = next(iter(agg.iter_rows(named=True)))
+    assert "\n" not in row["CONC_extraction"]
+    assert row["CONC_extraction"].startswith("- ")
+
+
 def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
     """Regression for the bin-fetch chain after a no-selection detach.
 
