@@ -41,12 +41,12 @@ from .concordance_core import (
     normalize_saved_request,
     read_dispersion_bins,
 )
+from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import (
     CONC_EXTRACTION_COLUMN,
     TOKENS_FORM,
     is_derived_column_name,
 )
-from .current_tasks import get_current_task_ids_for_analysis
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
 logger = logging.getLogger(__name__)
@@ -235,7 +235,6 @@ async def concordance_current_tasks(
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id,
-        workspace_id,
         ["concordance_analysis", "concordance-analysis", "concordance"],
     )
 
@@ -672,11 +671,7 @@ async def materialize_concordance(
                 detail=(
                     f"No tokens column registered on node {node_id!r} for "
                     f"source column {request.column!r}"
-                    + (
-                        f" with model {request.model!r}"
-                        if request.model
-                        else ""
-                    )
+                    + (f" with model {request.model!r}" if request.model else "")
                     + "; re-run Tokenise first."
                 ),
             )
@@ -801,9 +796,7 @@ async def concordance_detach_options(
     # though they exist in the schema — they're an internal analytic layer
     # (Phase 2 / decision 7) that the detach worker doesn't carry through.
     available_schema_columns = [
-        c
-        for c in node_data.collect_schema().names()
-        if not is_derived_column_name(c)
+        c for c in node_data.collect_schema().names() if not is_derived_column_name(c)
     ]
     mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
     mandatory_set = set(mandatory_columns)

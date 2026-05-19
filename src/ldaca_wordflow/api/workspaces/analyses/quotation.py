@@ -63,9 +63,7 @@ _QUOTATION_TOOL = "Quotation extractor"
 _QUOTATION_SUPPORTED_LANGUAGES = (DEFAULT_LANGUAGE,)
 
 
-def _enforce_quotation_language_gate(
-    request_language: Optional[str], node: Any
-) -> str:
+def _enforce_quotation_language_gate(request_language: Optional[str], node: Any) -> str:
     """Resolve effective language and reject anything other than English.
 
     Returns the resolved language string for downstream telemetry/logging.
@@ -135,7 +133,7 @@ async def quotation_current_tasks(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
-        user_id, workspace_id, ["quotation_analysis", "quotation-analysis", "quotation"]
+        user_id, ["quotation_analysis", "quotation-analysis", "quotation"]
     )
 
 
@@ -517,9 +515,7 @@ async def quotation_detach_options(
     # (``__derived__.*``) must not appear in the detach picker — the
     # worker can't carry them through, and they have no user-facing role.
     available_schema_columns = [
-        c
-        for c in node_data.collect_schema().names()
-        if not is_derived_column_name(c)
+        c for c in node_data.collect_schema().names() if not is_derived_column_name(c)
     ]
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
     # `QUOTE_extraction` is a generated column (raw source-document text)

@@ -21,6 +21,7 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.i18n import effective_language
+from ....core.utils import get_user_cache_folder, get_user_data_folder
 from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
@@ -31,11 +32,14 @@ from ....models import (
     TopicModelingRequest,
     TopicModelingResponse,
 )
-from ....core.utils import get_user_cache_folder, get_user_data_folder
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
-from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN, is_derived_column_name
+from .generated_columns import (
+    TOPIC_COLUMN,
+    TOPIC_MEANING_COLUMN,
+    is_derived_column_name,
+)
 
 router = APIRouter(prefix="/workspaces", tags=["topic-modeling"])
 logger = logging.getLogger(__name__)
@@ -476,7 +480,7 @@ async def topic_modeling_current_tasks(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
-        user_id, workspace_id, ["topic_modeling", "topic-modeling"]
+        user_id, ["topic_modeling", "topic-modeling"]
     )
 
 
@@ -595,8 +599,12 @@ async def update_topic_modeling_task_result(
             detail="Only exact topic modeling results can be re-aggregated",
         )
 
-    requested_topic_count = updates.get("topic_size_value") if isinstance(updates, dict) else None
-    if isinstance(requested_topic_count, bool) or not isinstance(requested_topic_count, int):
+    requested_topic_count = (
+        updates.get("topic_size_value") if isinstance(updates, dict) else None
+    )
+    if isinstance(requested_topic_count, bool) or not isinstance(
+        requested_topic_count, int
+    ):
         raise HTTPException(
             status_code=400,
             detail="topic_size_value must be an integer",
@@ -648,11 +656,14 @@ async def update_topic_modeling_task_result(
         ) from exc
 
     existing_meta = cast(
-        dict[str, object], payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        dict[str, object],
+        payload.get("meta") if isinstance(payload.get("meta"), dict) else {},
     )
     updated_meta = cast(
         dict[str, object],
-        updated_payload.get("meta") if isinstance(updated_payload.get("meta"), dict) else {},
+        updated_payload.get("meta")
+        if isinstance(updated_payload.get("meta"), dict)
+        else {},
     )
     payload.update(
         {
@@ -846,7 +857,9 @@ async def detach_topic_modeling(
     # corpus's meanings node (consistent with the multilingual
     # per-corpus semantics).
     if request.topic_meanings_override:
-        override_topic_ids = [int(item.topic_id) for item in request.topic_meanings_override]
+        override_topic_ids = [
+            int(item.topic_id) for item in request.topic_meanings_override
+        ]
         override_words = [list(item.words) for item in request.topic_meanings_override]
         override_path = (
             meanings_path.parent
@@ -937,16 +950,13 @@ async def detach_topic_modeling(
             set(original_columns) | set(selected_columns),
         )
 
-        output_lf = (
-            assignments_lf.join(
-                source_data.with_row_index("__row_nr__"),
-                on="__row_nr__",
-                how="inner",
-            )
-            .select(
-                [pl.col(col) for col in selected_columns]
-                + [pl.col(TOPIC_COLUMN).alias(topic_column_name)]
-            )
+        output_lf = assignments_lf.join(
+            source_data.with_row_index("__row_nr__"),
+            on="__row_nr__",
+            how="inner",
+        ).select(
+            [pl.col(col) for col in selected_columns]
+            + [pl.col(TOPIC_COLUMN).alias(topic_column_name)]
         )
 
         parents = [source_node] if source_node else []

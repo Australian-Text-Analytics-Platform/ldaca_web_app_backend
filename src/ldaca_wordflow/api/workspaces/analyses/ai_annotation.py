@@ -28,6 +28,7 @@ from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
+from ....core.i18n import effective_language
 from ....core.workspace import workspace_manager
 from ....models import (
     AiAnnotationDetachRequest,
@@ -37,7 +38,6 @@ from ....models import (
     AiAnnotationResultQuery,
     AiAnnotationSaveRequest,
 )
-from ....core.i18n import effective_language
 from ..utils import update_workspace
 from .ai_annotation_core import classify_texts, list_models
 from .cleanup import clear_previous_completed_analysis_task
@@ -338,7 +338,7 @@ async def ai_annotation_current_tasks(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
-        user_id, workspace_id, ["ai_annotation", "ai-annotation"]
+        user_id, ["ai_annotation", "ai-annotation"]
     )
 
 
@@ -567,9 +567,7 @@ async def save_ai_annotation(
         raise HTTPException(status_code=404, detail="Workspace not found")
     workspace_data_dir = workspace_dir / "data"
     workspace_data_dir.mkdir(parents=True, exist_ok=True)
-    save_parquet_path = (
-        workspace_data_dir / f"ai_annotation_save_{uuid4().hex}.parquet"
-    )
+    save_parquet_path = workspace_data_dir / f"ai_annotation_save_{uuid4().hex}.parquet"
     df.write_parquet(str(save_parquet_path))
     node.data = pl.scan_parquet(str(save_parquet_path))
 

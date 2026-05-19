@@ -35,11 +35,11 @@ def _whole_word_active_for_language(
     whole — per-node suppression lives here so a mixed selection (EN + JA)
     still wraps the pattern with ``\\b`` on the EN node.
     """
-    if not whole_word_request:
-        return False
-    if language is None:
+    if not whole_word_request or language is None:
         return whole_word_request
     return language.strip().lower() not in _CJK_LANGUAGES
+
+
 from .concordance_tokens_mode import (
     compute_tokens_concordance_page,
     find_token_matches,
@@ -569,7 +569,9 @@ def _count_tokens_concordance_hits(
     for tokens in slice_df.get_column(derived_column).to_list():
         if not isinstance(tokens, list) or not tokens:
             continue
-        total += len(find_token_matches(tokens, search_word, case_sensitive=case_sensitive))
+        total += len(
+            find_token_matches(tokens, search_word, case_sensitive=case_sensitive)
+        )
     return total
 
 
@@ -631,9 +633,7 @@ def _serialize_materialized_rows(
     if can_group:
         from itertools import groupby
 
-        for _, group in groupby(
-            df.to_dicts(), key=lambda r: r.get(document_column)
-        ):
+        for _, group in groupby(df.to_dicts(), key=lambda r: r.get(document_column)):
             hits: list[dict[str, Any]] = []
             for row in group:
                 hit = dict(row)
@@ -768,7 +768,11 @@ def read_dispersion_bins(
     )
     start_idx_expr = pl.col(CONC_START_IDX_COLUMN).cast(pl.Int64, strict=False)
     bin_idx_expr = (
-        (start_idx_expr.cast(pl.Float64) / doc_length_expr.cast(pl.Float64) * DISPERSION_BIN_COUNT)
+        (
+            start_idx_expr.cast(pl.Float64)
+            / doc_length_expr.cast(pl.Float64)
+            * DISPERSION_BIN_COUNT
+        )
         .floor()
         .cast(pl.Int64)
         .clip(0, DISPERSION_BIN_COUNT - 1)

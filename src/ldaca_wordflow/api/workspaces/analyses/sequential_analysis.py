@@ -12,9 +12,10 @@ from datetime import date, datetime
 from typing import Any, Optional, cast
 
 import polars as pl
-from docworkspace import Node
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+
+from docworkspace import Node
 
 from ....analysis.implementations.sequential_analysis import (
     SequentialAnalysisRequest as AnalysisSequentialAnalysisRequest,
@@ -25,8 +26,7 @@ from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import SequentialAnalysisRequest
-from ..utils import update_workspace
-from ..utils import ensure_task_synced
+from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,9 @@ def _build_group_filter_expression(
             else:
                 current_expr = column_expr == pl.lit(raw_value)
 
-            value_expr = current_expr if value_expr is None else (value_expr & current_expr)
+            value_expr = (
+                current_expr if value_expr is None else (value_expr & current_expr)
+            )
 
         if value_expr is None:
             continue
@@ -278,7 +280,10 @@ def _run_sequential_analysis(
     # Lowercase group-by column values for case-insensitive grouping
     if not case_sensitive and group_by_columns:
         for col_name in group_by_columns:
-            if df.schema.get(col_name) == pl.String or df.schema.get(col_name) == pl.Utf8:
+            if (
+                df.schema.get(col_name) == pl.String
+                or df.schema.get(col_name) == pl.Utf8
+            ):
                 df = df.with_columns(pl.col(col_name).str.to_lowercase())
 
     # Perform aggregation
@@ -662,7 +667,7 @@ async def sequential_analysis_current_tasks(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
-        user_id, workspace_id, ["sequential_analysis", "sequential-analysis"]
+        user_id, ["sequential_analysis", "sequential-analysis"]
     )
 
 
@@ -778,12 +783,16 @@ async def detach_sequential_analysis_task(
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
     if not request.selected_periods:
-        raise HTTPException(status_code=400, detail="At least one selected period is required")
+        raise HTTPException(
+            status_code=400, detail="At least one selected period is required"
+        )
 
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None or task.request is None:
-        raise HTTPException(status_code=404, detail="Sequential analysis task not found")
+        raise HTTPException(
+            status_code=404, detail="Sequential analysis task not found"
+        )
 
     stored_request = task.request
     node_id = getattr(stored_request, "node_id", None)
@@ -792,9 +801,13 @@ async def detach_sequential_analysis_task(
     case_sensitive = bool(getattr(stored_request, "case_sensitive", True))
 
     if not isinstance(node_id, str) or not node_id:
-        raise HTTPException(status_code=400, detail="Sequential analysis task is missing node_id")
+        raise HTTPException(
+            status_code=400, detail="Sequential analysis task is missing node_id"
+        )
     if not isinstance(time_column, str) or not time_column:
-        raise HTTPException(status_code=400, detail="Sequential analysis task is missing time_column")
+        raise HTTPException(
+            status_code=400, detail="Sequential analysis task is missing time_column"
+        )
     if node_id not in ws.nodes:
         raise HTTPException(status_code=404, detail="Source node not found")
 
@@ -823,17 +836,23 @@ async def detach_sequential_analysis_task(
         period_expr = (pl.col(time_column) >= pl.lit(period_start)) & (
             pl.col(time_column) <= pl.lit(period_end)
         )
-        filter_expr = period_expr if filter_expr is None else (filter_expr | period_expr)
+        filter_expr = (
+            period_expr if filter_expr is None else (filter_expr | period_expr)
+        )
 
     if filter_expr is None:
-        raise HTTPException(status_code=400, detail="No valid period filters were provided")
+        raise HTTPException(
+            status_code=400, detail="No valid period filters were provided"
+        )
 
     group_expr = _build_group_filter_expression(
         visible_groups=request.visible_groups,
         schema=schema,
         case_sensitive=case_sensitive,
     )
-    final_filter_expr = filter_expr if group_expr is None else (filter_expr & group_expr)
+    final_filter_expr = (
+        filter_expr if group_expr is None else (filter_expr & group_expr)
+    )
 
     filtered_lazy = source_lazy.filter(final_filter_expr)
 

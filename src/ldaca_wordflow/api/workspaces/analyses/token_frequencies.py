@@ -113,7 +113,7 @@ def _coerce_limit_value(value) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
         candidate = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return DEFAULT_TOKEN_LIMIT
     return candidate if candidate > 0 else DEFAULT_TOKEN_LIMIT
 
@@ -197,7 +197,7 @@ def _safe_float(value) -> float | str | None:
         return None
     try:
         numeric = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     if math.isnan(numeric):
         return None
@@ -295,8 +295,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
         "server_limit": server_limit,
         "stop_words": stop_words,
         "node_display_names": {
-            node.node_id: node.node_name
-            for node in artifacts.nodes
+            node.node_id: node.node_name for node in artifacts.nodes
         },
     }
 
@@ -323,7 +322,7 @@ async def token_frequencies_current_tasks(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     return await get_current_task_ids_for_analysis(
-        user_id, workspace_id, ["token_frequencies", "token-frequencies"]
+        user_id, ["token_frequencies", "token-frequencies"]
     )
 
 
