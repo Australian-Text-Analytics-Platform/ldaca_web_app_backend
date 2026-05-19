@@ -563,9 +563,16 @@ def _aggregate_hits_per_document(
     # (Markdown bullet syntax) and join with newlines. The earlier
     # `map_elements` form passed each row value as a Series, which broke
     # the `items or []` truthiness check.
+    # Embedded newlines inside an individual extract (the raw document
+    # slice can span CR/LF) would otherwise split the bullet across
+    # multiple lines and render unprefixed continuation lines — collapse
+    # any internal whitespace runs to a single space per element first.
     grouped = grouped.with_columns(
         pl.col("__extracts_list__")
-        .list.eval(pl.lit("- ") + pl.element())
+        .list.eval(
+            pl.lit("- ")
+            + pl.element().str.replace_all(r"\s+", " ").str.strip_chars()
+        )
         .list.join("\n")
         .alias(DISPERSION_EXTRACTED_CONTENTS_COLUMN)
     ).drop("__extracts_list__")
