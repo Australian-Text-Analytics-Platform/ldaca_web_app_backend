@@ -188,6 +188,28 @@ def _build_lazy_plan(*, base_lf, source_column, model, params, derived_name):
 
 `_upsert_for_node` stays as a callable helper (still useful for explicit "warm the cache for this node" flows) but is no longer invoked from `tokenise_column`.
 
+## 8a) Migration limitation discovered during Phase 2.5 field test (2026-05-20)
+
+The Phase 2.5 auto-migration walker overlays the lazy expression on top of the eager hash-join plan rather than surgically removing the join (the design doc originally said "replace it"). The reason is empirical: a polars `LEFT JOIN` whose output column is dropped is NOT pruned by polars 1.40's optimizer — the join is retained on the off-chance that it could change row count (polars doesn't know our cache parquet is unique on `__hash__`).
+
+Tested:
+```python
+plan.drop("derived_tokens").explain(optimized=True)
+# Still shows the LEFT JOIN; only the projection on the right narrows
+```
+
+Consequences:
+
+- **Freshly lazy-tokenised nodes** (built via `_build_lazy_plan` from scratch) are pure lazy — no `scan_parquet([absolute paths])` anywhere in the plan. They survive cache-folder deletion mid-session because the lazy expression treats missing files as cache misses and recomputes.
+
+- **Migrated nodes** (eager plans that picked up the lazy overlay on load) still carry the eager `scan_parquet([cache_paths])` in their plan. The lazy expression's output shadows the eager output via the same `with_columns(...alias(name))` so analyses produce correct results — BUT the underlying scan still needs the files to *exist*. The Phase 2.5 wiring calls `repair_tokens_cache_paths` at load time which writes 0-row stub parquets where files are missing, so workspace loads succeed. Mid-session deletion of those stubs breaks the plan again.
+
+User workaround for migrated nodes that need full portability: re-tokenise once via the Workspace Graph view. That goes through the lazy `tokenise_column` path and produces a clean pure-lazy plan with no eager substrate. After that, the node is fully portable (deletion-tolerant, cross-machine-clean).
+
+Long-term path to full migration: Phase 4.5 deletes the eager `_upsert_for_node` + `_build_cache_join` paths entirely. Once that lands, any node still on the eager plan shape will fail to construct, so the user MUST re-tokenise — which gives us the clean lazy plan as a side effect. At that point the overlay-vs-replace distinction disappears (only one shape exists).
+
+For the Phase 2.5 soak window: gate the friendly-preflight check (`assert_tokens_available_for_nodes`) and the banner detection (`_runtime_tokens_cache_state`) behind `LDACA_LAZY_TOKENISE` so they don't surface confusing "missing tokens" errors for nodes whose actual output comes from the lazy overlay.
+
 ## 8) Old-plan migration (auto-migrate on load — Option A)
 
 **Question:** *Existing workspaces have hash-join plans (`scan_parquet([bucket files]) ⋈ hash(source)`). What happens on load?*
