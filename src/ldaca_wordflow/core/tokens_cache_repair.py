@@ -299,10 +299,81 @@ def get_stubbed_node_ids(workspace_dir: Path | None) -> set[str]:
     return set(read_repair_sidecar(workspace_dir).get("stubbed_node_ids", []))
 
 
+# --------------------------------------------------------------------------- #
+# Runtime detection — walks the actual lazy plans on disk                     #
+# --------------------------------------------------------------------------- #
+
+
+def _parquet_row_count(path: Path) -> int | None:
+    """Cheap row-count check via parquet metadata — does not read column data.
+
+    Returns ``None`` on read failure so callers can treat the file as
+    "unknown" rather than "stub". pyarrow is already a hard dependency
+    (see backend/pyproject.toml).
+    """
+    try:
+        import pyarrow.parquet as pq
+
+        return pq.read_metadata(str(path)).num_rows
+    except Exception:
+        return None
+
+
+def detect_invalid_token_cache_node_ids(
+    workspace_dir: Path | None, node_ids: Iterable[str]
+) -> list[str]:
+    """Return node IDs whose plan references a missing or 0-row tokens-cache
+    parquet, walking each node's serialised plan on disk.
+
+    This is the runtime path-validity check that drives the workspace
+    banner — preferred over the persistent sidecar because the sidecar
+    only reflects state from the most recent load. If the user manually
+    repairs the cache (or it spontaneously becomes invalid for some
+    other reason) we want the banner to reflect that immediately.
+
+    The check is cheap: ``list_source_paths`` reads only the plbin's
+    source-path manifest (no plan evaluation), and ``_parquet_row_count``
+    reads parquet footer metadata only (no column data). For a typical
+    workspace with N tokenised nodes each holding one tokens cache
+    reference, the total cost is O(N) tiny IO ops.
+    """
+    if workspace_dir is None:
+        return []
+    from polars_text import list_source_paths
+
+    data_dir = workspace_dir / "data"
+    invalid: list[str] = []
+    seen: set[str] = set()
+    for node_id in node_ids:
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        plbin = data_dir / f"{node_id}.plbin"
+        if not plbin.exists():
+            continue
+        try:
+            sources = list_source_paths(plbin)
+        except Exception:
+            continue
+        for raw in sources:
+            p = Path(raw)
+            if not _looks_like_tokens_cache_path(p):
+                continue
+            if not p.exists():
+                invalid.append(node_id)
+                break
+            rows = _parquet_row_count(p)
+            if rows == 0:
+                invalid.append(node_id)
+                break
+    return invalid
+
+
 __all__ = [
     "REPAIR_SIDECAR_FILENAME",
     "TokensCacheRepairReport",
     "clear_node_from_sidecar",
+    "detect_invalid_token_cache_node_ids",
     "get_stubbed_node_ids",
     "read_repair_sidecar",
     "repair_tokens_cache_paths",

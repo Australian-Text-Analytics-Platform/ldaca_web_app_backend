@@ -33,6 +33,7 @@ from ldaca_wordflow.core.tokens_cache_repair import (
     REPAIR_SIDECAR_FILENAME,
     TokensCacheRepairReport,
     clear_node_from_sidecar,
+    detect_invalid_token_cache_node_ids,
     read_repair_sidecar,
     repair_tokens_cache_paths,
     write_repair_sidecar,
@@ -428,3 +429,93 @@ def test_sidecar_read_tolerates_corrupt_json(tmp_path: Path) -> None:
     # Returns empty dict rather than raising — sidecar is a UX hint, not a
     # load-blocking invariant.
     assert read_repair_sidecar(workspace_dir) == {}
+
+
+# --------------------------------------------------------------------------- #
+# Runtime path-validity detection                                              #
+# --------------------------------------------------------------------------- #
+
+
+class TestDetectInvalidTokenCacheNodeIds:
+    """The runtime check that drives the workspace banner. Walks each
+    node's plan to flag nodes whose tokens-cache parquets are missing or
+    0-row stubs *right now* (vs. the sidecar's snapshot from the last load).
+    """
+
+    def test_returns_empty_when_workspace_dir_is_none(self) -> None:
+        assert detect_invalid_token_cache_node_ids(None, ["any-node"]) == []
+
+    def test_returns_empty_when_no_plbins(self, tmp_path: Path) -> None:
+        workspace_dir = tmp_path / "ws"
+        (workspace_dir / "data").mkdir(parents=True)
+        assert detect_invalid_token_cache_node_ids(workspace_dir, ["a", "b"]) == []
+
+    def test_flags_node_with_missing_cache_path(
+        self, cache_root: Path, tmp_path: Path
+    ) -> None:
+        donor_path = (
+            tmp_path
+            / "donor"
+            / "user_cache"
+            / TOKENS_CACHE_SUBDIR
+            / "model_a_aaaaaaaaaaaa.parquet"
+        )
+        _write_tokens_parquet(donor_path)
+        workspace_dir = tmp_path / "workspace"
+        plbin = workspace_dir / "data" / "node-missing.plbin"
+        _make_plbin_referencing(donor_path, plbin)
+        donor_path.unlink()  # path now points to nothing
+
+        result = detect_invalid_token_cache_node_ids(workspace_dir, ["node-missing"])
+        assert result == ["node-missing"]
+
+    def test_flags_node_with_zero_row_stub(
+        self, cache_root: Path, tmp_path: Path
+    ) -> None:
+        stub_path = (
+            tmp_path / "donor" / "user_cache" / TOKENS_CACHE_SUBDIR / "stub.parquet"
+        )
+        _write_tokens_parquet(stub_path)  # zero rows by construction
+        workspace_dir = tmp_path / "workspace"
+        plbin = workspace_dir / "data" / "node-stubbed.plbin"
+        _make_plbin_referencing(stub_path, plbin)
+
+        result = detect_invalid_token_cache_node_ids(workspace_dir, ["node-stubbed"])
+        assert result == ["node-stubbed"]
+
+    def test_does_not_flag_node_with_populated_cache(
+        self, cache_root: Path, tmp_path: Path
+    ) -> None:
+        real_path = (
+            tmp_path / "donor" / "user_cache" / TOKENS_CACHE_SUBDIR / "real.parquet"
+        )
+        # Populated parquet — one row matching the cache schema. Distinct
+        # from the stub which is 0 rows.
+        real_path.parent.mkdir(parents=True, exist_ok=True)
+        pl.DataFrame(
+            {CONTENT_HASH_COLUMN: [1234], "tokens": [[]]},
+            schema=TOKENS_CACHE_SCHEMA,
+        ).write_parquet(real_path)
+
+        workspace_dir = tmp_path / "workspace"
+        plbin = workspace_dir / "data" / "node-healthy.plbin"
+        _make_plbin_referencing(real_path, plbin)
+
+        result = detect_invalid_token_cache_node_ids(workspace_dir, ["node-healthy"])
+        assert result == []
+
+    def test_ignores_non_tokens_cache_paths(
+        self, cache_root: Path, tmp_path: Path
+    ) -> None:
+        # Path outside of TOKENS_CACHE_SUBDIR — the detector deliberately
+        # leaves these alone so it doesn't claim ownership over other
+        # workspace failure modes (raw data parquets, etc.).
+        other_path = tmp_path / "elsewhere" / "not_tokens" / "thing.parquet"
+        _write_tokens_parquet(other_path)
+        workspace_dir = tmp_path / "workspace"
+        plbin = workspace_dir / "data" / "node-other.plbin"
+        _make_plbin_referencing(other_path, plbin)
+        other_path.unlink()  # missing — but still NOT flagged
+
+        result = detect_invalid_token_cache_node_ids(workspace_dir, ["node-other"])
+        assert result == []
