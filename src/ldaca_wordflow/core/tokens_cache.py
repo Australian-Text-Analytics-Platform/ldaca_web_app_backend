@@ -1,65 +1,28 @@
 """Per-user, content-addressed cache of tokenisation results.
 
-Tokenising a column is expensive — especially for the new CJK backends
-(Jieba for Chinese, Lindera for Japanese / Korean) where a single 10 k
-character document produces thousands of morphemes. The lazy plan in
-``derived_columns.tokenise_column`` only appends a
-``polars_text.tokenize_with_offsets`` expression, so every downstream
-``.collect()`` (every paginated concordance query, every page-size
-estimator probe, every token-frequency run) re-executes the tokeniser
-from scratch. This module amortises that cost to once per (model,
-params, source content) tuple by writing the per-row tokens to a
-parquet that persists across workspace open/close.
+The lazy `polars_text.tokenize_with_cache_lookup` Rust expression in
+each tokenised node's plan writes its delta parquets into this layout.
+This Python module owns the surrounding bookkeeping: the manifest
+(which workspace/node references each bucket), the reference-tracking
+API (`add_reference`, `drop_reference`, …) so the sweep can reclaim
+buckets with no live references.
 
-Design:
+Layout: ``{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens/``.
+  * ``manifest.json`` — per-user manifest of bucket references
+  * ``{model}__{params_hash}.parquet`` — legacy single-file bucket
+  * ``{model}__{params_hash}__delta__{uuid}.parquet`` — delta parquet
+    appended by each `tokenize_with_cache_lookup` cache miss
+  * ``{model}__{params_hash}.parquet.lock`` — advisory flock for writes
 
-* **Per-user location.** ``{user_root}/user_cache/tokens/`` — a sibling
-  of the embeddings cache, scoped to one LDaCA user. Resolved via
-  :func:`core.utils.get_user_cache_folder` so it lives under the same
-  ``Documents/ldaca/users/<id>/`` tree as the rest of that user's
-  data and never lands inside ``user_data`` (which the data-loader UI
-  would surface). Workspace-GC paths can't touch it because they only
-  walk inside individual workspace folders.
-* **Filename.** ``{model}__{params_hash}.parquet`` — one parquet per
-  (model, params) for a given user. New tokens are appended; cache
-  hit rate improves over time as the user explores related corpora.
-* **Schema.** ``__content_hash: u64`` (``pl.col(source).hash()``) and
-  ``tokens: List<Struct<token, start, end>>``. Within a single user's
-  cache, source rows that share content (duplicate documents within
-  or across corpora) share one cache row.
-* **Lookup.** The lazy plan joins the source frame to the cached
-  frame on ``__content_hash``. Filter / sort / select downstream is
-  free: surviving rows automatically retrieve their tokens; dropped
-  columns trigger projection pushdown and never read the cache.
-* **References.** A sidecar ``manifest.json`` (per user) tracks which
-  ``(workspace_id, node_id)`` pairs reference each cache file.
-  ``tokenise_column`` calls :func:`add_reference`; node and workspace
-  deletion paths call :func:`drop_reference` /
-  :func:`drop_node_references` / :func:`drop_workspace_references`.
-  :func:`sweep_unreferenced` then deletes any cache file whose
-  ``references`` is empty AND that has not been accessed in
-  ``grace_period_days`` days (default 7).
+Schema for every cache parquet (legacy + delta):
+  * ``__ldaca_content_hash__: UInt64`` — polars' `Series.hash()` of the
+    source text
+  * ``tokens: List<Struct<token: String, start: Int64, end: Int64>>``
 
-Why per-user (not machine-wide):
-
-The original draft stored the cache under ``~/.ldaca/tokens-cache/``
-shared across LDaCA users. The trade-off — cross-user dedup vs scoped
-storage that matches the existing ``{user_root}/user_cache/``
-convention used by the embeddings cache — falls clearly on the
-per-user side: real LDaCA installs are either single-user Tauri
-desktops or per-researcher cloud accounts working on their own
-corpora, so the dedup benefit is mostly theoretical, while privacy
-(content-hash leakage across users) and conventional layout
-(``user_cache`` already contains ``embeddings/``; tokens sits beside
-it) are real wins.
-
-Concurrency: per-cache-file ``fcntl.flock`` over a ``.lock`` sidecar
-serialises writers. The per-user manifest has its own lock. Atomic
-write-to-temp + ``os.replace`` makes partial writes invisible to
-concurrent readers. Windows (Tauri build) does not have ``fcntl``;
-the lock acquisition is best-effort there — multiple concurrent
-tokenise calls on the same model are vanishingly rare in the desktop
-single-user case.
+The env var is set at backend startup (`main.py` lifespan) if not
+externally configured, so the Python and Rust sides always resolve to
+the same directory. See `developer-guide/lazy-tokenisation-refactor.md`
+for the full design.
 
 Collision risk: 64-bit hashes are fine for personal-corpora scale
 (low collision probability up to ~10⁸ unique documents). Document
@@ -85,8 +48,6 @@ from typing import Iterator, Optional
 
 import polars as pl
 
-from .utils import _user_root_folder, get_user_cache_folder
-from ..settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -152,21 +113,25 @@ TOKENS_CACHE_SCHEMA: dict[str, "pl.DataType"] = {
 
 
 def tokens_cache_dir(user_id: str) -> Path:
-    """Return ``{user_root}/user_cache/tokens`` for ``user_id``.
+    """Return ``{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens`` for ``user_id``.
 
-    Sibling of ``user_cache/embeddings`` so a user wiping their
-    ``user_cache`` clears everything together. Created on first use.
-
-    Override the storage root with ``LDACA_TOKENS_CACHE_DIR`` for tests
-    and non-default Tauri install layouts — the env var supplies the
-    base path; the per-user subdir layout is still applied so multi-
-    user behaviour is exercised even under the override.
+    Both this module and the Rust ``tokenize_with_cache_lookup`` expression
+    resolve the cache directory from this same env var, so manifest writes
+    (Python) and cache-parquet writes (Rust) always land in the same
+    place. The backend's startup hook (`main.py` lifespan) sets a default
+    value when the env var is not externally configured; this function
+    raises only if called outside that context (e.g. an ad-hoc script
+    that imported the module without going through the backend lifespan
+    or the test-suite conftest).
     """
     override = os.environ.get(CACHE_ROOT_ENV)
-    if override:
-        root = Path(override).expanduser() / user_id / TOKENS_CACHE_SUBDIR
-    else:
-        root = get_user_cache_folder(user_id) / TOKENS_CACHE_SUBDIR
+    if not override:
+        raise RuntimeError(
+            f"{CACHE_ROOT_ENV} is not set. The backend's startup hook "
+            f"sets a default; if you're seeing this in a script or REPL, "
+            f"set the env var explicitly before importing tokens_cache."
+        )
+    root = Path(override).expanduser() / user_id / TOKENS_CACHE_SUBDIR
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -734,40 +699,25 @@ def tokens_cache_lazyframe(
 def _all_user_ids_with_cache() -> list[str]:
     """Enumerate every user that has a tokens-cache directory on disk.
 
-    Used by the all-users sweep on backend startup. Looks at both the
-    env-overridden base (tests / Tauri sandbox) and the production
-    ``{data_root}/{user_data_folder}/`` tree.
+    Walks the env-rooted layout ``{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens/``.
+    The startup hook in `main.py` lifespan guarantees the env var is set
+    before any backend code path calls this; if it isn't (e.g. an ad-hoc
+    script importing the module), returns an empty list rather than
+    raising — the all-users sweep is best-effort.
     """
     override = os.environ.get(CACHE_ROOT_ENV)
-    if override:
-        base = Path(override).expanduser()
-        if not base.exists():
-            return []
-        return sorted(
-            p.name for p in base.iterdir()
-            if p.is_dir() and (p / TOKENS_CACHE_SUBDIR).exists()
-        )
-
-    # Production: walk the same per-user tree that get_user_cache_folder
-    # writes into. Single-user mode collapses to one ``user_root`` dir;
-    # multi-user mode has one entry per user.
-    users_root = settings.get_data_root() / settings.user_data_folder
-    if not users_root.exists():
+    if not override:
+        return []
+    base = Path(override).expanduser()
+    if not base.exists():
         return []
     out: list[str] = []
-    for entry in sorted(users_root.iterdir()):
+    for entry in sorted(base.iterdir()):
         if not entry.is_dir():
             continue
-        if not (entry / "user_cache" / TOKENS_CACHE_SUBDIR).exists():
+        if not (entry / TOKENS_CACHE_SUBDIR).exists():
             continue
-        # In single-user mode the folder is literally "user_root";
-        # in multi-user mode it is "user_<id>" — the bare folder name
-        # is what get_user_cache_folder uses to identify the user.
-        name = entry.name
-        if name.startswith("user_"):
-            out.append(name[len("user_"):] if name != "user_root" else "root")
-        else:
-            out.append(name)
+        out.append(entry.name)
     return out
 
 

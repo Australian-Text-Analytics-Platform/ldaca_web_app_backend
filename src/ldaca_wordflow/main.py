@@ -66,6 +66,22 @@ async def lifespan(app: FastAPI):
         sample_override.mkdir(parents=True, exist_ok=True)
     current_settings.get_database_backup_folder().mkdir(parents=True, exist_ok=True)
 
+    # Both the Python `tokens_cache` module and the Rust
+    # `tokenize_with_cache_lookup` expression resolve the cache directory
+    # from `LDACA_TOKENS_CACHE_DIR + user_id + tokens/`. If the env is
+    # missing the two sides previously fell back to DIFFERENT paths
+    # (Python: {data_root}/.../user_cache/tokens; Rust: /tmp/...), so
+    # manifests and cache files diverged. Set a sensible default at
+    # startup so they always agree. External configuration still wins —
+    # operators / Tauri / conftest can pre-set the env to override.
+    if "LDACA_TOKENS_CACHE_DIR" not in os.environ:
+        default_tokens_cache = current_settings.get_data_root() / ".tokens-cache"
+        os.environ["LDACA_TOKENS_CACHE_DIR"] = str(default_tokens_cache)
+        logger.info(
+            "LDACA_TOKENS_CACHE_DIR not set externally; using default %s",
+            default_tokens_cache,
+        )
+
     await init_db()
     await cleanup_expired_sessions()
 
