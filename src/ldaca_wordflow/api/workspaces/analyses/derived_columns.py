@@ -101,6 +101,21 @@ async def create_derived_tokens(
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # Promote the just-tokenised column to the node's document so the
+    # next analysis (and the next Tokenise dialog open) defaults to it
+    # instead of resetting to the first column in the list. Mirrors the
+    # same node.document promotion that concordance / token-frequency
+    # already do at their entry points.
+    try:
+        node.document = request.source_column
+    except Exception as exc:
+        logger.debug(
+            "Failed to set node.document after tokenise for node %s column %s: %s",
+            node_id,
+            request.source_column,
+            exc,
+        )
+
     update_workspace(user_id, workspace_id, best_effort=True)
     # If this node was flagged as needing retokenise after a cross-machine
     # workspace import, clear the flag now that real tokens have been
