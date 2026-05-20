@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import chdir
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
 from ldaca_wordflow.settings import settings
 
@@ -26,9 +26,9 @@ def run_ldaca_import_task(
     user_id: str,
     workspace_id: str,
     url: str,
-    filename: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    filename: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Execute LDaCA dataset import in a worker process.
 
     Creates a per-corpus folder under ``LDaCA/`` containing:

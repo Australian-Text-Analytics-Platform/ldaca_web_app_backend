@@ -3,7 +3,7 @@ import secrets
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 from fastapi import Depends
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
@@ -27,13 +27,13 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     """User model with additional fields"""
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    picture: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    google_id: Mapped[Optional[str]] = mapped_column(
+    picture: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True
     )
-    user_folder_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    user_folder_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
-    last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_login: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class UserSession(Base):
@@ -44,7 +44,7 @@ class UserSession(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user.id"), nullable=False)
     access_token: Mapped[str] = mapped_column(String(255), nullable=False)
-    refresh_token: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    refresh_token: Mapped[str | None] = mapped_column(String(255), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
@@ -69,9 +69,9 @@ _USER_FIELDS = (
 )
 
 
-def _user_to_dict(user: User) -> Dict[str, Any]:
+def _user_to_dict(user: User) -> dict[str, Any]:
     """Serialize a `User` row into the dict shape expected by API callers."""
-    payload: Dict[str, Any] = {"id": str(user.id)}
+    payload: dict[str, Any] = {"id": str(user.id)}
     for field in _USER_FIELDS:
         payload[field] = getattr(user, field)
     return payload
@@ -133,7 +133,7 @@ async def init_db():
 
 async def get_or_create_user(
     email: str, name: str, picture: str, google_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fetch existing user by email or create/update OAuth user record.
 
     Used by:
@@ -178,7 +178,7 @@ async def get_or_create_user(
         return _user_to_dict(user)
 
 
-async def create_user_session(user_id: str) -> Dict[str, Any]:
+async def create_user_session(user_id: str) -> dict[str, Any]:
     """Create/replace active session token pair for a user.
 
     Used by:
@@ -223,7 +223,7 @@ async def create_user_session(user_id: str) -> Dict[str, Any]:
         }
 
 
-async def validate_access_token(access_token: str) -> Optional[Dict[str, Any]]:
+async def validate_access_token(access_token: str) -> dict[str, Any] | None:
     """Validate access token and return user/session payload when active.
 
     Used by:
@@ -253,7 +253,7 @@ async def validate_access_token(access_token: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-async def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+async def get_user_by_email(email: str) -> dict[str, Any] | None:
     """Return user payload by email when present.
 
     Used by:

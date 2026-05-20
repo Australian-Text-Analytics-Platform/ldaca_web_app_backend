@@ -233,5 +233,5 @@ def reload_settings() -> Settings:
     package ``__init__`` imports ``main`` eagerly, which instantiates settings
     before the CLI has a chance to set env vars like ``MULTI_USER``.
     """
-    settings.__init__()  # type: ignore[misc]
+    settings.__init__()
     return settings

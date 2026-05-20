@@ -17,15 +17,18 @@ derived metadata round-trips through plbin.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from docworkspace import Node
 
 from ....core.auth import get_current_user
 from ....core.derived_columns import tokenise_column
 from ....core.tokens_cache import (
     CacheReference,
+)
+from ....core.tokens_cache import (
     drop_reference as drop_cache_reference,
 )
 from ....core.workspace import workspace_manager
@@ -41,7 +44,7 @@ class TokeniseColumnRequest(BaseModel):
 
     source_column: str
     model: str
-    language: Optional[str] = None
+    language: str | None = None
 
 
 class TokeniseColumnResponse(BaseModel):
@@ -51,25 +54,27 @@ class TokeniseColumnResponse(BaseModel):
 
     column: str
     is_new: bool
-    replaced_column: Optional[str] = None
+    replaced_column: str | None = None
 
 
-@router.post(
-    "/nodes/{node_id}/derived/tokens", response_model=TokeniseColumnResponse
-)
-async def create_derived_tokens(
-    node_id: str,
-    request: TokeniseColumnRequest,
-    current_user: dict = Depends(get_current_user),
-) -> TokeniseColumnResponse:
-    user_id = current_user["id"]
+def _get_active_workspace_node(user_id: str, node_id: str) -> tuple[str, Node]:
     workspace = workspace_manager.get_current_workspace(user_id)
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if workspace is None or not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
     if node_id not in workspace.nodes:
         raise HTTPException(status_code=404, detail="Node not found")
-    node = workspace.nodes[node_id]
+    return workspace_id, workspace.nodes[node_id]
+
+
+@router.post("/nodes/{node_id}/derived/tokens", response_model=TokeniseColumnResponse)
+async def create_derived_tokens(
+    node_id: str,
+    request: TokeniseColumnRequest,
+    current_user: dict = Depends(get_current_user),
+) -> TokeniseColumnResponse:
+    user_id = current_user["id"]
+    workspace_id, node = _get_active_workspace_node(user_id, node_id)
 
     # Snapshot whether a matching derived column already exists so we can
     # tell the caller whether their request created or replaced.
@@ -102,15 +107,9 @@ async def delete_derived_column(
     node_id: str,
     column_name: str,
     current_user: dict = Depends(get_current_user),
-):
+) -> dict[str, str]:
     user_id = current_user["id"]
-    workspace = workspace_manager.get_current_workspace(user_id)
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    if workspace is None or not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-    if node_id not in workspace.nodes:
-        raise HTTPException(status_code=404, detail="Node not found")
-    node = workspace.nodes[node_id]
+    workspace_id, node = _get_active_workspace_node(user_id, node_id)
 
     if column_name not in node.derived:
         raise HTTPException(
@@ -122,11 +121,12 @@ async def delete_derived_column(
     # corresponding manifest reference. Older derived entries from before
     # the cache landed won't have this field — handle absence as "no
     # reference to drop" rather than an error.
-    cache_filename: Optional[str] = (
-        node.derived[column_name].get("cache_filename")
-        if isinstance(node.derived[column_name], dict)
-        else None
+    derived_meta = node.derived[column_name]
+    cache_filename = (
+        derived_meta.get("cache_filename") if isinstance(derived_meta, dict) else None
     )
+    if not isinstance(cache_filename, str):
+        cache_filename = None
 
     schema_names = node.data.collect_schema().names()
     if column_name in schema_names:

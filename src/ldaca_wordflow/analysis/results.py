@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any
 
 
 class BaseAnalysisResult(ABC):
     """Abstract base class for analysis results."""
 
     @abstractmethod
-    def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+    def to_json(self, **kwargs: Any) -> dict[str, Any]:
         """Convert result to API-ready JSON payload.
 
         Used by:
@@ -25,10 +25,10 @@ class BaseAnalysisResult(ABC):
 class GenericAnalysisResult(BaseAnalysisResult):
     """Simple result wrapper for generic dictionary results."""
 
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self.data = data
 
-    def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+    def to_json(self, **kwargs: Any) -> dict[str, Any]:
         """Return wrapped dictionary payload without transformation.
 
         Used by:

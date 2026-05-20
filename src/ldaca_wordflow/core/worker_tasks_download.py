@@ -8,7 +8,7 @@ import re
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ def run_workspace_download_task(
     configure_worker_environment,
     user_id: str,
     workspace_id: str,
-    target_workspace_dir: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    target_workspace_dir: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Package a persisted workspace folder into a ZIP artifact.
 
     Used by:
@@ -52,7 +52,7 @@ def run_workspace_download_task(
         user_data = get_user_data_folder(user_id)
 
         # Prefer exact directory passed from API layer to avoid brittle name heuristics.
-        workspace_dir: Optional[Path] = None
+        workspace_dir: Path | None = None
         if target_workspace_dir:
             candidate = Path(target_workspace_dir)
             if candidate.exists() and candidate.is_dir():

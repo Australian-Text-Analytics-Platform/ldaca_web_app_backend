@@ -13,7 +13,7 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, cast
+from typing import cast
 
 import polars as pl
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -121,7 +121,9 @@ def _cleanup_export_dir(export_dir: Path) -> None:
     try:
         shutil.rmtree(export_dir)
     except OSError as exc:
-        logger.debug("Best-effort export temp dir cleanup failed for %s: %s", export_dir, exc)
+        logger.debug(
+            "Best-effort export temp dir cleanup failed for %s: %s", export_dir, exc
+        )
 
 
 def _export_node_artifact(
@@ -182,9 +184,7 @@ def _export_node_artifact(
             # and shrinks the output.
             import xlsxwriter
 
-            workbook = xlsxwriter.Workbook(
-                str(output_path), {"strings_to_urls": False}
-            )
+            workbook = xlsxwriter.Workbook(str(output_path), {"strings_to_urls": False})
             try:
                 collected_data.write_excel(
                     workbook=workbook,
@@ -399,7 +399,7 @@ _configure_numba_threading()
 @router.post("/nodes")
 async def add_node_to_workspace(
     filename: str,
-    sheet_name: Optional[str] = Query(
+    sheet_name: str | None = Query(
         None,
         description="Optional Excel sheet name to load when the source file is a workbook.",
     ),
@@ -796,9 +796,7 @@ async def export_nodes(
             f"{build_timestamp_fragment()}_"
             f"{_sanitize_export_label(getattr(ws, 'name', None), workspace_id)}.zip"
         )
-        zip_path = _allocate_export_path(
-            export_dir, "_workspace_export", "zip"
-        )
+        zip_path = _allocate_export_path(export_dir, "_workspace_export", "zip")
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for archive_name, artifact_path in exported:
                 zf.write(artifact_path, arcname=archive_name)

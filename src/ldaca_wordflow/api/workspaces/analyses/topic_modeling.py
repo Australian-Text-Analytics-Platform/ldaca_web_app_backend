@@ -190,6 +190,24 @@ def _default_topic_detach_node_name(
     )
 
 
+async def _require_completed_topic_task(
+    user_id: str,
+    workspace_id: str,
+    task_id: str,
+) -> AnalysisTask:
+    task = await ensure_task_synced(
+        user_id, workspace_id, task_id, get_task_manager(user_id)
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != AnalysisStatus.COMPLETED:
+        raise HTTPException(
+            status_code=409,
+            detail="Topic modeling task is not completed",
+        )
+    return task
+
+
 @router.delete("/topic-modeling")
 async def clear_topic_modeling_results(
     current_user: dict = Depends(get_current_user),
@@ -582,11 +600,9 @@ async def update_topic_modeling_task_result(
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
+    task = await _require_completed_topic_task(user_id, workspace_id, task_id)
     task_manager = get_task_manager(user_id)
-    task = await ensure_task_synced(user_id, workspace_id, task_id, task_manager)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != AnalysisStatus.COMPLETED or not task.result:
+    if not task.result:
         raise HTTPException(
             status_code=409,
             detail="Topic modeling task is not completed",
@@ -742,15 +758,7 @@ async def topic_modeling_detach_options(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    analysis_tm = get_task_manager(user_id)
-    task = await ensure_task_synced(user_id, workspace_id, task_id, analysis_tm)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != AnalysisStatus.COMPLETED:
-        raise HTTPException(
-            status_code=409,
-            detail="Topic modeling task is not completed",
-        )
+    task = await _require_completed_topic_task(user_id, workspace_id, task_id)
 
     artifacts = _topic_artifacts_from_task(task)
     node_artifacts = artifacts.get("nodes") or []
@@ -817,15 +825,7 @@ async def detach_topic_modeling(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    analysis_tm = get_task_manager(user_id)
-    task = await ensure_task_synced(user_id, workspace_id, task_id, analysis_tm)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != AnalysisStatus.COMPLETED:
-        raise HTTPException(
-            status_code=409,
-            detail="Topic modeling task is not completed",
-        )
+    task = await _require_completed_topic_task(user_id, workspace_id, task_id)
 
     artifacts = _topic_artifacts_from_task(task)
     node_artifacts = artifacts.get("nodes") or []

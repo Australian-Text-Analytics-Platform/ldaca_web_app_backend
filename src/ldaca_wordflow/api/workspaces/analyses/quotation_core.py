@@ -50,7 +50,7 @@ def normalize_context_length(value: Any) -> int:
     """
     try:
         numeric = int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         logger.debug("Non-numeric context length %r, using default", value)
         return DEFAULT_CONTEXT_LENGTH
     if numeric < 0:
@@ -74,7 +74,7 @@ def normalize_pagination(
     normalized_page = max(1, int(page)) if isinstance(page, int) else 1
     try:
         normalized_size = int(page_size) if page_size is not None else DEFAULT_PAGE_SIZE
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         logger.debug("Non-numeric page_size %r, using default", page_size)
         normalized_size = DEFAULT_PAGE_SIZE
     if normalized_size <= 0:
@@ -161,7 +161,7 @@ def stable_document_items(
         identifier = pair[0]
         try:
             return (0, int(identifier))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             logger.debug("Non-numeric document key %r, sorting as string", identifier)
             return (1, identifier)
 
@@ -333,6 +333,37 @@ def _quotation_hit_has_content(hit: dict[str, Any]) -> bool:
     return False
 
 
+def _quotation_metadata(columns: list[str]) -> dict[str, list[str]]:
+    return {
+        "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
+        "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
+        "all_columns": columns,
+    }
+
+
+def _empty_flattened_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame:
+    metadata_columns = [
+        column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
+    ]
+    schema: dict[str, pl.DataType] = {
+        **{column: result_df.schema[column] for column in metadata_columns},
+        QUOTE_SPEAKER_COLUMN: cast(pl.DataType, pl.Utf8),
+        QUOTE_SPEAKER_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_SPEAKER_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_QUOTE_COLUMN: cast(pl.DataType, pl.Utf8),
+        QUOTE_QUOTE_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_QUOTE_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_VERB_COLUMN: cast(pl.DataType, pl.Utf8),
+        QUOTE_VERB_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_VERB_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_TYPE_COLUMN: cast(pl.DataType, pl.Utf8),
+        QUOTE_TOKEN_COUNT_COLUMN: cast(pl.DataType, pl.Int64),
+        QUOTE_IS_FLOATING_COLUMN: cast(pl.DataType, pl.Boolean),
+        QUOTE_ROW_IDX_COLUMN: cast(pl.DataType, pl.Int64),
+    }
+    return pl.DataFrame(schema=schema)
+
+
 def _serialize_grouped_quotation_rows(
     result_df: pl.DataFrame,
 ) -> tuple[list[list[dict[str, Any]]], list[str]]:
@@ -377,26 +408,7 @@ def _serialize_grouped_quotation_rows(
 def flatten_grouped_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame:
     """Flatten grouped quotation rows into a detach/export friendly dataframe."""
     if result_df.height == 0:
-        metadata_columns = [
-            column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
-        ]
-        schema: dict[str, pl.DataType] = {
-            **{column: result_df.schema[column] for column in metadata_columns},
-            QUOTE_SPEAKER_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_SPEAKER_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_SPEAKER_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_QUOTE_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_QUOTE_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_QUOTE_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_VERB_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_VERB_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_VERB_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_TYPE_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_TOKEN_COUNT_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_IS_FLOATING_COLUMN: cast(pl.DataType, pl.Boolean),
-            QUOTE_ROW_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-        }
-        return pl.DataFrame(schema=schema)
+        return _empty_flattened_quotation_dataframe(result_df)
 
     flattened_rows: list[dict[str, Any]] = []
     for row in result_df.to_dicts():
@@ -418,26 +430,7 @@ def flatten_grouped_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame
                 flattened_rows.append(projected_hit)
 
     if not flattened_rows:
-        metadata_columns = [
-            column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
-        ]
-        schema: dict[str, pl.DataType] = {
-            **{column: result_df.schema[column] for column in metadata_columns},
-            QUOTE_SPEAKER_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_SPEAKER_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_SPEAKER_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_QUOTE_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_QUOTE_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_QUOTE_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_VERB_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_VERB_START_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_VERB_END_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_TYPE_COLUMN: cast(pl.DataType, pl.Utf8),
-            QUOTE_TOKEN_COUNT_COLUMN: cast(pl.DataType, pl.Int64),
-            QUOTE_IS_FLOATING_COLUMN: cast(pl.DataType, pl.Boolean),
-            QUOTE_ROW_IDX_COLUMN: cast(pl.DataType, pl.Int64),
-        }
-        return pl.DataFrame(schema=schema)
+        return _empty_flattened_quotation_dataframe(result_df)
 
     metadata_columns = [
         column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
@@ -553,11 +546,7 @@ async def compute_on_demand_page(
         node, slice_df, column, engine, use_base_only=True
     )
     page_rows, columns = _serialize_grouped_quotation_rows(quote_df)
-    metadata = {
-        "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
-        "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
-        "all_columns": columns,
-    }
+    metadata = _quotation_metadata(columns)
 
     return {
         "data": stringify_unsafe_integers(page_rows),
@@ -663,11 +652,7 @@ async def _compute_materialized_quotation_page(
     total_source_pages = (
         0 if total_rows == 0 else max(1, math.ceil(total_rows / effective_page_size))
     )
-    metadata = {
-        "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
-        "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
-        "all_columns": columns,
-    }
+    metadata = _quotation_metadata(columns)
     return {
         "data": stringify_unsafe_integers(grouped_rows),
         "columns": columns,

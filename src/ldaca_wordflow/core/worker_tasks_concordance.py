@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Any, Callable, cast
 
 from ..api.workspaces.analyses.concordance_core import build_concordance_search_pattern
 from ..api.workspaces.analyses.concordance_tokens_mode import (
     build_token_hit,
     find_token_matches,
 )
-from .analysis_cache import materialized_cache_path
 from ..api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
@@ -27,6 +26,7 @@ from ..api.workspaces.analyses.generated_columns import (
     concordance_extraction_expr,
     concordance_struct_projection,
 )
+from .analysis_cache import materialized_cache_path
 
 # The dispersion-detach output reuses `CONC_extraction` as the column name
 # for the per-document multi-line joined string. It carries the same KWIC
@@ -47,9 +47,9 @@ def _build_concordance_occurrence_dataframe(
     whole_word: bool,
     case_sensitive: bool,
     include_document_column: bool,
-    extra_columns_data: Optional[Dict[str, list]],
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    language: Optional[str] = None,
+    extra_columns_data: dict[str, list] | None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    language: str | None = None,
 ):
     """Compute flattened occurrence rows for one corpus. Returns (df, output_columns)."""
     import polars as pl
@@ -131,8 +131,8 @@ def _build_tokens_concordance_occurrence_dataframe(
     num_right_tokens: int,
     case_sensitive: bool,
     include_document_column: bool,
-    extra_columns_data: Optional[Dict[str, list]],
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    extra_columns_data: dict[str, list] | None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
 ):
     """Tokens-mode parallel of :func:`_build_concordance_occurrence_dataframe`.
 
@@ -156,9 +156,7 @@ def _build_tokens_concordance_occurrence_dataframe(
     # stays aligned with extra columns.
     keep_mask = [bool(text.strip()) for text in corpus]
     corpus = [text for text, keep in zip(corpus, keep_mask) if keep]
-    tokens_per_row = [
-        tokens for tokens, keep in zip(tokens_per_row, keep_mask) if keep
-    ]
+    tokens_per_row = [tokens for tokens, keep in zip(tokens_per_row, keep_mask) if keep]
 
     filtered_extras: dict[str, list] = {}
     if extra_columns_data:
@@ -257,12 +255,12 @@ def run_concordance_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     include_extraction: bool = False,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Run concordance detach and return a serialized detached node payload.
 
     Fast path: when `materialized_path` points to an existing parquet (previously
@@ -377,14 +375,10 @@ def run_concordance_detach_task(
         # includes CONC_l1_freq and CONC_r1_freq regardless of prior
         # materialization.
         l1_freq = (
-            result.group_by(CONC_L1_COLUMN)
-            .len()
-            .rename({"len": CONC_L1_FREQ_COLUMN})
+            result.group_by(CONC_L1_COLUMN).len().rename({"len": CONC_L1_FREQ_COLUMN})
         )
         r1_freq = (
-            result.group_by(CONC_R1_COLUMN)
-            .len()
-            .rename({"len": CONC_R1_FREQ_COLUMN})
+            result.group_by(CONC_R1_COLUMN).len().rename({"len": CONC_R1_FREQ_COLUMN})
         )
         result = result.join(l1_freq, on=CONC_L1_COLUMN, how="left").join(
             r1_freq, on=CONC_R1_COLUMN, how="left"
@@ -397,9 +391,7 @@ def run_concordance_detach_task(
         # carries it too — strip it for the manifest as well.
         if not include_extraction and CONC_EXTRACTION_COLUMN in result.columns:
             result = result.drop(CONC_EXTRACTION_COLUMN)
-            output_columns = [
-                c for c in output_columns if c != CONC_EXTRACTION_COLUMN
-            ]
+            output_columns = [c for c in output_columns if c != CONC_EXTRACTION_COLUMN]
 
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")
@@ -444,8 +436,8 @@ def _aggregate_hits_per_document(
     selected_bins,
     total_bins,
     include_document_column: bool = True,
-    extra_metadata_columns: Optional[list[str]] = None,
-    selected_matched_texts: Optional[list[str]] = None,
+    extra_metadata_columns: list[str] | None = None,
+    selected_matched_texts: list[str] | None = None,
     match_case_insensitive: bool = False,
 ):
     """Group per-hit rows by source document and aggregate into list columns.
@@ -538,7 +530,9 @@ def _aggregate_hits_per_document(
     df = df.sort([document_column, CONC_START_IDX_COLUMN])
 
     available_metadata = [
-        c for c in (extra_metadata_columns or []) if c in df.columns and c != document_column
+        c
+        for c in (extra_metadata_columns or [])
+        if c in df.columns and c != document_column
     ]
 
     agg_columns = [
@@ -570,8 +564,7 @@ def _aggregate_hits_per_document(
     grouped = grouped.with_columns(
         pl.col("__extracts_list__")
         .list.eval(
-            pl.lit("- ")
-            + pl.element().str.replace_all(r"\s+", " ").str.strip_chars()
+            pl.lit("- ") + pl.element().str.replace_all(r"\s+", " ").str.strip_chars()
         )
         .list.join("\n")
         .alias(DISPERSION_EXTRACTED_CONTENTS_COLUMN)
@@ -610,18 +603,18 @@ def run_concordance_dispersion_detach_task(
     whole_word: bool,
     case_sensitive: bool,
     new_node_name: str,
-    parent_task_id: Optional[str] = None,
+    parent_task_id: str | None = None,
     include_document_column: bool = True,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    selected_bins: Optional[list[int]] = None,
-    total_bins: Optional[int] = None,
-    selected_matched_texts: Optional[list[str]] = None,
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    selected_bins: list[int] | None = None,
+    total_bins: int | None = None,
+    selected_matched_texts: list[str] | None = None,
     match_case_insensitive: bool = False,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Aggregate concordance hits per document and detach as a workspace node.
 
     Fast path: reads the previously-materialised flat parquet when
@@ -650,8 +643,8 @@ def run_concordance_dispersion_detach_task(
         # `analysis_materialized` event back to the dispatcher after the
         # slow path runs — the user otherwise has to click "Process All"
         # separately even though we already did the full-corpus work.
-        side_effect_materialized_path: Optional[str] = None
-        side_effect_summary: Optional[Dict[str, Any]] = None
+        side_effect_materialized_path: str | None = None
+        side_effect_summary: dict[str, Any] | None = None
 
         if materialized_path and os.path.exists(materialized_path):
             if progress_callback:
@@ -721,11 +714,7 @@ def run_concordance_dispersion_detach_task(
                 side_effect_summary = {
                     "record_count": int(len(hits_df)),
                     "unique_documents_with_hits": (
-                        int(
-                            hits_df.select(
-                                pl.col(document_column).n_unique()
-                            ).item()
-                        )
+                        int(hits_df.select(pl.col(document_column).n_unique()).item())
                         if document_column in hits_df.columns
                         else 0
                     ),
@@ -774,7 +763,7 @@ def run_concordance_dispersion_detach_task(
         if progress_callback:
             progress_callback(1.0, "Concordance dispersion detach completed")
 
-        result_payload: Dict[str, Any] = {
+        result_payload: dict[str, Any] = {
             "node_payload": node_payload,
             "output_columns": output_columns,
             "record_count": int(len(aggregated)),
@@ -815,13 +804,13 @@ def run_concordance_materialize_task(
     regex: bool,
     whole_word: bool,
     case_sensitive: bool,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
     search_mode: str = "regex",
-    node_tokens: Optional[list[Any]] = None,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    node_tokens: list[Any] | None = None,
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Run full concordance extraction and persist the flattened parquet.
 
     Unlike detach, no Node is produced. The cached parquet is recorded on the

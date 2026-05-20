@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -63,11 +63,11 @@ def normalise_engine_base_url(raw_url: str) -> str:
 
 async def extract_remote_quotations(
     engine: QuotationEngineConfig,
-    documents: Dict[str, Dict[str, Any]],
+    documents: dict[str, dict[str, Any]],
     *,
-    options: Optional[Dict[str, Any]] = None,
-    timeout: Optional[float] = None,
-) -> Dict[str, Any]:
+    options: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any]:
     """Call remote quotation extraction API and return decoded JSON payload.
 
     Used by:
@@ -91,7 +91,7 @@ async def extract_remote_quotations(
     base_url = normalise_engine_base_url(str(engine.url))
     extract_url = f"{base_url}/extract"
 
-    payload: Dict[str, Any] = {"documents": documents}
+    payload: dict[str, Any] = {"documents": documents}
     if options:
         payload["options"] = options
 

@@ -124,6 +124,32 @@ def _apply_result_query_overrides(
     return normalized_request
 
 
+def _failed_concordance_result(message: str) -> dict[str, Any]:
+    return {
+        "state": "failed",
+        "message": message,
+        "data": None,
+    }
+
+
+def _build_concordance_task_result(
+    user_id: str,
+    workspace_id: str,
+    task_id: str,
+    query: ConcordanceResultQuery,
+) -> tuple[dict[str, Any] | None, str | None]:
+    task_manager = get_task_manager(user_id)
+    task = task_manager.get_task(task_id)
+    if not task:
+        return None, "No analysis found for concordance"
+    if not task.request:
+        return None, "No concordance request available"
+
+    normalized_request = normalize_saved_request(task.request.model_dump()) or {}
+    _apply_result_query_overrides(normalized_request, query)
+    return build_concordance_response(user_id, workspace_id, normalized_request), None
+
+
 @router.post("/concordance")
 async def run_concordance(
     request: ConcordanceAnalysisRequest,
@@ -317,24 +343,15 @@ async def concordance_task_result(
     Why:
     - Hydrates saved concordance state while allowing query-time view changes.
 
-        Refactor note:
-        - Can likely be merged with `concordance_task_result_post` through a shared
-            result-read helper that accepts normalized override input.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
-    task_manager = get_task_manager(user_id)
-
-    task = task_manager.get_task(task_id)
-    if not task or not task.request:
-        return None
-
-    req_dict = task.request.model_dump()
-    normalized_request = normalize_saved_request(req_dict) or {}
-    _apply_result_query_overrides(normalized_request, query)
-    return build_concordance_response(user_id, workspace_id, normalized_request)
+    result, _failure_message = _build_concordance_task_result(
+        user_id, workspace_id, task_id, query
+    )
+    return result
 
 
 @router.post("/concordance/tasks/{task_id}/result")
@@ -353,33 +370,17 @@ async def concordance_task_result_post(
     - Preserves compatibility with clients that send result preferences in body
         payloads instead of query parameters.
 
-        Refactor note:
-        - Mostly duplicates `concordance_task_result`; both routes could delegate to
-            one internal helper and keep only transport-layer differences.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
         raise HTTPException(status_code=404, detail="No active workspace selected")
-    task_manager = get_task_manager(user_id)
-    task = task_manager.get_task(task_id)
-    if not task:
-        return {
-            "state": "failed",
-            "message": "No analysis found for concordance",
-            "data": None,
-        }
-    if not task.request:
-        return {
-            "state": "failed",
-            "message": "No concordance request available",
-            "data": None,
-        }
-
-    req_dict = task.request.model_dump()
-    normalized_request = normalize_saved_request(req_dict) or {}
-    _apply_result_query_overrides(normalized_request, query)
-    return build_concordance_response(user_id, workspace_id, normalized_request)
+    result, failure_message = _build_concordance_task_result(
+        user_id, workspace_id, task_id, query
+    )
+    if failure_message:
+        return _failed_concordance_result(failure_message)
+    return result
 
 
 @router.post("/nodes/{node_id}/concordance/detach")

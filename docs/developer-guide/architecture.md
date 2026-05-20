@@ -1,37 +1,67 @@
-# Backend Architecture (Developer Guide)
+# Backend Architecture
 
-**Scope statement:** This page summarizes the backend’s main modules and data flow.
+The backend is a FastAPI application published as the `ldaca-wordflow` Python
+package. It serves the REST API, optional bundled frontend assets, workspace
+state, user-scoped files, authentication, and long-running analysis tasks.
 
-## 1) Core responsibilities
+## Runtime Responsibilities
 
-**Question:** *What does the backend do?*
+The backend owns:
 
-**Answer:** It exposes `/api/...` routes that manage workspaces, files, and analysis tasks while keeping all data operations lazy whenever possible.
+- application startup and shutdown,
+- runtime settings and data-root resolution,
+- SQLite user/session state,
+- workspace discovery, loading, saving, and deletion,
+- user file browsing and imports,
+- workspace node operations over Polars LazyFrames,
+- analysis task submission and result storage,
+- process-pool worker execution,
+- task and workspace events over SSE.
 
-## 2) Key modules
+Routers under `src/ldaca_wordflow/api/` are the HTTP boundary. They should
+stay thin: validate request shape, resolve the current user, call a core or
+analysis helper, and return a predictable payload.
 
-**Question:** *Which modules matter most?*
+## Main Components
 
-**Answer:**
+`main.py` creates the FastAPI app, configures CORS, initializes folders and the
+database, starts model/cache maintenance, registers routers, and optionally
+mounts the built frontend from package resources.
 
-- `api/` — FastAPI routers (workspaces, files, analyses).
-- `core/` — orchestration helpers (`workspace_manager`, `docworkspace_data_types`, task manager).
-- `settings.py` — Pydantic settings loaded from environment variables.
+`settings.py` is the runtime configuration source. It derives paths from
+`DATA_ROOT` and supports `reload_settings()` for in-process updates.
 
-## 3) Data flow
+`db.py` manages async SQLAlchemy state for users and sessions. Multi-user mode
+uses access tokens stored in the database; single-user mode synthesizes a root
+user.
 
-**Question:** *How does a request become a workspace node?*
+`core/workspace.py` provides the `WorkspaceManager`, the backend's user-scoped
+bridge around `docworkspace.Workspace`.
 
-**Answer:** The router parses the request, calls DocWorkspace helpers, and serializes the resulting node through `DocWorkspaceDataTypeUtils` before returning JSON to the frontend.
+`analysis/` and `core/worker_task_manager.py` split task concerns: analysis
+tasks are user-visible result records, while worker tasks are process-pool jobs
+that can report progress and emit events.
 
-## 4) Lazy contract
+## Persistence Model
 
-**Question:** *Why is laziness important?*
+Backend application data defaults to `~/Documents/ldaca` unless `DATA_ROOT`
+overrides it. Each user has a data folder containing uploaded files, saved
+workspaces, caches, and generated artifacts.
 
-**Answer:** Lazy frames avoid large materializations. Backend helpers (like `stage_dataframe_as_lazy`) persist eager data and reopen it as lazy to keep downstream operations efficient.
+A saved workspace is a directory with `metadata.json` and `data/` files. The
+metadata describes workspace and node relationships; `.plbin` files hold
+serialized Polars LazyFrame plans. Data files that LazyFrame scans depend on
+live beside those plans when possible.
 
-## Recap
+## Request Flow
 
-**Question:** *What should I read next?*
+1. Authentication resolves a user through `get_current_user`.
+2. A router loads or validates request inputs.
+3. Workspace routes resolve the user's active workspace through
+   `workspace_manager`.
+4. Short operations run inline and save the workspace.
+5. Long operations submit a worker task and return a `task_id`.
+6. Worker completion updates analysis state or materializes nodes, then emits
+   task/workspace events over `/api/tasks/stream`.
 
-**Answer:** The background task reference explains the process‑based task manager and how to add new tasks.
+The backend guide pages document each of those parts in more detail.

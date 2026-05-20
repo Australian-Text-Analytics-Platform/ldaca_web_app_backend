@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from collections import Counter
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, cast
 
 from .analysis_helpers import sanitize_stop_words
 
@@ -19,16 +19,16 @@ def run_token_frequencies_task(
     configure_worker_environment,
     user_id: str,
     workspace_id: str,
-    node_corpora: Dict[str, list[str]],
-    node_display_names: Dict[str, str],
+    node_corpora: dict[str, list[str]],
+    node_display_names: dict[str, str],
     artifact_dir: str,
     artifact_prefix: str,
     token_limit: int = 10,
-    stop_words: Optional[list[str]] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    node_tokens: Optional[Dict[str, list[list[str]]]] = None,
-    node_token_streams: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+    stop_words: list[str] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    node_tokens: dict[str, list[list[str]]] | None = None,
+    node_token_streams: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
 
     Used by:
@@ -80,9 +80,7 @@ def run_token_frequencies_task(
         # The stream path supersedes ``node_tokens`` when both appear —
         # newer callers ship only the stream; older queued tasks may
         # still arrive with the in-memory payload.
-        node_ids = list(
-            {**node_corpora, **tokens_payload, **token_streams}.keys()
-        )
+        node_ids = list({**node_corpora, **tokens_payload, **token_streams}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
@@ -111,16 +109,19 @@ def run_token_frequencies_task(
                 # guarantees the column name is ``token``.
                 # ``scan_parquet`` + ``group_by`` + ``len`` stays lazy
                 # until the final ``collect`` returns a small N×2 frame.
-                freq_df = (
-                    pl.scan_parquet(token_streams[node_id])
-                    .group_by("token")
-                    .len()
-                    .rename({"len": "frequency"})
-                    .with_columns(
-                        pl.col("token").cast(pl.Utf8),
-                        pl.col("frequency").cast(pl.Int64),
-                    )
-                    .collect()
+                freq_df = cast(
+                    pl.DataFrame,
+                    (
+                        pl.scan_parquet(token_streams[node_id])
+                        .group_by("token")
+                        .len()
+                        .rename({"len": "frequency"})
+                        .with_columns(
+                            pl.col("token").cast(pl.Utf8),
+                            pl.col("frequency").cast(pl.Int64),
+                        )
+                        .collect()
+                    ),
                 )
                 frequency_results[node_id] = {
                     str(row["token"]): int(row["frequency"])
@@ -196,7 +197,7 @@ def run_token_frequencies_task(
             "stop_words": requested_stop_words,
         }
 
-        result_payload: Dict[str, Any] = {
+        result_payload: dict[str, Any] = {
             "state": "successful",
             "message": f"Successfully calculated token frequencies for {len(node_ids)} node(s)",
             "artifacts": {

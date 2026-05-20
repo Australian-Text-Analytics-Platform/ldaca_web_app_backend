@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import QuotationEngineConfig, QuotationEngineType
@@ -41,8 +39,8 @@ class UserPreferences(BaseModel):
     # Phase 4.1: per-user multilingual defaults. ``None`` falls back to the
     # per-request resolution chain (request → derived → "en") so existing
     # English users see no behaviour change.
-    default_language: Optional[str] = None
-    default_tokenizer_model: Optional[str] = None
+    default_language: str | None = None
+    default_tokenizer_model: str | None = None
     # Demo-snapshot master switch. Default off — the analytic tools'
     # Save/Load buttons are unmounted entirely until the user opts in
     # via the sidebar dropdown menu. See ``docs/snapshot-view/plan.md``
@@ -64,11 +62,11 @@ class UserPreferences(BaseModel):
 class UserPreferencesUpdate(BaseModel):
     """Partial update payload — only provided fields are merged."""
 
-    hidden_views: Optional[list[str]] = None
-    favorite_workspaces: Optional[list[str]] = None
-    quotation: Optional[QuotationPreferences] = None
-    default_language: Optional[str] = None
-    default_tokenizer_model: Optional[str] = None
-    demo_snapshots_enabled: Optional[bool] = None
+    hidden_views: list[str] | None = None
+    favorite_workspaces: list[str] | None = None
+    quotation: QuotationPreferences | None = None
+    default_language: str | None = None
+    default_tokenizer_model: str | None = None
+    demo_snapshots_enabled: bool | None = None
 
     model_config = ConfigDict(extra="forbid")

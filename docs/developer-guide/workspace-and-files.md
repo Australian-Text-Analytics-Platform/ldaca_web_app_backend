@@ -1,0 +1,89 @@
+# Workspace And Files
+
+## Workspace Manager
+
+`core/workspace.py` contains `WorkspaceManager`. It keeps one active in-memory
+`docworkspace.Workspace` per user while allowing many saved workspace folders
+on disk.
+
+The manager is responsible for:
+
+- resolving each user's workspace root,
+- listing persisted workspace summaries,
+- allocating display-name-safe workspace folders,
+- loading a selected workspace into memory,
+- rebasing serialized LazyFrame scan paths before load,
+- saving and unloading the current workspace,
+- deleting workspace folders,
+- clearing workspace-specific analysis caches and task state.
+
+The key invariant is that API code should not create its own global workspace
+state. It should resolve the user's workspace through `workspace_manager`.
+
+## File APIs
+
+`api/files.py` exposes the user's data folder:
+
+- tree listing,
+- folder creation,
+- upload, move, delete, and raw download,
+- preview for CSV, JSON, Parquet, IPC, Excel, and text-like data,
+- sample-data and demo-snapshot import,
+- LDaCA RO-Crate import through a background worker task.
+
+The file router validates paths against the user's data root to avoid path
+traversal. Data preview prefers lazy Polars scans where possible and collects
+only for preview serialization.
+
+## Workspace Lifecycle Routes
+
+`api/workspaces/lifecycle.py` handles workspace CRUD and active-workspace
+selection:
+
+- list, create, delete, rename, unload, and set current workspace,
+- workspace graph and node summaries,
+- workspace save/download as a zip,
+- workspace zip upload/import,
+- workspace description and metadata.
+
+ZIP import and export treat paths carefully: entries are validated with
+`PurePosixPath`, and workspace source paths are rebased after the final folder
+location is known.
+
+## Node Operations
+
+`api/workspaces/nodes.py` owns most row/column transformations:
+
+- node data paging, shape, unique values, describe, query plan,
+- delete, rename, clone,
+- filter and filter preview,
+- slice/sample and preview,
+- join and concat preview/apply,
+- find/replace preview/apply,
+- column operations,
+- constrained Polars expression preview/apply.
+
+Node operations should preserve laziness. Collection belongs at API response
+serialization, preview limits, artifact writing, or other explicit I/O
+boundaries.
+
+The Polars expression endpoint validates code with
+`core/polars_expr_validator.py`, executes in a restricted environment, and
+allows only the supported transformation contexts.
+
+## Schema Filtering
+
+`api/workspaces/schema_filter.py` is the frontend-facing schema filter.
+Derived analytical columns are stored in the same LazyFrame as user columns but
+are named under `__derived__.*` and tracked in `Node.derived`. The filter hides
+those columns from normal table/schema responses while exposing structured
+derived metadata where the UI needs it.
+
+Use this shared projection instead of filtering derived columns in individual
+routers.
+
+## Export
+
+`api/workspaces/base.py` still owns export endpoints and some legacy column
+routes. Export supports CSV, JSON, Parquet, IPC, NDJSON, and XLSX. Lazy sinks
+are used where available; JSON and Excel collect at the serialization boundary.

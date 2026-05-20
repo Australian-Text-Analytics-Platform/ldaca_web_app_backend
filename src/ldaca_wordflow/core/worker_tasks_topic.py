@@ -9,14 +9,13 @@ import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Any, Callable, cast
 from uuid import uuid4
 
 from ..api.workspaces.analyses.generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +32,7 @@ _EMBEDDING_CHUNK_SIZE = 512
 # Revision pinning for the multilingual model is deferred until the ZH
 # workflow is validated end-to-end. ``scripts/check_model_updates.py``
 # is the release-time deliberate bump point.
-_TOPIC_EMBEDDERS_BY_LANGUAGE: dict[str, tuple[str, "str | None"]] = {
+_TOPIC_EMBEDDERS_BY_LANGUAGE: dict[str, tuple[str, str | None]] = {
     "en": (
         "sentence-transformers/all-MiniLM-L6-v2",
         "c9745ed1d9f207416be6d2e6f8de32d1f16199bf",
@@ -49,7 +48,7 @@ _TOPIC_EMBEDDERS_BY_LANGUAGE: dict[str, tuple[str, "str | None"]] = {
 _TOPIC_EMBEDDER_REPO_ID, _TOPIC_EMBEDDER_REVISION = _TOPIC_EMBEDDERS_BY_LANGUAGE["en"]
 
 
-def _select_embedder(language: "str | None") -> tuple[str, "str | None"]:
+def _select_embedder(language: str | None) -> tuple[str, str | None]:
     """Return ``(repo_id, revision)`` for ``language``. English keeps the
     pinned MiniLM-L6 (back-compat); everything else routes to the
     multilingual fallback so ZH / JA topic modeling produces non-degenerate
@@ -61,11 +60,12 @@ def _select_embedder(language: "str | None") -> tuple[str, "str | None"]:
     return _TOPIC_EMBEDDERS_BY_LANGUAGE["multi"]
 
 
-def _embedder_cache_label(repo_id: str, revision: "str | None") -> str:
+def _embedder_cache_label(repo_id: str, revision: str | None) -> str:
     """Format the embedder identifier used for on-disk cache keying so the
     same revision string format as before lands in the cache filename."""
     suffix = revision[:8] if revision else "latest"
     return f"{repo_id}@{suffix}"
+
 
 def _make_reagg_path(old_path: Path) -> Path:
     """Return a fresh unique path beside `old_path` for a re-aggregation rewrite.
@@ -91,6 +91,7 @@ def _sample_corpus(
     Operates on an in-memory integer Series; no parquet artifact is created.
     """
     import polars as pl
+
     if fraction >= 1.0:
         return docs, list(range(len(docs)))
     indices = (
@@ -142,10 +143,11 @@ class _TopicPipelineRun:
 
 
 def _load_corpora_from_workspace(
-    target_workspace_dir: str, node_payloads: list[Dict[str, Any]]
+    target_workspace_dir: str, node_payloads: list[dict[str, Any]]
 ) -> tuple[list[list[str]], list[list[str] | None], list[str | None]]:
     """Return raw docs, optional tokenized docs, and token columns per node."""
     import polars as pl
+
     from docworkspace import Workspace
 
     workspace = Workspace.load(Path(target_workspace_dir))
@@ -157,19 +159,26 @@ def _load_corpora_from_workspace(
         node_id = str(node_info.get("node_id") or "")
         text_column = str(node_info.get("text_column") or "")
         if not node_id or not text_column:
-            raise ValueError("Topic modeling requires node_id and text_column for each node")
+            raise ValueError(
+                "Topic modeling requires node_id and text_column for each node"
+            )
 
         try:
             node = workspace.nodes[node_id]
         except KeyError as exc:
-            raise ValueError(f"Topic modeling node {node_id} is missing from workspace") from exc
+            raise ValueError(
+                f"Topic modeling node {node_id} is missing from workspace"
+            ) from exc
 
         selected = cast(
             pl.DataFrame,
             node.data.select(pl.col(text_column).alias("__doc_col__")).collect(),
         )
         raw_corpora.append(
-            [str(value) if value is not None else "" for value in selected["__doc_col__"].to_list()]
+            [
+                str(value) if value is not None else ""
+                for value in selected["__doc_col__"].to_list()
+            ]
         )
 
         tokens_column = node.find_derived_column(text_column, form="tokens")
@@ -181,7 +190,9 @@ def _load_corpora_from_workspace(
         tokens_selected = cast(
             pl.DataFrame,
             node.data.select(
-                pl.col(tokens_column).list.eval(pl.element().struct.field("token")).alias("__tokens_col__")
+                pl.col(tokens_column)
+                .list.eval(pl.element().struct.field("token"))
+                .alias("__tokens_col__")
             ).collect(),
         )
         joined: list[str] = []
@@ -189,7 +200,11 @@ def _load_corpora_from_workspace(
             if tokens is None:
                 joined.append("")
                 continue
-            joined.append(" ".join(str(token) for token in tokens if token is not None and str(token)))
+            joined.append(
+                " ".join(
+                    str(token) for token in tokens if token is not None and str(token)
+                )
+            )
         vectorizer_corpora.append(joined)
         tokens_columns.append(tokens_column)
 
@@ -198,34 +213,41 @@ def _load_corpora_from_workspace(
 
 def _prepare_payload(
     *,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     artifact_dir: str,
     corpora: list[list[str]] | None,
     workspace_dir: str | None,
-    progress_callback: Optional[Callable[[float, str], None]],
+    progress_callback: Callable[[float, str], None] | None,
 ) -> _PreparedTopicPayload:
     artifact_root = Path(artifact_dir)
     artifact_root.mkdir(parents=True, exist_ok=True)
 
     if corpora is None:
         if workspace_dir is None:
-            raise ValueError("Topic modeling requires corpora or a workspace_dir to load them")
+            raise ValueError(
+                "Topic modeling requires corpora or a workspace_dir to load them"
+            )
         if progress_callback:
             progress_callback(0.03, "Loading source documents from workspace...")
-        corpora, vectorizer_corpora, tokens_columns_per_node = _load_corpora_from_workspace(
-            workspace_dir, node_infos
+        corpora, vectorizer_corpora, tokens_columns_per_node = (
+            _load_corpora_from_workspace(workspace_dir, node_infos)
         )
     else:
         vectorizer_corpora = [None] * len(corpora)
         tokens_columns_per_node = [None] * len(corpora)
 
     if len(corpora) != len(node_infos):
-        raise ValueError("Topic modeling payload mismatch: corpora and node_infos lengths differ")
+        raise ValueError(
+            "Topic modeling payload mismatch: corpora and node_infos lengths differ"
+        )
 
     if progress_callback:
         progress_callback(0.05, "Preparing topic modeling payload...")
 
-    node_names = [str(info.get("node_name") or info.get("node_id") or "node") for info in node_infos]
+    node_names = [
+        str(info.get("node_name") or info.get("node_id") or "node")
+        for info in node_infos
+    ]
     return _PreparedTopicPayload(
         artifact_root=artifact_root,
         corpora=corpora,
@@ -249,9 +271,13 @@ def _sample_corpora_for_topic_modeling(
 
     if sample_fractions is not None:
         for index, corpus in enumerate(corpora):
-            fraction = sample_fractions[index] if index < len(sample_fractions) else None
+            fraction = (
+                sample_fractions[index] if index < len(sample_fractions) else None
+            )
             if fraction is not None and 0.0 < fraction < 1.0:
-                sampled_docs, sampled_indices = _sample_corpus(corpus, fraction, random_seed + index)
+                sampled_docs, sampled_indices = _sample_corpus(
+                    corpus, fraction, random_seed + index
+                )
                 active_corpora.append(sampled_docs)
                 active_corpora_indices.append(sampled_indices)
                 vectorizer_corpus = vectorizer_corpora[index]
@@ -315,7 +341,7 @@ def _compute_min_topic_size(
     return max(2, n_eff // (int(topic_size_value) * 10))
 
 
-def _bertopic_language_kwarg(language: "str | None") -> str:
+def _bertopic_language_kwarg(language: str | None) -> str:
     """Map our internal language code to BERTopic's ``language`` kwarg.
 
     BERTopic accepts ``"english"`` or ``"multilingual"`` and uses it for
@@ -327,7 +353,7 @@ def _bertopic_language_kwarg(language: "str | None") -> str:
     return "english" if (language or "en").strip().lower() == "en" else "multilingual"
 
 
-def _build_label_vectorizer(language: "str | None", *, online: bool = False) -> Any:
+def _build_label_vectorizer(language: str | None, *, online: bool = False) -> Any:
     """Return the CountVectorizer (or OnlineCountVectorizer) used for the
     label/c-TF-IDF stage.
 
@@ -364,7 +390,7 @@ def _build_label_vectorizer(language: "str | None", *, online: bool = False) -> 
     return CountVectorizer(token_pattern=r"(?u)\b\w+\b")
 
 
-def _resolve_top_n_words(representative_words_count: "int | None") -> int:
+def _resolve_top_n_words(representative_words_count: int | None) -> int:
     """Pick BERTopic's ``top_n_words`` from the user-requested display cap.
 
     BERTopic's default is 10. When the user picks "Words per topic = 35"
@@ -391,7 +417,7 @@ def _build_classic_pipeline(
     min_topic_size: int,
     random_state: int,
     embedder: Any,
-    language: "str | None" = None,
+    language: str | None = None,
     top_n_words: int = 50,
 ) -> Any:
     """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
@@ -415,7 +441,7 @@ def _build_classic_pipeline(
     )
 
 
-def _get_embedder(model_id: str, revision: "str | None" = None):
+def _get_embedder(model_id: str, revision: str | None = None):
     """Get or create a cached embedder per worker process.
 
     On Apple Silicon, prefers MPS (PyTorch Metal) over ONNX CPU — the full
@@ -535,7 +561,7 @@ def _resolve_exact_reduce_topics_target(
 def _build_topic_result_payload(
     *,
     topic_model: Any,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     all_docs: list[str],
     corpus_sizes: list[int],
     active_corpora_indices: list[list[int]],
@@ -564,7 +590,9 @@ def _build_topic_result_payload(
         if artifact_prefix is None or artifact_root is None:
             raise ValueError("artifact_prefix and artifact_root are required")
         artifact_root_path = Path(artifact_root)
-        topic_meanings_path = artifact_root_path / f"{artifact_prefix}_topic_meanings.parquet"
+        topic_meanings_path = (
+            artifact_root_path / f"{artifact_prefix}_topic_meanings.parquet"
+        )
         existing_node_artifacts: list[dict[str, Any]] = []
     else:
         old_topic_meanings_path = Path(
@@ -609,12 +637,23 @@ def _build_topic_result_payload(
             node_name = str(node_infos[idx].get("node_name") or node_id)
             text_column = str(node_infos[idx].get("text_column") or "")
             original_columns = list(node_infos[idx].get("original_columns") or [])
-            assignments_path = artifact_root_path / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
+            assignments_path = (
+                artifact_root_path
+                / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
+            )
         else:
             existing_node = existing_node_artifacts[idx]
             node_id = str(existing_node.get("node_id") or node_infos[idx]["node_id"])
-            node_name = str(existing_node.get("node_name") or node_infos[idx].get("node_name") or node_id)
-            text_column = str(existing_node.get("text_column") or node_infos[idx].get("text_column") or "")
+            node_name = str(
+                existing_node.get("node_name")
+                or node_infos[idx].get("node_name")
+                or node_id
+            )
+            text_column = str(
+                existing_node.get("text_column")
+                or node_infos[idx].get("text_column")
+                or ""
+            )
             original_columns = list(
                 existing_node.get("original_columns")
                 or node_infos[idx].get("original_columns")
@@ -703,7 +742,9 @@ def _build_topic_result_payload(
         payload_representative_words_by_topic.append(payload_words)
         meaning_words = payload_words[:max_representative_words]
         meaning_words_by_topic.append(meaning_words)
-        labels.append(" | ".join(meaning_words) if meaning_words else f"Topic {topic_id}")
+        labels.append(
+            " | ".join(meaning_words) if meaning_words else f"Topic {topic_id}"
+        )
 
     all_topics_sorted = sorted(topics_by_id.keys())
     indices = (
@@ -775,11 +816,13 @@ def _build_topic_result_payload(
             from sklearn.decomposition import PCA
 
             comps = min(2, embeddings.shape[1])
-            projected = PCA(n_components=comps, random_state=random_state).fit_transform(
-                embeddings
-            )
+            projected = PCA(
+                n_components=comps, random_state=random_state
+            ).fit_transform(embeddings)
             if comps == 1:
-                coords = np.column_stack([projected[:, 0], np.zeros_like(projected[:, 0])])
+                coords = np.column_stack(
+                    [projected[:, 0], np.zeros_like(projected[:, 0])]
+                )
             else:
                 coords = projected
 
@@ -852,7 +895,7 @@ def reaggregate_exact_topic_modeling_result(
     *,
     artifact_path: str,
     existing_artifacts: dict[str, Any],
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     topic_size_value: int,
     representative_words_count: int,
     random_seed: int,
@@ -865,7 +908,9 @@ def reaggregate_exact_topic_modeling_result(
 
     if topic_model is None or not isinstance(all_docs, list):
         raise ValueError("Exact topic reduction artifact is incomplete")
-    if not isinstance(corpus_sizes, list) or not isinstance(active_corpora_indices, list):
+    if not isinstance(corpus_sizes, list) or not isinstance(
+        active_corpora_indices, list
+    ):
         raise ValueError("Exact topic reduction artifact is missing corpus metadata")
 
     raw_total_topics = _count_non_outlier_topics(topic_model)
@@ -873,20 +918,22 @@ def reaggregate_exact_topic_modeling_result(
     if raw_total_topics < 2:
         raise ValueError("Exact topic reduction requires at least two raw topics")
     if requested_topic_count < 2 or requested_topic_count > raw_total_topics:
-        raise ValueError(
-            f"Exact topic count must be between 2 and {raw_total_topics}"
-        )
+        raise ValueError(f"Exact topic count must be between 2 and {raw_total_topics}")
 
     topic_model.reduce_topics(
         all_docs,
-        nr_topics=_resolve_exact_reduce_topics_target(topic_model, requested_topic_count),
+        nr_topics=_resolve_exact_reduce_topics_target(
+            topic_model, requested_topic_count
+        ),
     )
     payload = _build_topic_result_payload(
         topic_model=topic_model,
         node_infos=node_infos,
         all_docs=all_docs,
         corpus_sizes=[int(size) for size in corpus_sizes],
-        active_corpora_indices=[list(map(int, indices)) for indices in active_corpora_indices],
+        active_corpora_indices=[
+            list(map(int, indices)) for indices in active_corpora_indices
+        ],
         max_representative_words=max(1, int(representative_words_count)),
         random_state=int(random_seed),
         existing_artifacts=existing_artifacts,
@@ -904,7 +951,7 @@ def _encode_embeddings_in_chunks(
     docs: list[str],
     *,
     chunk_size: int = _EMBEDDING_CHUNK_SIZE,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_callback: Callable[[float, str], None] | None = None,
     progress_start: float = 0.08,
     progress_end: float = 0.88,
     docs_offset: int = 0,
@@ -922,7 +969,9 @@ def _encode_embeddings_in_chunks(
 
         if progress_callback and (chunk_idx + 1) % report_every == 0:
             done_docs = docs_offset + min(start + effective_chunk_size, len(docs))
-            cb_frac = progress_start + ((chunk_idx + 1) / n_chunks) * (progress_end - progress_start)
+            cb_frac = progress_start + ((chunk_idx + 1) / n_chunks) * (
+                progress_end - progress_start
+            )
             pct = int(done_docs / total_display * 100) if total_display > 0 else 0
             progress_callback(
                 cb_frac,
@@ -942,7 +991,7 @@ def _embed_with_cache(
     embedder: Any,
     docs: list[str],
     cache_dir: str | None,
-    progress_callback: Optional[Callable[[float, str], None]],
+    progress_callback: Callable[[float, str], None] | None,
     progress_start: float = 0.08,
     progress_end: float = 0.88,
     cache_model_id: str | None = None,
@@ -998,7 +1047,9 @@ def _embed_with_cache(
 
     if not missing_idx:
         if progress_callback:
-            progress_callback(progress_end, f"All {len(docs):,} embeddings loaded from cache.")
+            progress_callback(
+                progress_end, f"All {len(docs):,} embeddings loaded from cache."
+            )
         return cached_embeds
 
     if progress_callback:
@@ -1049,7 +1100,7 @@ def _embed_with_cache(
 def _build_empty_topic_payload(
     *,
     sampled: _SampledTopicCorpora,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     artifact_root: Path,
     artifact_prefix: str,
 ) -> dict[str, Any]:
@@ -1069,7 +1120,9 @@ def _build_empty_topic_payload(
         node_name = str(node_infos[index].get("node_name") or node_id)
         text_column = str(node_infos[index].get("text_column") or "")
         original_columns = list(node_infos[index].get("original_columns") or [])
-        assignments_path = artifact_root / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
+        assignments_path = (
+            artifact_root / f"{artifact_prefix}_topic_assignments_{node_id}.parquet"
+        )
         pl.DataFrame(
             {
                 "__row_nr__": sampled.active_corpora_indices[index],
@@ -1109,13 +1162,15 @@ def _embed_documents(
     all_docs: list[str],
     language: str | None,
     embedding_cache_dir: str | None,
-    progress_callback: Optional[Callable[[float, str], None]],
+    progress_callback: Callable[[float, str], None] | None,
     progress_start: float,
     progress_end: float,
 ) -> _EmbeddedTopicDocuments:
     embedder_repo_id, embedder_revision = _select_embedder(language)
     embedder = _get_embedder(embedder_repo_id, embedder_revision)
-    embedding_backend = "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
+    embedding_backend = (
+        "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
+    )
     return _EmbeddedTopicDocuments(
         embedder=embedder,
         all_embeddings=_embed_with_cache(
@@ -1141,11 +1196,13 @@ def _run_classic_pipeline(
     embedder: Any,
     language: str | None,
     top_n_words: int,
-    progress_callback: Optional[Callable[[float, str], None]],
+    progress_callback: Callable[[float, str], None] | None,
     progress_fraction: float,
 ) -> _TopicPipelineRun:
     if progress_callback:
-        progress_callback(progress_fraction, "Running classic BERTopic pipeline (UMAP + HDBSCAN)...")
+        progress_callback(
+            progress_fraction, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
+        )
     topic_model = _build_classic_pipeline(
         effective_min_topic_size,
         random_state,
@@ -1153,21 +1210,29 @@ def _run_classic_pipeline(
         language=language,
         top_n_words=top_n_words,
     )
-    assigned_topics, _ = topic_model.fit_transform(all_docs_for_vectorizer, all_embeddings)
-    return _TopicPipelineRun(topic_model=topic_model, assigned_topics=list(assigned_topics))
+    assigned_topics, _ = topic_model.fit_transform(
+        all_docs_for_vectorizer, all_embeddings
+    )
+    return _TopicPipelineRun(
+        topic_model=topic_model, assigned_topics=list(assigned_topics)
+    )
 
 
 def _language_resolution_meta(
     *,
     language: str | None,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     tokens_columns_per_node: list[str | None],
     any_pretokenised: bool,
 ) -> dict[str, Any]:
     resolved_language_code = (language or "en").strip().lower() or "en"
     per_node_label_source: list[dict[str, str | None]] = []
     for index, node_info in enumerate(node_infos):
-        tokens_column = tokens_columns_per_node[index] if index < len(tokens_columns_per_node) else None
+        tokens_column = (
+            tokens_columns_per_node[index]
+            if index < len(tokens_columns_per_node)
+            else None
+        )
         per_node_label_source.append(
             {
                 "node_id": str(node_info.get("node_id") or ""),
@@ -1200,7 +1265,7 @@ def _language_resolution_meta(
 
 def _compute_topic_payload(
     *,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     corpora: list[list[str]],
     vectorizer_corpora: list[list[str] | None],
     tokens_columns_per_node: list[str | None],
@@ -1208,7 +1273,7 @@ def _compute_topic_payload(
     artifact_prefix: str,
     random_seed: int,
     representative_words_count: int,
-    progress_callback: Optional[Callable[[float, str], None]],
+    progress_callback: Callable[[float, str], None] | None,
     embedding_cache_dir: str | None,
     sample_fractions: list[float | None] | None,
     topic_size_mode: str | None,
@@ -1276,7 +1341,9 @@ def _compute_topic_payload(
     exact_reduction_artifact_path: str | None = None
     if (topic_size_mode or "target") == "exact" and topic_size_value:
         raw_total_topics = _count_non_outlier_topics(topic_model)
-        exact_reduction_artifact_path = str(artifact_root / f"{artifact_prefix}_exact_reduction.pkl")
+        exact_reduction_artifact_path = str(
+            artifact_root / f"{artifact_prefix}_exact_reduction.pkl"
+        )
         _persist_exact_reduction_artifact(
             exact_reduction_artifact_path,
             topic_model=topic_model,
@@ -1288,7 +1355,9 @@ def _compute_topic_payload(
             progress_callback(0.65, f"Reducing topics to exactly {topic_size_value}...")
         topic_model.reduce_topics(
             sampled.all_docs_for_vectorizer,
-            nr_topics=_resolve_exact_reduce_topics_target(topic_model, int(topic_size_value)),
+            nr_topics=_resolve_exact_reduce_topics_target(
+                topic_model, int(topic_size_value)
+            ),
         )
         assigned_topics = list(topic_model.topics_)
 
@@ -1339,7 +1408,9 @@ def _compute_topic_payload(
     payload["meta"] = payload_meta
     payload_artifacts = payload.get("artifacts")
     if isinstance(payload_artifacts, dict) and exact_reduction_artifact_path:
-        payload_artifacts["exact_reduction_artifact_path"] = exact_reduction_artifact_path
+        payload_artifacts["exact_reduction_artifact_path"] = (
+            exact_reduction_artifact_path
+        )
         payload_artifacts["version"] = 2
     return payload
 
@@ -1348,7 +1419,7 @@ def run_topic_modeling_task(
     configure_worker_environment,
     user_id: str,
     workspace_id: str,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     artifact_dir: str,
     artifact_prefix: str,
     min_topic_size: int = 5,
@@ -1356,13 +1427,13 @@ def run_topic_modeling_task(
     corpora: list[list[str]] | None = None,
     random_seed: int = 42,
     representative_words_count: int = 5,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
+    progress_callback: Callable[[float, str], None] | None = None,
     embedding_cache_dir: str | None = None,
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
     topic_size_value: int | None = 25,
     language: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Execute topic modeling in a worker process.
 
     Used by:
@@ -1424,7 +1495,10 @@ def run_topic_modeling_task(
             "corpus_sizes": topic_payload["corpus_sizes"],
             "per_corpus_topic_counts": topic_payload.get("per_corpus_topic_counts"),
             "artifacts": topic_payload.get("artifacts", {"version": 1, "nodes": []}),
-            "meta": {**topic_payload.get("meta", {}), "node_names": prepared_payload.node_names},
+            "meta": {
+                **topic_payload.get("meta", {}),
+                "node_names": prepared_payload.node_names,
+            },
         }
 
         if progress_callback:

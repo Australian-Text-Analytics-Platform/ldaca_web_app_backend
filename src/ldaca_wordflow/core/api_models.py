@@ -1,6 +1,6 @@
 """FastAPI integration models for DocWorkspace."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -25,20 +25,20 @@ class NodeSummary(BaseModel):
 
     id: str
     name: str
-    operation: Optional[str] = None
+    operation: str | None = None
     shape: tuple[int, int] = (0, 0)
-    columns: List[str] = Field(default_factory=list)
-    node_schema: List[ColumnSchema] = Field(default_factory=list, alias="schema")
-    document: Optional[str] = None
-    parent_ids: List[str] = Field(default_factory=list)
-    child_ids: List[str] = Field(default_factory=list)
+    columns: list[str] = Field(default_factory=list)
+    node_schema: list[ColumnSchema] = Field(default_factory=list, alias="schema")
+    document: str | None = None
+    parent_ids: list[str] = Field(default_factory=list)
+    child_ids: list[str] = Field(default_factory=list)
 
 
 class PaginatedData(BaseModel):
     """Paginated data response for large datasets."""
 
-    data: List[Dict[str, Any]]
-    pagination: Dict[str, Any] = Field(
+    data: list[dict[str, Any]]
+    pagination: dict[str, Any] = Field(
         default_factory=lambda: {
             "page": 1,
             "page_size": 100,
@@ -48,8 +48,8 @@ class PaginatedData(BaseModel):
             "has_previous": False,
         }
     )
-    columns: List[str] = Field(default_factory=list)
-    data_schema: List[ColumnSchema] = Field(default_factory=list, alias="schema")
+    columns: list[str] = Field(default_factory=list)
+    data_schema: list[ColumnSchema] = Field(default_factory=list, alias="schema")
 
 
 class ErrorResponse(BaseModel):
@@ -57,7 +57,7 @@ class ErrorResponse(BaseModel):
 
     error: str
     message: str
-    details: Optional[Dict[str, Any]] = None
+    details: dict[str, Any] | None = None
 
 
 class OperationResult(BaseModel):
@@ -65,6 +65,6 @@ class OperationResult(BaseModel):
 
     success: bool
     message: str
-    node_id: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
-    errors: List[str] = Field(default_factory=list)
+    node_id: str | None = None
+    data: dict[str, Any] | None = None
+    errors: list[str] = Field(default_factory=list)

@@ -8,7 +8,6 @@ import shutil
 import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Optional
 
 from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -79,7 +78,7 @@ async def get_current_workspace(current_user: dict = Depends(get_current_user)):
 
 @router.post("/current")
 async def set_current_workspace(
-    workspace_id: Optional[str] = None, current_user: dict = Depends(get_current_user)
+    workspace_id: str | None = None, current_user: dict = Depends(get_current_user)
 ):
     """Set or clear the current in-memory workspace for the user.
 

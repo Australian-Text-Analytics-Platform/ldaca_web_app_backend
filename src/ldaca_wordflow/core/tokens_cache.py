@@ -81,19 +81,19 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator, cast
 
 import polars as pl
 
-from .utils import _user_root_folder, get_user_cache_folder
 from ..settings import settings
+from .utils import _user_root_folder, get_user_cache_folder
 
 logger = logging.getLogger(__name__)
 
 # POSIX file-lock support; on Windows the import is absent and the
 # context manager below degrades to a no-op (single-user desktop case).
 try:
-    import fcntl  # type: ignore[import-not-found]
+    import fcntl
 except ImportError:  # pragma: no cover — Windows path
     fcntl = None  # type: ignore[assignment]
 
@@ -236,7 +236,9 @@ def _bucket_files(user_id: str, bucket: str) -> list[Path]:
 def _new_delta_path(user_id: str, bucket: str) -> Path:
     """Allocate a fresh delta filename for ``bucket``. UUID4 hex is
     collision-free in practice; no need to coordinate via the manifest."""
-    return tokens_cache_dir(user_id) / f"{bucket}{DELTA_INFIX}{uuid.uuid4().hex}.parquet"
+    return (
+        tokens_cache_dir(user_id) / f"{bucket}{DELTA_INFIX}{uuid.uuid4().hex}.parquet"
+    )
 
 
 def _bucket_from_cache_filename(filename: str) -> str:
@@ -352,9 +354,7 @@ def _read_manifest_unlocked(user_id: str) -> dict:
         )
         return _empty_manifest()
     if not isinstance(data, dict) or "entries" not in data:
-        logger.warning(
-            "tokens-cache manifest %s has unexpected shape; resetting", path
-        )
+        logger.warning("tokens-cache manifest %s has unexpected shape; resetting", path)
         return _empty_manifest()
     # Lazy upgrade: pre-delta manifests keyed entries by ``<bucket>.parquet``
     # filenames. Re-key them to bucket form so the rest of the module can
@@ -459,16 +459,12 @@ def drop_workspace_references(user_id: str, workspace_id: str) -> None:
         manifest = _read_manifest_unlocked(user_id)
         for entry in manifest.get("entries", {}).values():
             entry["references"] = [
-                r
-                for r in entry["references"]
-                if r.get("workspace_id") != workspace_id
+                r for r in entry["references"] if r.get("workspace_id") != workspace_id
             ]
         _write_manifest_unlocked(user_id, manifest)
 
 
-def drop_node_references(
-    user_id: str, workspace_id: str, node_id: str
-) -> None:
+def drop_node_references(user_id: str, workspace_id: str, node_id: str) -> None:
     """Drop every cache reference owned by one node within one workspace.
 
     Called from the node-delete path. Walks all manifest entries rather
@@ -527,11 +523,12 @@ def read_cached_hashes(user_id: str, model: str, params: dict) -> set[int]:
     files = _bucket_files(user_id, _bucket_key(model, params))
     if not files:
         return set()
-    df = (
+    df = cast(
+        pl.DataFrame,
         pl.scan_parquet([str(p) for p in files])
         .select(CONTENT_HASH_COLUMN)
         .unique()
-        .collect()
+        .collect(),
     )
     return set(int(h) for h in df.get_column(CONTENT_HASH_COLUMN).to_list())
 
@@ -571,10 +568,11 @@ def _compact_bucket_if_needed(
     if len(files) <= threshold:
         return
     try:
-        merged = (
+        merged = cast(
+            pl.DataFrame,
             pl.scan_parquet([str(p) for p in files])
             .unique(subset=[CONTENT_HASH_COLUMN])
-            .collect()
+            .collect(),
         )
     except Exception as exc:
         logger.warning("compaction: failed to read bucket %s: %s", bucket, exc)
@@ -661,7 +659,7 @@ def write_or_append_cache(
 
 def tokens_cache_lazyframe(
     user_id: str, model: str, params: dict
-) -> Optional[pl.LazyFrame]:
+) -> pl.LazyFrame | None:
     """LazyFrame unioning every file in the bucket, deduplicated by hash.
 
     Schema: ``CONTENT_HASH_COLUMN, tokens``. Join your source frame on
@@ -702,7 +700,8 @@ def _all_user_ids_with_cache() -> list[str]:
         if not base.exists():
             return []
         return sorted(
-            p.name for p in base.iterdir()
+            p.name
+            for p in base.iterdir()
             if p.is_dir() and (p / TOKENS_CACHE_SUBDIR).exists()
         )
 
@@ -723,17 +722,17 @@ def _all_user_ids_with_cache() -> list[str]:
         # is what get_user_cache_folder uses to identify the user.
         name = entry.name
         if name.startswith("user_"):
-            out.append(name[len("user_"):] if name != "user_root" else "root")
+            out.append(name[len("user_") :] if name != "user_root" else "root")
         else:
             out.append(name)
     return out
 
 
 def sweep_unreferenced(
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     *,
     grace_period_days: int = DEFAULT_GRACE_PERIOD_DAYS,
-    now: Optional[datetime] = None,
+    now: datetime | None = None,
 ) -> dict[str, list[str]]:
     """Delete cache files with no references that are also past the grace
     window. Returns ``{user_id: [removed_filenames, ...]}``.
@@ -757,16 +756,17 @@ def sweep_unreferenced(
                 uid, grace_period_days=grace_period_days, now=now
             )
         return results
-    return {user_id: _sweep_unreferenced_for_user(
+    removed = _sweep_unreferenced_for_user(
         user_id, grace_period_days=grace_period_days, now=now
-    )}
+    )
+    return {user_id: removed}
 
 
 def _sweep_unreferenced_for_user(
     user_id: str,
     *,
     grace_period_days: int,
-    now: Optional[datetime],
+    now: datetime | None,
 ) -> list[str]:
     """Bucket-driven sweep.
 
@@ -828,9 +828,7 @@ def _sweep_unreferenced_for_user(
             if file_bucket in known_buckets:
                 continue
             try:
-                mtime = datetime.fromtimestamp(
-                    path.stat().st_mtime, tz=timezone.utc
-                )
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
             except OSError:
                 continue
             if mtime > cutoff:
@@ -839,16 +837,14 @@ def _sweep_unreferenced_for_user(
                 path.unlink()
                 removed.append(path.name)
             except OSError as exc:
-                logger.warning(
-                    "sweep: failed to remove orphan %s: %s", path, exc
-                )
+                logger.warning("sweep: failed to remove orphan %s: %s", path, exc)
 
         _write_manifest_unlocked(user_id, manifest)
 
     return removed
 
 
-def _parse_iso(text: Optional[str]) -> Optional[datetime]:
+def _parse_iso(text: str | None) -> datetime | None:
     if not text:
         return None
     try:

@@ -3,7 +3,6 @@ Authentication utilities and dependencies
 """
 
 import logging
-from typing import Optional
 
 from fastapi import Header, HTTPException
 
@@ -13,7 +12,7 @@ from ..settings import settings
 logger = logging.getLogger(__name__)
 
 
-async def get_current_user(authorization: Optional[str] = Header(None)):
+async def get_current_user(authorization: str | None = Header(None)):
     """
     Dependency to get current authenticated user.
 

@@ -5,7 +5,7 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import polars as pl
 from fastapi import HTTPException
@@ -160,7 +160,7 @@ def success(data=None, message: str = "ok", state: str = "successful", **extra):
     return payload
 
 
-def running(message: str = "running", metadata: Optional[dict] = None):
+def running(message: str = "running", metadata: dict | None = None):
     """Shortcut for standardized in-progress response payloads.
 
     Used by:
@@ -191,7 +191,7 @@ def stage_dataframe_as_lazy(
     data: pl.DataFrame,
     workspace_dir: Path,
     node_name: str,
-    document_column: Optional[str] = None,
+    document_column: str | None = None,
 ):
     """Persist a dataframe to parquet under the workspace and reload as LazyFrame.
 

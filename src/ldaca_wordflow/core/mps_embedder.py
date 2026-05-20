@@ -31,7 +31,8 @@ def is_mps_available() -> bool:
         import torch
 
         return bool(torch.backends.mps.is_available())
-    except ImportError:
+    except Exception as exc:
+        logger.debug("PyTorch MPS availability check failed: %s", exc)
         return False
 
 
@@ -83,7 +84,7 @@ class MpsEmbedder:
         Delegates to SentenceTransformer.encode with normalize_embeddings=True
         to match the OnnxEmbedder output shape and scale.
         """
-        return self._model.encode(  # type: ignore[return-value]
+        return self._model.encode(
             sentences,
             show_progress_bar=show_progress_bar,
             batch_size=batch_size,
@@ -91,5 +92,7 @@ class MpsEmbedder:
         )
 
     @classmethod
-    def from_pretrained(cls, model_id: str, *, revision: str | None = None) -> "MpsEmbedder":
+    def from_pretrained(
+        cls, model_id: str, *, revision: str | None = None
+    ) -> "MpsEmbedder":
         return cls(model_id, revision=revision)

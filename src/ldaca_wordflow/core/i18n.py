@@ -22,7 +22,7 @@ opt in without inventing their own error type.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from docworkspace import Node
@@ -58,18 +58,17 @@ class UnsupportedLanguageError(Exception):
     build an informative response without parsing the message string.
     """
 
-    def __init__(self, tool: str, language: str, *, message: Optional[str] = None):
+    def __init__(self, tool: str, language: str, *, message: str | None = None):
         self.tool = tool
         self.language = language
         super().__init__(
-            message
-            or f"{tool} does not support language {language!r} (English-only)"
+            message or f"{tool} does not support language {language!r} (English-only)"
         )
 
 
 def effective_language(
-    request_language: Optional[str],
-    node: Optional["Node"] = None,
+    request_language: str | None,
+    node: Node | None = None,
 ) -> str:
     """Resolve the language that an analysis tool should use.
 

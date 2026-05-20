@@ -33,7 +33,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Iterable, Set
+from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ def cleanup_orphan_caches(
     if cache_dir is None:
         return 0
 
-    live: Set[str] = set(live_task_ids)
+    live: set[str] = set(live_task_ids)
     count = 0
     for path in cache_dir.glob(".materialized_*.parquet"):
         m = _CACHE_FILENAME_RE.match(path.name)

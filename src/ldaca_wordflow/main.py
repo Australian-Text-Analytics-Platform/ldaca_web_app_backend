@@ -10,6 +10,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import IO, Any, cast
 
 import uvicorn
@@ -316,10 +317,9 @@ def _clear_server_state(_task: asyncio.Task[None] | None = None) -> None:
     _server_task = None
 
 
-def _get_frontend_build_dir():
+def _get_frontend_build_dir() -> Path:
     """Locate the bundled frontend build directory using importlib.resources."""
     from importlib import resources
-    from pathlib import Path
 
     pkg = resources.files("ldaca_wordflow.resources.frontend")
     build_dir = Path(str(pkg / "build"))

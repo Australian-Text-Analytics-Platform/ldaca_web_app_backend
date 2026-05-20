@@ -6,6 +6,7 @@ that uses separate processes for heavy computational tasks.
 """
 
 import asyncio
+import builtins
 import logging
 import multiprocessing as mp
 import os
@@ -17,14 +18,14 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 from .worker import TASK_REGISTRY, get_worker_pool
 
 logger = logging.getLogger(__name__)
 
 
-def _is_terminal_task_event(event: Dict[str, Any]) -> bool:
+def _is_terminal_task_event(event: dict[str, Any]) -> bool:
     if event.get("type") != "task_changed":
         return False
     task = event.get("task")
@@ -54,18 +55,18 @@ class TaskInfo:
     id: str
     future: Future
     created_at: float = field(default_factory=time.time)
-    started_at: Optional[float] = None
-    finished_at: Optional[float] = None
+    started_at: float | None = None
+    finished_at: float | None = None
     status: TaskStatus = TaskStatus.PENDING
     result: Any = None
-    error: Optional[str] = None
+    error: str | None = None
     progress: float = 0.0  # 0..1 for UI progress bars
-    progress_message: Optional[str] = None
+    progress_message: str | None = None
     task_type: str = ""
     name: str = ""
     user_id: str = ""
     workspace_id: str = ""
-    worker_pid: Optional[int] = None  # PID of the worker process, set once known
+    worker_pid: int | None = None  # PID of the worker process, set once known
 
     def update_status(self):
         """Update status based on future state."""
@@ -97,20 +98,20 @@ class WorkerTaskManager:
     """Task manager that uses ProcessPoolExecutor for background jobs."""
 
     def __init__(self):
-        self._tasks: Dict[str, TaskInfo] = {}
+        self._tasks: dict[str, TaskInfo] = {}
         self._lock = asyncio.Lock()
-        self._progress_store: Dict[str, Dict[str, Any]] = {}  # task_id -> progress info
+        self._progress_store: dict[str, dict[str, Any]] = {}  # task_id -> progress info
         self._mp_manager = mp.Manager()
-        self._task_progress_queues: Dict[str, Any] = {}
+        self._task_progress_queues: dict[str, Any] = {}
 
         # Event bus for real-time updates (single channel per user)
-        self._subscribers: Dict[
-            str, Set[asyncio.Queue]
+        self._subscribers: dict[
+            str, set[asyncio.Queue]
         ] = {}  # user_id -> set of queues
         self._subscriber_lock = asyncio.Lock()
 
     async def subscribe(
-        self, user_id: str, workspace_id: Optional[str] = None
+        self, user_id: str, workspace_id: str | None = None
     ) -> asyncio.Queue:
         """Subscribe to events for a specific user channel."""
         queue = asyncio.Queue(maxsize=100)  # Bounded to prevent memory leaks
@@ -125,7 +126,7 @@ class WorkerTaskManager:
         return queue
 
     async def unsubscribe(
-        self, user_id: str, workspace_id: Optional[str], queue: asyncio.Queue
+        self, user_id: str, workspace_id: str | None, queue: asyncio.Queue
     ):
         """Unsubscribe from events."""
         key = user_id
@@ -139,7 +140,7 @@ class WorkerTaskManager:
         logger.debug(f"Unsubscribed from events for user {user_id}")
         return queue
 
-    async def emit(self, user_id: str, workspace_id: str, event: Dict[str, Any]):
+    async def emit(self, user_id: str, workspace_id: str, event: dict[str, Any]):
         """Emit an event to all subscribers for a user channel."""
         key = user_id
 
@@ -188,7 +189,7 @@ class WorkerTaskManager:
             if not self._subscribers[key]:
                 del self._subscribers[key]
 
-    def _serialize_task(self, task_info: TaskInfo) -> Dict[str, Any]:
+    def _serialize_task(self, task_info: TaskInfo) -> dict[str, Any]:
         """Serialize task info for events."""
         return {
             "task_id": task_info.id,
@@ -255,7 +256,7 @@ class WorkerTaskManager:
 
                 try:
                     progress_value = float(raw_progress)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
 
                 message_value = str(message) if message is not None else ""
@@ -296,7 +297,7 @@ class WorkerTaskManager:
                 message = payload.get("message")
                 try:
                     progress_value = float(raw_progress)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     continue
 
                 message_value = str(message) if message is not None else ""
@@ -473,14 +474,10 @@ class WorkerTaskManager:
                                     )
 
                                     task_manager = get_task_manager(user_id)
-                                    parent_task = task_manager.get_task(
-                                        parent_task_id
-                                    )
+                                    parent_task = task_manager.get_task(parent_task_id)
                                     if parent_task is not None:
                                         materialize_summary = {
-                                            "record_count": data.get(
-                                                "record_count"
-                                            ),
+                                            "record_count": data.get("record_count"),
                                             "unique_documents_with_hits": data.get(
                                                 "unique_documents_with_hits"
                                             ),
@@ -497,12 +494,10 @@ class WorkerTaskManager:
                                             or {}
                                         )
                                         updated = dict(existing)
-                                        updated[str(parent_node_id_for_mat)] = (
-                                            str(materialized_path)
+                                        updated[str(parent_node_id_for_mat)] = str(
+                                            materialized_path
                                         )
-                                        parent_task.request.materialized_paths = (
-                                            updated
-                                        )
+                                        parent_task.request.materialized_paths = updated
 
                                         existing_summaries = (
                                             getattr(
@@ -512,9 +507,7 @@ class WorkerTaskManager:
                                             )
                                             or {}
                                         )
-                                        updated_summaries = dict(
-                                            existing_summaries
-                                        )
+                                        updated_summaries = dict(existing_summaries)
                                         updated_summaries[
                                             str(parent_node_id_for_mat)
                                         ] = materialize_summary
@@ -627,9 +620,7 @@ class WorkerTaskManager:
                                 or {}
                             )
                             updated_summaries = dict(existing_summaries)
-                            updated_summaries[str(parent_node_id)] = (
-                                materialize_summary
-                            )
+                            updated_summaries[str(parent_node_id)] = materialize_summary
                             parent_task.request.materialize_summaries = (
                                 updated_summaries
                             )
@@ -796,8 +787,8 @@ class WorkerTaskManager:
         user_id: str,
         workspace_id: str,
         task_type: str,
-        task_args: Dict[str, Any],
-        task_name: Optional[str] = None,
+        task_args: dict[str, Any],
+        task_name: str | None = None,
     ) -> TaskInfo:
         """Submit a worker task, register tracking, and start monitors.
 
@@ -921,7 +912,9 @@ class WorkerTaskManager:
             if pid is not None:
                 try:
                     os.kill(pid, signal.SIGTERM)
-                    logger.info("Sent SIGTERM to worker PID %d for task %s", pid, task_id)
+                    logger.info(
+                        "Sent SIGTERM to worker PID %d for task %s", pid, task_id
+                    )
                 except (ProcessLookupError, OSError) as exc:
                     logger.debug("Could not send SIGTERM to PID %d: %s", pid, exc)
 
@@ -961,9 +954,9 @@ class WorkerTaskManager:
     async def cancel_all(
         self,
         *,
-        task_type: Optional[str] = None,
-        user_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
+        task_type: str | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> int:
         """Cancel all tasks matching the given filters."""
         count = 0
@@ -984,8 +977,8 @@ class WorkerTaskManager:
         return count
 
     async def list(
-        self, *, user_id: Optional[str] = None, workspace_id: Optional[str] = None
-    ) -> List[Dict[str, Any]]:
+        self, *, user_id: str | None = None, workspace_id: str | None = None
+    ) -> builtins.list[dict[str, Any]]:
         """List tasks with normalized progress fields for API consumption.
 
         Used by:
@@ -995,7 +988,7 @@ class WorkerTaskManager:
         - Keeps UI state queries independent of raw `Future` internals.
         """
         async with self._lock:
-            out: List[Dict[str, Any]] = []
+            out: builtins.list[dict[str, Any]] = []
             for task_info in self._tasks.values():
                 # Apply filters
                 if user_id and task_info.user_id != user_id:
@@ -1010,9 +1003,9 @@ class WorkerTaskManager:
     async def any_running(
         self,
         *,
-        task_type: Optional[str] = None,
-        user_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
+        task_type: str | None = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> bool:
         """Check if any tasks are running, optionally filtered."""
         async with self._lock:
@@ -1034,9 +1027,9 @@ class WorkerTaskManager:
         self,
         task_type: str,
         *,
-        user_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
-    ) -> Optional[TaskInfo]:
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+    ) -> TaskInfo | None:
         """Get the latest task of a given type, optionally filtered."""
         async with self._lock:
             items = []
@@ -1057,7 +1050,7 @@ class WorkerTaskManager:
             items.sort(key=lambda x: x.created_at, reverse=True)
             return items[0]
 
-    async def get_task(self, task_id: str) -> Optional[TaskInfo]:
+    async def get_task(self, task_id: str) -> TaskInfo | None:
         """Return one task with current status/progress reconciled.
 
         Used by:
@@ -1093,10 +1086,10 @@ class WorkerTaskManager:
 
     async def clear_tasks(
         self,
-        task_type: Optional[str] = None,
+        task_type: str | None = None,
         *,
-        user_id: Optional[str] = None,
-        workspace_id: Optional[str] = None,
+        user_id: str | None = None,
+        workspace_id: str | None = None,
     ) -> int:
         """Clear and remove task records, optionally filtered."""
         count = 0

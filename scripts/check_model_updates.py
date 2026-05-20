@@ -26,9 +26,7 @@ PINNED_FILE = (
     / "core"
     / "worker_tasks_topic.py"
 )
-PIN_PATTERN = re.compile(
-    r'(_TOPIC_EMBEDDER_REVISION\s*=\s*")([0-9a-f]+)(")'
-)
+PIN_PATTERN = re.compile(r'(_TOPIC_EMBEDDER_REVISION\s*=\s*")([0-9a-f]+)(")')
 
 
 def read_pinned_sha() -> str:
@@ -51,15 +49,15 @@ def main() -> int:
     try:
         from huggingface_hub import HfApi
     except ImportError:
-        sys.exit(
-            "huggingface_hub is required: install it in this environment first"
-        )
+        sys.exit("huggingface_hub is required: install it in this environment first")
 
     pinned = read_pinned_sha()
     print(f"Pinned revision:  {pinned}")
 
     info = HfApi().model_info(REPO_ID)
     latest = info.sha
+    if latest is None:
+        sys.exit(f"Could not resolve latest revision for {REPO_ID}")
     print(f"Latest on HF Hub: {latest}")
     last_modified = getattr(info, "last_modified", None)
     if last_modified:

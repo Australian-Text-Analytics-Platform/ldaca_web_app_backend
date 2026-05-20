@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 from uuid import uuid4
 
 from .models import AnalysisStatus, AnalysisTask, BaseAnalysisRequest
@@ -17,29 +17,29 @@ from .models import AnalysisStatus, AnalysisTask, BaseAnalysisRequest
 logger = logging.getLogger(__name__)
 
 # In-memory storage: user_id -> TaskManagerStore
-_TASK_MANAGER_STORE: Dict[str, TaskManagerStore] = {}
+_TASK_MANAGER_STORE: dict[str, TaskManagerStore] = {}
 
 
 class TaskManagerStore:
     """Per-user in-memory storage for analysis task records."""
 
     def __init__(self) -> None:
-        self.tasks: Dict[str, AnalysisTask] = {}
-        self.current_task_ids: Dict[str, str] = {}
+        self.tasks: dict[str, AnalysisTask] = {}
+        self.current_task_ids: dict[str, str] = {}
 
-    def get_task(self, task_id: str) -> Optional[AnalysisTask]:
+    def get_task(self, task_id: str) -> AnalysisTask | None:
         return self.tasks.get(task_id)
 
     def save_task(self, task: AnalysisTask) -> None:
         self.tasks[task.task_id] = task
 
-    def get_all_tasks(self) -> List[AnalysisTask]:
+    def get_all_tasks(self) -> list[AnalysisTask]:
         return list(self.tasks.values())
 
     def set_current_task(self, tab: str, task_id: str) -> None:
         self.current_task_ids[tab] = task_id
 
-    def get_current_task_ids(self, tab: str) -> List[str]:
+    def get_current_task_ids(self, tab: str) -> list[str]:
         task_id = self.current_task_ids.get(tab)
         return [task_id] if task_id else []
 
@@ -50,13 +50,13 @@ class TaskManagerStore:
             if current_id == task_id:
                 del self.current_task_ids[tab]
 
-    def clear_all(self) -> List[str]:
+    def clear_all(self) -> list[str]:
         ids = list(self.tasks.keys())
         self.tasks.clear()
         self.current_task_ids.clear()
         return ids
 
-    def clear_workspace(self, workspace_id: str) -> List[str]:
+    def clear_workspace(self, workspace_id: str) -> list[str]:
         """Remove all tasks belonging to *workspace_id* and return their IDs."""
         to_remove = [
             tid for tid, task in self.tasks.items() if task.workspace_id == workspace_id
@@ -100,7 +100,7 @@ class TaskManager:
         logger.info("Created analysis task %s for user %s", task_id, self.user_id)
         return task_id
 
-    def get_task(self, task_id: str) -> Optional[AnalysisTask]:
+    def get_task(self, task_id: str) -> AnalysisTask | None:
         return self.store.get_task(task_id)
 
     def save_task(self, task: AnalysisTask) -> None:
@@ -136,7 +136,7 @@ class TaskManager:
             self.store.clear_task(previous_id)
         self.store.set_current_task(tab, task_id)
 
-    def get_current_task_ids(self, tab: str) -> List[str]:
+    def get_current_task_ids(self, tab: str) -> list[str]:
         return self.store.get_current_task_ids(tab)
 
     def update_task(self, task_id: str, result: Any) -> None:
@@ -153,14 +153,14 @@ class TaskManager:
     def clear_task(self, task_id: str) -> None:
         self.store.clear_task(task_id)
 
-    def clear_all(self) -> List[str]:
+    def clear_all(self) -> list[str]:
         return self.store.clear_all()
 
-    def clear_workspace(self, workspace_id: str) -> List[str]:
+    def clear_workspace(self, workspace_id: str) -> list[str]:
         """Clear all tasks belonging to *workspace_id*."""
         return self.store.clear_workspace(workspace_id)
 
-    def get_all_tasks(self) -> List[AnalysisTask]:
+    def get_all_tasks(self) -> list[AnalysisTask]:
         return self.store.get_all_tasks()
 
     def _normalize_request(

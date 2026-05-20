@@ -4,7 +4,6 @@ Unified authentication endpoints following Single Source of Truth principle
 
 import logging
 import secrets
-from typing import Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -28,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/", response_model=AuthInfoResponse)
-async def get_auth_info(authorization: Optional[str] = Header(None)):
+async def get_auth_info(authorization: str | None = Header(None)):
     """
     Main auth endpoint - tells frontend everything it needs to know.
 
@@ -272,10 +271,10 @@ async def cilogon_login(request: Request):
 @router.get("/cilogon/callback")
 async def cilogon_callback(
     request: Request,
-    code: Optional[str] = Query(None),
-    state: Optional[str] = Query(None),
-    error: Optional[str] = Query(None),
-    error_description: Optional[str] = Query(None),
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+    error_description: str | None = Query(None),
 ):
     """Handle the CILogon authorization code callback.
 
@@ -288,7 +287,9 @@ async def cilogon_callback(
         detail = error_description or error
         logger.error(
             "CILogon callback error — error=%r error_description=%r all_params=%s",
-            error, error_description, dict(request.query_params),
+            error,
+            error_description,
+            dict(request.query_params),
         )
         raise HTTPException(400, f"CILogon authentication failed: {detail}")
 
@@ -351,9 +352,13 @@ async def cilogon_callback(
         raise HTTPException(400, "Email not verified by CILogon")
 
     # Resolve display name: prefer 'name', fall back to given + family
-    name = userinfo.get("name") or (
-        f"{userinfo.get('given_name', '')} {userinfo.get('family_name', '')}".strip()
-    ) or userinfo.get("email", "Unknown")
+    name = (
+        userinfo.get("name")
+        or (
+            f"{userinfo.get('given_name', '')} {userinfo.get('family_name', '')}".strip()
+        )
+        or userinfo.get("email", "Unknown")
+    )
 
     user = await get_or_create_user(
         email=userinfo.get("email"),

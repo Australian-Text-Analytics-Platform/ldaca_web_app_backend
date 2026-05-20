@@ -12,7 +12,9 @@
 
 **Question:** _Where is the architecture overview?_
 
-**Answer:** See `developer-guide/architecture.md`.
+**Answer:** Start with `developer-guide/index.md`. The guide is split into
+architecture, application lifecycle, workspace/files, analysis/workers, and API
+patterns.
 
 ## Configuration and tasks
 

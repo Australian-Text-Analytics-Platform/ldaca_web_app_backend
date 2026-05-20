@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional, cast
 from uuid import uuid4
 
@@ -188,6 +189,36 @@ async def _build_response(
             "annotation_columns": ["classification"],
         },
     }
+
+
+def _workspace_data_dir(user_id: str, workspace_id: str) -> Path:
+    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    workspace_data_dir = workspace_dir / "data"
+    workspace_data_dir.mkdir(parents=True, exist_ok=True)
+    return workspace_data_dir
+
+
+def _distinct_annotation_values(
+    user_id: str,
+    node_id: str,
+    annotation_column: str,
+) -> list[str]:
+    ws = workspace_manager.get_current_workspace(user_id)
+    if ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+
+    node_data = ws.nodes[node_id].data
+    values = (
+        node_data.select(pl.col(annotation_column))
+        .collect()
+        .get_column(annotation_column)
+        .drop_nulls()
+        .unique()
+        .to_list()
+    )
+    return sorted(str(value) for value in values)
 
 
 # ---------------------------------------------------------------------------
@@ -485,11 +516,7 @@ async def detach_ai_annotation(
     # scanning an artifact path would silently corrupt on next reload. The
     # workspace GC (`_garbage_collect_workspace_data`) keeps top-level
     # parquets alive while they're referenced by any node's plbin.
-    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
-    if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    workspace_data_dir = workspace_dir / "data"
-    workspace_data_dir.mkdir(parents=True, exist_ok=True)
+    workspace_data_dir = _workspace_data_dir(user_id, workspace_id)
     detach_parquet_path = (
         workspace_data_dir / f"ai_annotation_detach_{uuid4().hex}.parquet"
     )
@@ -562,11 +589,7 @@ async def save_ai_annotation(
     # `data/artifacts/` dir. Reassigning `node.data` to a scan of a
     # to-be-deleted artifact would corrupt the existing node on the next
     # workspace unload or analysis submit.
-    workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
-    if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    workspace_data_dir = workspace_dir / "data"
-    workspace_data_dir.mkdir(parents=True, exist_ok=True)
+    workspace_data_dir = _workspace_data_dir(user_id, workspace_id)
     save_parquet_path = workspace_data_dir / f"ai_annotation_save_{uuid4().hex}.parquet"
     df.write_parquet(str(save_parquet_path))
     node.data = pl.scan_parquet(str(save_parquet_path))
@@ -596,24 +619,13 @@ async def get_ai_annotation_providers(
 ):
     """Return distinct provider values from the annotation column of a node."""
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
-    if ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
-    node = ws.nodes[node_id]
-    node_data = node.data
-
-    values = (
-        node_data.select(pl.col(annotation_column))
-        .collect()
-        .get_column(annotation_column)
-        .drop_nulls()
-        .unique()
-        .to_list()
-    )
     return {
         "state": "successful",
-        "data": {"providers": sorted(str(v) for v in values)},
+        "data": {
+            "providers": _distinct_annotation_values(
+                user_id, node_id, annotation_column
+            )
+        },
     }
 
 
@@ -625,22 +637,11 @@ async def get_ai_annotation_categories(
 ):
     """Return distinct category values from the annotation column of a node."""
     user_id = current_user["id"]
-    ws = workspace_manager.get_current_workspace(user_id)
-    if ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
-    node = ws.nodes[node_id]
-    node_data = node.data
-
-    values = (
-        node_data.select(pl.col(annotation_column))
-        .collect()
-        .get_column(annotation_column)
-        .drop_nulls()
-        .unique()
-        .to_list()
-    )
     return {
         "state": "successful",
-        "data": {"categories": sorted(str(v) for v in values)},
+        "data": {
+            "categories": _distinct_annotation_values(
+                user_id, node_id, annotation_column
+            )
+        },
     }

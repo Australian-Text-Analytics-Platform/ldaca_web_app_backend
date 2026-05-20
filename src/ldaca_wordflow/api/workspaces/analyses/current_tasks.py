@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
-
 from ....analysis.manager import get_task_manager as get_analysis_task_manager
 
 
 async def get_current_task_ids_for_analysis(
     user_id: str,
     analysis_keys: list[str],
-) -> Dict[str, Any]:
+) -> dict[str, list[str]]:
     """Return current task IDs for an analysis type.
 
     Each analysis type stores at most one current task ID per key.

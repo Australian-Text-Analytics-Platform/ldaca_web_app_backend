@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -52,8 +52,8 @@ class AnalysisTask(BaseModel, Generic[TRequest, TResult]):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     request: TRequest
-    result: Optional[TResult] = None
-    error: Optional[str] = None
+    result: TResult | None = None
+    error: str | None = None
 
     def complete(self, result: TResult) -> None:
         """Mark task completed and attach result payload.

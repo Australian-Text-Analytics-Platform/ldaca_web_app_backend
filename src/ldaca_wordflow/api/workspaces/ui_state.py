@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
@@ -55,7 +55,7 @@ def _ui_state_path_for(user_id: str, workspace_id: str) -> Path:
 async def get_workspace_ui_state(
     workspace_id: str,
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     user_id = current_user["id"]
     path = _ui_state_path_for(user_id, workspace_id)
     if not path.exists():
@@ -82,9 +82,9 @@ async def get_workspace_ui_state(
 @router.put("/{workspace_id}/ui-state")
 async def put_workspace_ui_state(
     workspace_id: str,
-    payload: Dict[str, Any] = Body(default_factory=dict),
+    payload: dict[str, Any] = Body(default_factory=dict),
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     user_id = current_user["id"]
     path = _ui_state_path_for(user_id, workspace_id)
     path.parent.mkdir(parents=True, exist_ok=True)

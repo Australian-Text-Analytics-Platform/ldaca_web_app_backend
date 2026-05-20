@@ -19,7 +19,6 @@ from .worker_tasks_topic import (
 logger = logging.getLogger(__name__)
 
 
-
 def _prefetch_spacy_model() -> None:
     """Download the spaCy model used by quotation extraction if not cached."""
     try:
@@ -94,7 +93,7 @@ def _prefetch_topic_embedder_mps() -> None:
             _TOPIC_EMBEDDER_REVISION[:8],
         )
         return
-    except (LocalEntryNotFoundError, Exception):
+    except LocalEntryNotFoundError, Exception:
         pass
 
     try:
@@ -157,7 +156,7 @@ def _prefetch_topic_embedder_onnx() -> None:
             _TOPIC_EMBEDDER_REVISION[:8],
         )
         return
-    except (LocalEntryNotFoundError, Exception):
+    except LocalEntryNotFoundError, Exception:
         pass
 
     # Download: platform-appropriate model, fp32 fallback, tokenizer.
@@ -194,7 +193,13 @@ def _prefetch_topic_embedder() -> None:
     """
     from .mps_embedder import is_mps_available
 
-    if is_mps_available():
+    try:
+        use_mps = is_mps_available()
+    except Exception:
+        logger.warning("[prefetch] MPS availability probe failed", exc_info=True)
+        use_mps = False
+
+    if use_mps:
         _prefetch_topic_embedder_mps()
     else:
         _prefetch_topic_embedder_onnx()

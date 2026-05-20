@@ -13,7 +13,7 @@ import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import polars as pl
@@ -95,21 +95,7 @@ async def clear_token_frequencies(
     }
 
 
-def _unwrap_task_manager_result(raw_result):
-    """Normalize stored TaskManager result wrappers into plain dictionaries."""
-    if raw_result is None:
-        return {}
-    if isinstance(raw_result, dict):
-        nested = raw_result.get("result")
-        if isinstance(nested, dict):
-            return nested
-        return raw_result
-    if isinstance(raw_result, str):
-        return {"state": "successful", "message": raw_result}
-    return {"state": "successful"}
-
-
-def _coerce_limit_value(value) -> int:
+def _coerce_limit_value(value: Any) -> int:
     """Coerce token-limit input to a safe positive integer."""
     try:
         candidate = int(value)
@@ -192,7 +178,7 @@ def _server_limit(token_limit: int) -> int:
     )
 
 
-def _safe_float(value) -> float | str | None:
+def _safe_float(value: Any) -> float | str | None:
     if value is None:
         return None
     try:

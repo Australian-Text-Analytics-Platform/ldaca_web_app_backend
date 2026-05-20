@@ -7,7 +7,7 @@ Why:
 - Keeps concordance-specific request/result contracts separated from route logic.
 """
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -25,8 +25,8 @@ class ConcordanceRequest(BaseAnalysisRequest):
     - Validates all search/context/pagination-related analysis inputs.
     """
 
-    node_ids: List[str]
-    node_columns: Optional[Dict[str, str]] = None
+    node_ids: list[str]
+    node_columns: dict[str, str] | None = None
     search_word: str
     num_left_tokens: int = 50
     num_right_tokens: int = 50
@@ -41,12 +41,12 @@ class ConcordanceRequest(BaseAnalysisRequest):
     search_mode: Literal["regex", "tokens"] = "regex"
     # Phase 4.4 language hint — resolver chain falls back to derived metadata
     # then "en" when this is None.
-    language: Optional[str] = None
+    language: str | None = None
     # Tokens-mode model picker (None = first matching derived column).
-    model: Optional[str] = None
+    model: str | None = None
     # node_id -> parquet path holding flattened occurrence rows.
     # Populated when a materialize background task completes for that node.
-    materialized_paths: Optional[Dict[str, str]] = None
+    materialized_paths: dict[str, str] | None = None
 
 
 class ConcordanceResult(BaseAnalysisResult):
@@ -59,11 +59,11 @@ class ConcordanceResult(BaseAnalysisResult):
     - Provides a consistent JSON output shape for concordance payloads.
     """
 
-    def __init__(self, results: List[Dict[str, Any]], total_hits: int):
+    def __init__(self, results: list[dict[str, Any]], total_hits: int):
         self.results = results
         self.total_hits = total_hits
 
-    def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+    def to_json(self, **kwargs: Any) -> dict[str, Any]:
         """Return JSON-serializable concordance payload."""
         return {
             "results": self.results,

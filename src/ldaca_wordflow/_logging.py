@@ -169,8 +169,8 @@ def setup_file_logging(prefix: str) -> IO[str] | None:
 
         original_stdout = sys.__stdout__ or sys.stdout
         original_stderr = sys.__stderr__ or sys.stderr
-        sys.stdout = TeeOutput(log_file, original_stdout)  # type: ignore[assignment]
-        sys.stderr = TeeOutput(log_file, original_stderr)  # type: ignore[assignment]
+        sys.stdout = TeeOutput(log_file, original_stdout)
+        sys.stderr = TeeOutput(log_file, original_stderr)
 
         # Attach a structured JSON file handler for the package logger
         json_log_path = log_dir / f"{prefix}_{timestamp}.jsonl"

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, cast
+from typing import cast
 
 from docworkspace import DerivedColumnMeta, Node
 
@@ -65,9 +65,9 @@ def tokenise_column(
     *,
     source_column: str,
     model: str,
-    language: Optional[str],
+    language: str | None,
     user_id: str,
-    workspace_id: Optional[str] = None,
+    workspace_id: str | None = None,
 ) -> str:
     """Add or replace a derived tokens column on ``node``.
 
@@ -100,12 +100,13 @@ def tokenise_column(
         )
 
     derived_name = derived_column_name(TOKENS_FORM, source_column, model)
-    existing = node.find_derived_column(
-        source_column, form=TOKENS_FORM, model=model
-    )
+    existing = node.find_derived_column(source_column, form=TOKENS_FORM, model=model)
 
     lowercase = not _model_is_case_free(model)
-    params = {"lowercase": lowercase, "remove_punct": _REMOVE_PUNCT_DEFAULT}
+    params: dict[str, bool] = {
+        "lowercase": lowercase,
+        "remove_punct": _REMOVE_PUNCT_DEFAULT,
+    }
 
     # Strip any previously-derived tokens column from the plan before we
     # rebuild it, so the replacement is unambiguous. Use the un-derived
@@ -180,7 +181,7 @@ def _upsert_for_node(
     base_lf,
     source_column: str,
     model: str,
-    params: dict,
+    params: dict[str, bool],
     user_id: str,
 ):
     """Materialise tokens for the node's source column into the cache.
@@ -195,9 +196,7 @@ def _upsert_for_node(
     new_tokens_df = _tokenize_source_rows(new_rows_lf, model=model, params=params)
 
     if new_tokens_df.height > 0:
-        return tokens_cache.write_or_append_cache(
-            user_id, model, params, new_tokens_df
-        )
+        return tokens_cache.write_or_append_cache(user_id, model, params, new_tokens_df)
 
     # Nothing new to write. Normally the bucket already has files from
     # the cache hit and we can return the canonical bucket path. The
@@ -207,10 +206,10 @@ def _upsert_for_node(
     # *any* bucket file (legacy or delta), not just the canonical
     # ``<bucket>.parquet`` (which post-refactor is rarely on disk).
     if not tokens_cache.cache_exists(user_id, model, params):
-        all_tokens_df = _tokenize_source_rows(source_rows_lf, model=model, params=params)
-        return tokens_cache.write_or_append_cache(
-            user_id, model, params, all_tokens_df
+        all_tokens_df = _tokenize_source_rows(
+            source_rows_lf, model=model, params=params
         )
+        return tokens_cache.write_or_append_cache(user_id, model, params, all_tokens_df)
     return tokens_cache.cache_path(user_id, model, params)
 
 
@@ -236,7 +235,7 @@ def _exclude_cached_hashes(source_rows_lf, cached_hashes: set[int]):
     )
 
 
-def _tokenize_source_rows(rows_lf, *, model: str, params: dict):
+def _tokenize_source_rows(rows_lf, *, model: str, params: dict[str, bool]):
     """Tokenise hash/source rows into the cache write schema."""
     import polars as pl
     import polars_text as pt
@@ -258,7 +257,7 @@ def _build_cache_join(
     source_column: str,
     user_id: str,
     model: str,
-    params: dict,
+    params: dict[str, bool],
     derived_name: str,
 ):
     """Wrap ``base_lf`` to attach the cached tokens by content hash.

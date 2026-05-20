@@ -1,7 +1,7 @@
 """DocWorkspace data-type and schema conversion utilities for FastAPI."""
 
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Any
 
 import polars as pl
 
@@ -18,10 +18,12 @@ class Annotation:
 
 
 ANNOTATION_POLARS_DTYPE = pl.List(
-    pl.Struct([
-        pl.Field("provider", pl.Utf8),
-        pl.Field("annotation", pl.Utf8),
-    ])
+    pl.Struct(
+        [
+            pl.Field("provider", pl.Utf8),
+            pl.Field("annotation", pl.Utf8),
+        ]
+    )
 )
 
 
@@ -77,7 +79,7 @@ class DocWorkspaceDataTypeUtils:
         return "unknown"
 
     @staticmethod
-    def get_node_schema_json_with_ldaca_dtype(node: Any) -> List[ColumnSchema]:
+    def get_node_schema_json_with_ldaca_dtype(node: Any) -> list[ColumnSchema]:
         """Build JSON-ready column schema with LDaCA dtype mapping."""
         data_schema = node.data.collect_schema()
         return [

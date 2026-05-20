@@ -138,6 +138,42 @@ def _build_group_filter_expression(
     return group_expr
 
 
+def _get_active_workspace(user_id: str) -> tuple[str, Any]:
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    ws = workspace_manager.get_current_workspace(user_id)
+    if not workspace_id or ws is None:
+        raise HTTPException(status_code=404, detail="No active workspace selected")
+    return workspace_id, ws
+
+
+def _normalize_type_name(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).lower()
+    if any(token in text for token in ("datetime", "timestamp")):
+        return "datetime"
+    if "date" in text and "update" not in text:
+        return "datetime"
+    if "time" in text and "interval" not in text:
+        return "datetime"
+    if "int" in text and "interval" not in text:
+        return "integer"
+    if any(token in text for token in ("float", "double", "decimal", "numeric")):
+        return "float"
+    return None
+
+
+def _column_type_lookup(schema: Any) -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for name, raw in zip(schema.names(), schema.dtypes()):
+        if not isinstance(name, str):
+            continue
+        normalized = _normalize_type_name(raw)
+        if normalized:
+            lookup.setdefault(name, normalized)
+    return lookup
+
+
 # ---------------------------------------------------------------------------
 # Standalone sequential-analysis logic (ported from docframe)
 # ---------------------------------------------------------------------------
@@ -400,10 +436,7 @@ async def preview_sequential_analysis(
     competing analysis run.
     """
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
-    if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+    _workspace_id, ws = _get_active_workspace(user_id)
 
     try:
         node = ws.nodes[node_id]
@@ -469,10 +502,7 @@ async def run_sequential_analysis(
     - Produces aggregated time-series counts and stores them as current task data.
     """
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
-    if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+    workspace_id, ws = _get_active_workspace(user_id)
 
     task_manager = get_task_manager(user_id)
     existing_task_ids = task_manager.get_current_task_ids("sequential_analysis")
@@ -510,35 +540,7 @@ async def run_sequential_analysis(
         # Determine available columns
         available_columns = list(schema.names())
 
-        def normalize_type_name(value: object | None) -> str | None:
-            if value is None:
-                return None
-            text = str(value).lower()
-            if any(token in text for token in ("datetime", "timestamp")):
-                return "datetime"
-            if "date" in text and "update" not in text:
-                return "datetime"
-            if "time" in text and "interval" not in text:
-                return "datetime"
-            if "int" in text and "interval" not in text:
-                return "integer"
-            if any(
-                token in text for token in ("float", "double", "decimal", "numeric")
-            ):
-                return "float"
-            return None
-
-        column_type_lookup: dict[str, str] = {}
-
-        def register_type(name: object, raw: object | None) -> None:
-            if not isinstance(name, str):
-                return
-            normalized = normalize_type_name(raw)
-            if normalized:
-                column_type_lookup.setdefault(name, normalized)
-
-        for name, raw in zip(schema.names(), schema.dtypes()):
-            register_type(name, raw)
+        column_type_lookup = _column_type_lookup(schema)
 
         if request.group_by_columns:
             if len(request.group_by_columns) > 3:
@@ -777,10 +779,7 @@ async def detach_sequential_analysis_task(
 ):
     """Create a filtered child node from selected sequential-analysis periods."""
     user_id = current_user["id"]
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    ws = workspace_manager.get_current_workspace(user_id)
-    if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+    workspace_id, ws = _get_active_workspace(user_id)
 
     if not request.selected_periods:
         raise HTTPException(

@@ -7,7 +7,7 @@ Why:
 - Encapsulates quotation-specific request/result contracts.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -26,9 +26,9 @@ class QuotationEngineConfig(BaseModel):
     """
 
     type: str = "local"  # "local" or "remote"
-    model: Optional[str] = None
-    url: Optional[str] = None
-    api_key: Optional[str] = None
+    model: str | None = None
+    url: str | None = None
+    api_key: str | None = None
 
 
 class QuotationRequest(BaseAnalysisRequest):
@@ -43,13 +43,13 @@ class QuotationRequest(BaseAnalysisRequest):
 
     node_id: str
     column: str
-    engine: Optional[QuotationEngineConfig] = None
-    page: Optional[int] = 1
-    page_size: Optional[int] = None
-    sort_by: Optional[str] = None
-    descending: Optional[bool] = True
-    context_length: Optional[int] = None
-    materialized_path: Optional[str] = None
+    engine: QuotationEngineConfig | None = None
+    page: int | None = 1
+    page_size: int | None = None
+    sort_by: str | None = None
+    descending: bool | None = True
+    context_length: int | None = None
+    materialized_path: str | None = None
 
 
 class QuotationResult(BaseAnalysisResult):
@@ -62,9 +62,9 @@ class QuotationResult(BaseAnalysisResult):
     - Preserves arbitrary quotation payloads behind unified result interface.
     """
 
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self.data = data
 
-    def to_json(self, **kwargs: Any) -> Dict[str, Any]:
+    def to_json(self, **kwargs: Any) -> dict[str, Any]:
         """Return JSON-serializable quotation payload."""
         return self.data

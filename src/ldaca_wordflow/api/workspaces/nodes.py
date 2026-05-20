@@ -5,19 +5,18 @@ Maintains identical routes and behavior to preserve backward compatibility.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional, cast
+from typing import Any, Literal, cast
 
 import polars as pl
 from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 logger = logging.getLogger(__name__)
-
-import json
 
 from docworkspace import Node
 
@@ -160,7 +159,7 @@ def _make_temporal_literal(value: datetime, column_dtype: Any) -> pl.Expr:
 
 def _build_filter_expression(
     request: FilterRequest,
-    column_dtypes: Optional[dict[str, Any]] = None,
+    column_dtypes: dict[str, Any] | None = None,
 ) -> pl.Expr:
     logic = (request.logic or "and").lower()
     filter_expr = None
@@ -376,7 +375,9 @@ def _build_slice_or_sample_lazy(
     request: SliceRequest,
 ) -> tuple[pl.LazyFrame, str, str]:
     if request.mode == "shuffle":
-        seed_args = f", seed={request.random_seed}" if request.random_seed is not None else ""
+        seed_args = (
+            f", seed={request.random_seed}" if request.random_seed is not None else ""
+        )
         shuffle_indices = pl.int_range(pl.len()).sample(
             fraction=1.0,
             shuffle=True,
@@ -538,7 +539,7 @@ def _validate_and_align_concat_nodes(
 
 def _calculate_concat_row_count(
     aligned_frames: list[pl.LazyFrame],
-) -> Optional[int]:
+) -> int | None:
     total = 0
     for lazy_frame in aligned_frames:
         try:
@@ -552,7 +553,7 @@ def _calculate_concat_row_count(
     return total
 
 
-def _derive_concat_node_name(nodes: list[Node], desired_name: Optional[str]) -> str:
+def _derive_concat_node_name(nodes: list[Node], desired_name: str | None) -> str:
     if desired_name:
         return desired_name
     labels = [node.name for node in nodes]
@@ -634,7 +635,7 @@ async def replace_apply(
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
     node = workspace.nodes[node_id]
-    dtype_str: Optional[str] = None
+    dtype_str: str | None = None
 
     try:
         lazy_data = node.data
@@ -691,10 +692,10 @@ async def get_node_data(
     node_id: str,
     page: int = 1,
     page_size: int = 20,
-    sort_by: Optional[str] = None,
+    sort_by: str | None = None,
     descending: bool = False,
-    filter_column: Optional[str] = None,
-    filter_value: Optional[str] = None,
+    filter_column: str | None = None,
+    filter_value: str | None = None,
     filter_op: str = "contains",
     current_user: dict = Depends(get_current_user),
 ):
@@ -863,11 +864,11 @@ async def describe_column(
 
                         dt = dt.replace(tzinfo=timezone.utc)
                     return dt.isoformat()
-                except (ValueError, AttributeError):
+                except ValueError, AttributeError:
                     return val
             try:
                 return float(val)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return val
 
         return ColumnDescribeResponse(
@@ -1275,8 +1276,8 @@ async def concat_nodes(
 async def join_nodes_preview(
     left_node_id: str,
     right_node_id: str,
-    left_on: Optional[str] = None,
-    right_on: Optional[str] = None,
+    left_on: str | None = None,
+    right_on: str | None = None,
     how: str = "inner",
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=200),
@@ -1375,7 +1376,7 @@ async def join_nodes(
     left_on: str,
     right_on: str,
     how: str = "inner",
-    new_node_name: Optional[str] = None,
+    new_node_name: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
@@ -1641,7 +1642,10 @@ async def polars_expression_apply(
 
     # with_columns without an explicit new node name mutates the existing node
     # in place (adds/replaces columns), matching the behaviour of replace_apply.
-    if request.context == PolarsExpressionContext.with_columns and not request.new_node_name:
+    if (
+        request.context == PolarsExpressionContext.with_columns
+        and not request.new_node_name
+    ):
         node.data = result_lazy
         update_workspace(user_id, workspace_id)
         return PolarsExpressionApplyResponse(node_id=node_id, node_name=node.name)

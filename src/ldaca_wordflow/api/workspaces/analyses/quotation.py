@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from functools import partial
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException
@@ -118,6 +118,39 @@ async def _compute_on_demand_page(
         compute_quote_dataframe_fn=compute_quote_dataframe_fn,
         materialized_path=materialized_path,
     )
+
+
+def _collect_non_empty_quotation_corpus(
+    node_data: pl.LazyFrame,
+    document_column: str,
+    extra_columns: list[str],
+) -> tuple[list[str], dict[str, list], dict[str, Any]]:
+    corpus_df = cast(
+        pl.DataFrame,
+        node_data.select(
+            [pl.col(document_column)] + [pl.col(col) for col in extra_columns]
+        )
+        .filter(
+            pl.col(document_column)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0
+        )
+        .collect(),
+    )
+    node_corpus = [
+        str(value) if value is not None else ""
+        for value in corpus_df.get_column(document_column).to_list()
+    ]
+    extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
+    for col in extra_columns:
+        series = corpus_df.get_column(col)
+        extra_columns_data[col] = series.to_list()
+        extra_columns_dtypes[col] = series.dtype
+    return node_corpus, extra_columns_data, extra_columns_dtypes
 
 
 router = APIRouter(prefix="/workspaces", tags=["quotation"])
@@ -585,30 +618,11 @@ async def detach_quotation(
                 continue
             columns_to_select.append(col)
 
-    corpus_df = (
-        node_data.select(
-            [pl.col(request.column)] + [pl.col(col) for col in columns_to_select]
+    node_corpus, extra_columns_data, extra_columns_dtypes = (
+        _collect_non_empty_quotation_corpus(
+            node_data, request.column, columns_to_select
         )
-        .filter(
-            pl.col(request.column)
-            .cast(pl.Utf8, strict=False)
-            .str.strip_chars()
-            .str.len_chars()
-            .fill_null(0)
-            > 0
-        )
-        .collect()
     )
-    node_corpus = [
-        str(value) if value is not None else ""
-        for value in corpus_df.get_column(request.column).to_list()
-    ]
-    extra_columns_data: dict[str, list] = {}
-    extra_columns_dtypes: dict[str, Any] = {}
-    for col in columns_to_select:
-        series = corpus_df.get_column(col)
-        extra_columns_data[col] = series.to_list()
-        extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
@@ -690,30 +704,11 @@ async def materialize_quotation(
         if col != request.column and not is_derived_column_name(col)
     ]
 
-    corpus_df = (
-        node_data.select(
-            [pl.col(request.column)] + [pl.col(col) for col in extra_metadata_columns]
+    node_corpus, extra_columns_data, extra_columns_dtypes = (
+        _collect_non_empty_quotation_corpus(
+            node_data, request.column, extra_metadata_columns
         )
-        .filter(
-            pl.col(request.column)
-            .cast(pl.Utf8, strict=False)
-            .str.strip_chars()
-            .str.len_chars()
-            .fill_null(0)
-            > 0
-        )
-        .collect()
     )
-    node_corpus = [
-        str(value) if value is not None else ""
-        for value in corpus_df.get_column(request.column).to_list()
-    ]
-    extra_columns_data: dict[str, list] = {}
-    extra_columns_dtypes: dict[str, Any] = {}
-    for col in extra_metadata_columns:
-        series = corpus_df.get_column(col)
-        extra_columns_data[col] = series.to_list()
-        extra_columns_dtypes[col] = series.dtype
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:

@@ -47,8 +47,10 @@ from .concordance_tokens_mode import (
 from .generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
+    CONC_L1_COLUMN,
     CONC_LEFT_CONTEXT_COLUMN,
     CONC_MATCHED_TEXT_COLUMN,
+    CONC_R1_COLUMN,
     CONC_RIGHT_CONTEXT_COLUMN,
     CONC_START_IDX_COLUMN,
     CORE_CONCORDANCE_COLUMNS,
@@ -222,8 +224,8 @@ def _project_concordance_hit(
         CONC_RIGHT_CONTEXT_COLUMN: raw_hit.get("right_context"),
         CONC_START_IDX_COLUMN: start_idx,
         CONC_END_IDX_COLUMN: end_idx,
-        "CONC_l1": raw_hit.get("l1"),
-        "CONC_r1": raw_hit.get("r1"),
+        CONC_L1_COLUMN: raw_hit.get("l1"),
+        CONC_R1_COLUMN: raw_hit.get("r1"),
     }
     if document_text is not None and start_idx is not None and end_idx is not None:
         projected[CONC_EXTRACTION_COLUMN] = compute_concordance_extraction_string(
@@ -249,6 +251,17 @@ def _concordance_hit_has_content(hit: dict[str, Any]) -> bool:
         if str(value).strip():
             return True
     return False
+
+
+def _column_metadata(
+    columns: list[str],
+    concordance_columns: tuple[str, ...],
+) -> dict[str, list[str]]:
+    return {
+        "concordance_columns": [c for c in columns if c in concordance_columns],
+        "metadata_columns": [c for c in columns if c not in concordance_columns],
+        "all_columns": columns,
+    }
 
 
 def _serialize_grouped_concordance_rows(
@@ -435,11 +448,7 @@ def compute_concordance_page(
     # matching the rest of the user-controllable column set. The CONC_
     # prefix makes the source obvious; behaviourally it's "an optional column
     # you can show / detach if you want it."
-    metadata = {
-        "concordance_columns": [c for c in columns if c in CORE_CONCORDANCE_COLUMNS],
-        "metadata_columns": [c for c in columns if c not in CORE_CONCORDANCE_COLUMNS],
-        "all_columns": columns,
-    }
+    metadata = _column_metadata(columns, CORE_CONCORDANCE_COLUMNS)
 
     return {
         "data": stringify_unsafe_integers(page_rows),
@@ -697,15 +706,7 @@ def compute_materialized_page(
         max(1, math.ceil(total_rows / effective_page_size)) if total_rows else 0
     )
 
-    metadata = {
-        "concordance_columns": [
-            c for c in columns if c in MATERIALIZED_CONCORDANCE_COLUMNS
-        ],
-        "metadata_columns": [
-            c for c in columns if c not in MATERIALIZED_CONCORDANCE_COLUMNS
-        ],
-        "all_columns": columns,
-    }
+    metadata = _column_metadata(columns, MATERIALIZED_CONCORDANCE_COLUMNS)
 
     return {
         "data": stringify_unsafe_integers(rows),
@@ -900,11 +901,7 @@ def collect_interleaved_combined(
     if left_result.get("columns") and right_result.get("columns"):
         columns = list(dict.fromkeys(left_result["columns"] + right_result["columns"]))
 
-    metadata = {
-        "concordance_columns": [c for c in columns if c in CORE_CONCORDANCE_COLUMNS],
-        "metadata_columns": [c for c in columns if c not in CORE_CONCORDANCE_COLUMNS],
-        "all_columns": columns,
-    }
+    metadata = _column_metadata(columns, CORE_CONCORDANCE_COLUMNS)
 
     effective_sort_by = left_result["sorting"].get("sort_by") or right_result[
         "sorting"
@@ -1083,15 +1080,7 @@ def build_concordance_response(
                     max_total_source_pages, pag.get("total_source_pages", 0)
                 )
 
-            metadata = {
-                "concordance_columns": [
-                    c for c in columns if c in CORE_CONCORDANCE_COLUMNS
-                ],
-                "metadata_columns": [
-                    c for c in columns if c not in CORE_CONCORDANCE_COLUMNS
-                ],
-                "all_columns": columns,
-            }
+            metadata = _column_metadata(columns, CORE_CONCORDANCE_COLUMNS)
             data["__COMBINED__"] = {
                 "data": stringify_unsafe_integers(all_rows),
                 "columns": columns,

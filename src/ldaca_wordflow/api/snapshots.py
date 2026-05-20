@@ -18,7 +18,6 @@ import logging
 import re
 import zipfile
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
@@ -46,7 +45,7 @@ MAX_BASENAME_LENGTH = 80
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)(?:\.\d+)?(?:[-+].*)?$")
 
 
-def _parse_major_minor(version: str) -> Optional[str]:
+def _parse_major_minor(version: str) -> str | None:
     """Return ``"<MAJOR>.<MINOR>"`` from a version string, or ``None``
     if malformed. Accepts ``"v0.4.4"``, ``"0.4.4"``, ``"0.4"``,
     ``"0.4.0-rc1"`` etc."""
@@ -108,7 +107,7 @@ def _confined_path(snapshots_dir: Path, filename: str) -> Path:
     return candidate
 
 
-def _read_manifest_from_zip(bundle_path: Path) -> Optional[dict]:
+def _read_manifest_from_zip(bundle_path: Path) -> dict | None:
     """Return the parsed ``manifest.json`` from inside the zip, or
     ``None`` if the zip is malformed or the manifest is missing /
     unparseable. Used by the lazy-extract path on listing.
@@ -117,7 +116,7 @@ def _read_manifest_from_zip(bundle_path: Path) -> Optional[dict]:
         with zipfile.ZipFile(bundle_path) as zf:
             with zf.open("manifest.json") as fh:
                 return json.load(fh)
-    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError):
+    except zipfile.BadZipFile, KeyError, json.JSONDecodeError:
         logger.warning("Failed to read manifest from %s", bundle_path)
         return None
 
@@ -169,7 +168,7 @@ def _sidecar_paths(bundle_path: Path) -> tuple[Path, Path]:
     )
 
 
-def _ensure_sidecar(bundle_path: Path) -> Optional[dict]:
+def _ensure_sidecar(bundle_path: Path) -> dict | None:
     """Ensure a sidecar manifest exists for ``bundle_path``, extracting
     from the zip if it's missing. Returns the manifest dict or ``None``
     if the bundle is corrupt / unreadable.
@@ -179,7 +178,7 @@ def _ensure_sidecar(bundle_path: Path) -> Optional[dict]:
         try:
             with manifest_sidecar.open("r", encoding="utf-8") as fh:
                 return json.load(fh)
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             logger.warning("Sidecar %s unreadable; re-extracting", manifest_sidecar)
     manifest = _read_manifest_from_zip(bundle_path)
     if manifest is None:
@@ -191,7 +190,7 @@ def _ensure_sidecar(bundle_path: Path) -> Optional[dict]:
     return manifest
 
 
-def _list_user_snapshots(user_id: str, tool_filter: Optional[str]) -> list[dict]:
+def _list_user_snapshots(user_id: str, tool_filter: str | None) -> list[dict]:
     """Walk the user's snapshots folder and return ``[{filename, manifest}, ...]``.
 
     Lazy-extracts a sidecar from the zip when missing. Filters by
@@ -224,7 +223,7 @@ def _list_user_snapshots(user_id: str, tool_filter: Optional[str]) -> list[dict]
 
 @router.get("")
 async def list_snapshots(
-    tool: Optional[str] = None,
+    tool: str | None = None,
     user: dict = Depends(get_current_user),
 ) -> dict:
     """List snapshots for the current user, optionally filtered by tool."""
@@ -259,7 +258,9 @@ async def upload_snapshot(
     try:
         bundle_path.write_bytes(bundle_bytes)
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"failed to write bundle: {exc}") from exc
+        raise HTTPException(
+            status_code=500, detail=f"failed to write bundle: {exc}"
+        ) from exc
 
     manifest = _read_manifest_from_zip(bundle_path)
     if manifest is None:
@@ -270,12 +271,16 @@ async def upload_snapshot(
             bundle_path.unlink()
         except OSError:
             pass
-        raise HTTPException(status_code=400, detail="bundle has no readable manifest.json")
+        raise HTTPException(
+            status_code=400, detail="bundle has no readable manifest.json"
+        )
 
     manifest_sidecar, description_sidecar = _sidecar_paths(bundle_path)
     try:
         manifest_sidecar.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        description_sidecar.write_text(_generate_description_md(manifest), encoding="utf-8")
+        description_sidecar.write_text(
+            _generate_description_md(manifest), encoding="utf-8"
+        )
     except OSError:
         logger.exception("Failed to write sidecars for %s", bundle_path)
 
@@ -359,7 +364,7 @@ async def delete_snapshot(
 @router.delete("")
 async def batch_delete_snapshots(
     tool: str,
-    incompatible_with: Optional[str] = None,
+    incompatible_with: str | None = None,
     user: dict = Depends(get_current_user),
 ) -> dict:
     """Batch delete. Without ``incompatible_with``, removes every

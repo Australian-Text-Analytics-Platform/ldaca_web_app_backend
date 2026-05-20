@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Optional, cast
+from typing import Any, Callable, cast
 
 from ..api.workspaces.analyses.generated_columns import (
     QUOTE_COLUMN_NAMES,
@@ -19,8 +19,8 @@ def _build_quotation_occurrence_dataframe(
     node_corpus: list[str],
     document_column: str,
     include_document_column: bool,
-    extra_columns_data: Optional[Dict[str, list]],
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    extra_columns_data: dict[str, list] | None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
 ):
     """Extract quotation occurrences from a corpus. Returns (df, output_columns)."""
     import polars as pl
@@ -90,15 +90,15 @@ def run_quotation_detach_task(
     node_corpus: list[str],
     parent_node_id: str,
     document_column: str,
-    engine_config: Dict[str, Any],
+    engine_config: dict[str, Any],
     new_node_name: str,
     include_document_column: bool = False,
     include_extraction: bool = False,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Run quotation detach and return a serialized detached node payload.
 
     Fast path: when `materialized_path` points to an existing parquet, wrap it
@@ -142,7 +142,10 @@ def run_quotation_detach_task(
             mat_lazy = pl.scan_parquet(materialized_path)
             mat_columns = list(mat_lazy.collect_schema().names())
             if not include_extraction and QUOTE_EXTRACTION_COLUMN in mat_columns:
-                mat_df = mat_lazy.drop(QUOTE_EXTRACTION_COLUMN).collect()
+                mat_df = cast(
+                    pl.DataFrame,
+                    mat_lazy.drop(QUOTE_EXTRACTION_COLUMN).collect(),
+                )
                 mat_df.write_parquet(detach_parquet_path)
             else:
                 shutil.copy2(materialized_path, detach_parquet_path)
@@ -193,9 +196,7 @@ def run_quotation_detach_task(
         # contract: untouched optional columns are excluded.
         if not include_extraction and QUOTE_EXTRACTION_COLUMN in quote_df.columns:
             quote_df = quote_df.drop(QUOTE_EXTRACTION_COLUMN)
-            output_columns = [
-                c for c in output_columns if c != QUOTE_EXTRACTION_COLUMN
-            ]
+            output_columns = [c for c in output_columns if c != QUOTE_EXTRACTION_COLUMN]
 
         if progress_callback:
             progress_callback(0.82, "Serializing detached data block...")
@@ -242,11 +243,11 @@ def run_quotation_materialize_task(
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
-    engine_config: Dict[str, Any],
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-) -> Dict[str, Any]:
+    engine_config: dict[str, Any],
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+) -> dict[str, Any]:
     """Run full quotation extraction and persist the flattened parquet."""
     configure_worker_environment()
 

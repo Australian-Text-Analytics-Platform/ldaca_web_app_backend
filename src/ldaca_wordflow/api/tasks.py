@@ -9,7 +9,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
@@ -27,7 +27,7 @@ router = APIRouter(prefix="/tasks", tags=["task_streaming"])
 @router.get("")
 async def list_tasks(
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """List tasks for current user."""
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
@@ -43,7 +43,7 @@ async def list_tasks(
 async def clear_tasks(
     task_id: str = Query(...),
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Clear a task and all associated caches by task id.
 
     If the task is still running it is cancelled first.  Both the worker
@@ -84,7 +84,7 @@ async def clear_tasks(
 async def cancel_task(
     task_id: str = Query(...),
     current_user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Stop a running task and mark it as cancelled.
 
     Unlike ``/tasks/clear``, the task record is kept so the user can see the
@@ -96,13 +96,15 @@ async def cancel_task(
     return {
         "state": "successful",
         "data": {"stopped": stopped},
-        "message": "Task cancelled." if stopped else "Task not found or already finished.",
+        "message": "Task cancelled."
+        if stopped
+        else "Task not found or already finished.",
     }
 
 
 async def _get_stream_user(
-    authorization: Optional[str] = Header(None),
-    token: Optional[str] = Query(None),
+    authorization: str | None = Header(None),
+    token: str | None = Query(None),
 ):
     """Resolve auth for the SSE stream endpoint.
 

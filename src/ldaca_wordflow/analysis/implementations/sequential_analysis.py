@@ -7,8 +7,6 @@ Why:
 - Keeps sequential-analysis specific request fields versioned in one place.
 """
 
-from typing import List, Optional
-
 from pydantic import Field
 
 from ..models import BaseAnalysisRequest
@@ -29,11 +27,9 @@ class SequentialAnalysisRequest(BaseAnalysisRequest):
         remove duplicated declarations to reduce schema ambiguity.
     """
 
-    node_id: Optional[str] = Field(None, description="Node ID to analyze")
+    node_id: str | None = Field(None, description="Node ID to analyze")
     time_column: str = Field(..., description="Column containing time/numeric data")
-    group_by_columns: Optional[List[str]] = Field(
-        None, description="Columns to group by"
-    )
+    group_by_columns: list[str] | None = Field(None, description="Columns to group by")
     frequency: str = Field(
         "monthly", description="Frequency (daily, weekly, monthly, yearly)"
     )
@@ -41,17 +37,15 @@ class SequentialAnalysisRequest(BaseAnalysisRequest):
     column_type: str = Field(
         "datetime", description="Column type (datetime or numeric)"
     )
-    numeric_origin: Optional[float] = Field(
-        None, description="Origin for numeric binning"
-    )
-    numeric_interval: Optional[float] = Field(
+    numeric_origin: float | None = Field(None, description="Origin for numeric binning")
+    numeric_interval: float | None = Field(
         None, description="Interval for numeric binning"
     )
-    custom_interval_value: Optional[int] = Field(
+    custom_interval_value: int | None = Field(
         None,
         description="Custom datetime interval count (used when frequency='custom')",
     )
-    custom_interval_unit: Optional[str] = Field(
+    custom_interval_unit: str | None = Field(
         None,
         description="Custom datetime interval unit (seconds|minutes|hours|days|weeks)",
     )

@@ -8,7 +8,7 @@ import logging
 import os
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
 from .worker_tasks_concordance import (
     run_concordance_detach_task,
@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 
 
 def _build_progress_callback(
-    progress_queue: Optional[Any],
-    progress_callback: Optional[Callable[[float, str], None]],
-) -> Optional[Callable[[float, str], None]]:
+    progress_queue: Any | None,
+    progress_callback: Callable[[float, str], None] | None,
+) -> Callable[[float, str], None] | None:
     if progress_queue is None and progress_callback is None:
         return None
 
@@ -98,10 +98,10 @@ def ldaca_import_task(
     user_id: str,
     workspace_id: str,
     url: str,
-    filename: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    filename: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_ldaca_import_task(
         _configure_worker_environment,
@@ -116,10 +116,10 @@ def ldaca_import_task(
 def workspace_download_task(
     user_id: str,
     workspace_id: str,
-    target_workspace_dir: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    target_workspace_dir: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_workspace_download_task(
         _configure_worker_environment,
@@ -146,13 +146,13 @@ def concordance_detach_task(
     new_node_name: str,
     include_document_column: bool = False,
     include_extraction: bool = False,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_detach_task(
         _configure_worker_environment,
@@ -191,19 +191,19 @@ def concordance_dispersion_detach_task(
     whole_word: bool,
     case_sensitive: bool,
     new_node_name: str,
-    parent_task_id: Optional[str] = None,
+    parent_task_id: str | None = None,
     include_document_column: bool = True,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    selected_bins: Optional[list[int]] = None,
-    total_bins: Optional[int] = None,
-    selected_matched_texts: Optional[list[str]] = None,
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    selected_bins: list[int] | None = None,
+    total_bins: int | None = None,
+    selected_matched_texts: list[str] | None = None,
     match_case_insensitive: bool = False,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_dispersion_detach_task(
         _configure_worker_environment,
@@ -246,14 +246,14 @@ def concordance_materialize_task(
     regex: bool,
     whole_word: bool,
     case_sensitive: bool,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
     search_mode: str = "regex",
-    node_tokens: Optional[list[Any]] = None,
-    language: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    node_tokens: list[Any] | None = None,
+    language: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_materialize_task(
         _configure_worker_environment,
@@ -284,16 +284,16 @@ def quotation_detach_task(
     node_corpus: list[str],
     parent_node_id: str,
     document_column: str,
-    engine_config: Dict[str, Any],
+    engine_config: dict[str, Any],
     new_node_name: str,
     include_document_column: bool = False,
     include_extraction: bool = False,
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    materialized_path: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    materialized_path: str | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_quotation_detach_task(
         _configure_worker_environment,
@@ -320,12 +320,12 @@ def quotation_materialize_task(
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
-    engine_config: Dict[str, Any],
-    extra_columns_data: Optional[Dict[str, list]] = None,
-    extra_columns_dtypes: Optional[Dict[str, Any]] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-) -> Dict[str, Any]:
+    engine_config: dict[str, Any],
+    extra_columns_data: dict[str, list] | None = None,
+    extra_columns_dtypes: dict[str, Any] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_quotation_materialize_task(
         _configure_worker_environment,
@@ -344,7 +344,7 @@ def quotation_materialize_task(
 def topic_modeling_task(
     user_id: str,
     workspace_id: str,
-    node_infos: list[Dict[str, Any]],
+    node_infos: list[dict[str, Any]],
     artifact_dir: str,
     artifact_prefix: str,
     min_topic_size: int,
@@ -352,14 +352,14 @@ def topic_modeling_task(
     corpora: list[list[str]] | None = None,
     random_seed: int = 42,
     representative_words_count: int = 5,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
     embedding_cache_dir: str | None = None,
     sample_fractions: list[float | None] | None = None,
     topic_size_mode: str | None = "target",
     topic_size_value: int | None = 25,
     language: str | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(
         configure_worker_environment=_configure_worker_environment,
@@ -385,17 +385,17 @@ def topic_modeling_task(
 def token_frequencies_task(
     user_id: str,
     workspace_id: str,
-    node_corpora: Dict[str, list[str]],
-    node_display_names: Dict[str, str],
+    node_corpora: dict[str, list[str]],
+    node_display_names: dict[str, str],
     artifact_dir: str,
     artifact_prefix: str,
     token_limit: int,
-    stop_words: Optional[list[str]] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None,
-    progress_queue: Optional[Any] = None,
-    node_tokens: Optional[Dict[str, list[list[str]]]] = None,
-    node_token_streams: Optional[Dict[str, str]] = None,
-) -> Dict[str, Any]:
+    stop_words: list[str] | None = None,
+    progress_callback: Callable[[float, str], None] | None = None,
+    progress_queue: Any | None = None,
+    node_tokens: dict[str, list[list[str]]] | None = None,
+    node_token_streams: dict[str, str] | None = None,
+) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_token_frequencies_task(
         configure_worker_environment=_configure_worker_environment,
@@ -428,7 +428,7 @@ def _pid_reporting_wrapper(task_func: Any, **kwargs: Any) -> Any:
     return task_func(**kwargs)
 
 
-TASK_REGISTRY: Dict[str, Any] = {
+TASK_REGISTRY: dict[str, Any] = {
     "ldaca_import": ldaca_import_task,
     "workspace_download": workspace_download_task,
     "concordance_detach": concordance_detach_task,
@@ -440,7 +440,7 @@ TASK_REGISTRY: Dict[str, Any] = {
     "token_frequencies": token_frequencies_task,
 }
 
-_worker_pool: Optional["WorkerTaskManager"] = None
+_worker_pool: WorkerTaskManager | None = None
 
 
 def get_worker_pool(max_workers: int = 2) -> "WorkerTaskManager":
@@ -455,7 +455,7 @@ class WorkerTaskManager:
 
     def __init__(self, max_workers: int = 2):
         self.max_workers = max_workers
-        self.executor: Optional[ProcessPoolExecutor] = None
+        self.executor: ProcessPoolExecutor | None = None
         self.is_running = False
 
     def start(self) -> None:
@@ -470,7 +470,7 @@ class WorkerTaskManager:
         assert self.executor is not None
         return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
-    def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
+    def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
         if self.executor is None:
             self.is_running = False
             return

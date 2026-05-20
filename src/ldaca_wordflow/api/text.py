@@ -5,7 +5,6 @@ Text analysis utility endpoints
 import logging
 from functools import lru_cache
 from importlib import resources
-from typing import List
 
 from fastapi import APIRouter
 
@@ -61,7 +60,7 @@ LANGUAGE_FILE_MAP = {
 
 
 @lru_cache(maxsize=64)
-def _load_stopwords(language: str, strict: bool = False) -> List[str]:
+def _load_stopwords(language: str, strict: bool = False) -> list[str]:
     """Load and cache stop words from packaged resource text files.
 
     Used by:

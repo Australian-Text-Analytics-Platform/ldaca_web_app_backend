@@ -82,9 +82,7 @@ def find_token_matches(
     intentionally not supported in tokens mode (that's what text mode
     is for).
     """
-    needles = parse_tokens_mode_alternatives(
-        search_word, case_sensitive=case_sensitive
-    )
+    needles = parse_tokens_mode_alternatives(search_word, case_sensitive=case_sensitive)
     if not needles:
         return []
     matches: list[int] = []
@@ -128,11 +126,9 @@ def build_token_hit(
     )
 
     l1 = tokens[match_index - 1]["token"] if match_index > 0 else None
-    r1 = (
-        tokens[match_index + 1]["token"]
-        if match_index + 1 < len(tokens)
-        else None
-    )
+    r1 = tokens[match_index + 1]["token"] if match_index + 1 < len(tokens) else None
+    extraction_start = int(left_slice[0]["start"]) if left_slice else start_idx
+    extraction_end = int(right_slice[-1]["end"]) if right_slice else end_idx
 
     return {
         CONC_LEFT_CONTEXT_COLUMN: left_context,
@@ -145,15 +141,7 @@ def build_token_hit(
         # CONC_extraction mirrors the regex-mode shape — the raw KWIC window
         # is the slice from the first context token start to the last
         # context token end, including the matched span in between.
-        CONC_EXTRACTION_COLUMN: (
-            raw_text[
-                int(left_slice[0]["start"])
-                if left_slice
-                else start_idx : int(right_slice[-1]["end"])
-                if right_slice
-                else end_idx
-            ]
-        ),
+        CONC_EXTRACTION_COLUMN: raw_text[extraction_start:extraction_end],
     }
 
 
@@ -179,9 +167,7 @@ def compute_tokens_concordance_page(
     num_left = int(request.get("num_left_tokens", 10) or 10)
     num_right = int(request.get("num_right_tokens", 10) or 10)
 
-    total_source_rows = cast(
-        pl.DataFrame, base_lf.select(pl.len()).collect()
-    ).item()
+    total_source_rows = cast(pl.DataFrame, base_lf.select(pl.len()).collect()).item()
     total_source_rows = int(total_source_rows or 0)
 
     effective_sort_by: Optional[str] = None
@@ -202,9 +188,7 @@ def compute_tokens_concordance_page(
     page_lf = base_lf.slice(start, page_size)
     page_df = cast(pl.DataFrame, page_lf.collect())
 
-    metadata_columns = [
-        c for c in page_df.columns if c != derived_column
-    ]
+    metadata_columns = [c for c in page_df.columns if c != derived_column]
     has_text_column = column in metadata_columns
     columns = list(metadata_columns) + list(CORE_CONCORDANCE_COLUMNS)
     if has_text_column:
@@ -220,11 +204,7 @@ def compute_tokens_concordance_page(
         raw_text = str(row.get(column) or "") if has_text_column else ""
         # Drop the derived column from the metadata copy so the user never
         # sees ``__derived__.*`` in their concordance row.
-        base_row = {
-            key: value
-            for key, value in row.items()
-            if key != derived_column
-        }
+        base_row = {key: value for key, value in row.items() if key != derived_column}
 
         match_indices = find_token_matches(
             tokens, search_word, case_sensitive=case_sensitive
@@ -246,9 +226,7 @@ def compute_tokens_concordance_page(
             grouped_rows.append(hits)
 
     total_source_pages = (
-        max(1, math.ceil(total_source_rows / page_size))
-        if total_source_rows
-        else 0
+        max(1, math.ceil(total_source_rows / page_size)) if total_source_rows else 0
     )
     metadata = {
         "concordance_columns": [c for c in columns if c in CORE_CONCORDANCE_COLUMNS],

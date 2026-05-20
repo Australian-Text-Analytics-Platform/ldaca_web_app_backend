@@ -13,10 +13,11 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
+
+from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 
 from docworkspace import Workspace
-from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 from ldaca_wordflow.models import WorkspaceSummary
 
 from .utils import (
@@ -32,17 +33,17 @@ class WorkspaceManager:
     """Single-workspace-per-user in-memory manager."""
 
     def __init__(self) -> None:
-        self._current: Dict[str, Dict[str, Any]] = {}
+        self._current: dict[str, dict[str, Any]] = {}
         # Per-user task managers (single channel per user, not serialized)
-        self._task_managers: Dict[str, Any] = {}
+        self._task_managers: dict[str, Any] = {}
         # Track on-disk workspace folder paths per user/workspace
-        self._paths: Dict[tuple[str, str], Path] = {}
+        self._paths: dict[tuple[str, str], Path] = {}
 
     # ---------------- Core helpers ----------------
     def _path_key(self, user_id: str, workspace_id: str) -> tuple[str, str]:
         return (user_id, workspace_id)
 
-    def _get_cached_path(self, user_id: str, workspace_id: str) -> Optional[Path]:
+    def _get_cached_path(self, user_id: str, workspace_id: str) -> Path | None:
         return self._paths.get(self._path_key(user_id, workspace_id))
 
     def _set_cached_path(self, user_id: str, workspace_id: str, path: Path) -> None:
@@ -79,7 +80,7 @@ class WorkspaceManager:
             if wid:
                 self._set_cached_path(user_id, wid, workspace_dir)
 
-    def _get_indexed_path(self, user_id: str, workspace_id: str) -> Optional[Path]:
+    def _get_indexed_path(self, user_id: str, workspace_id: str) -> Path | None:
         """Get workspace folder from cache only (no active directory scans)."""
         cached = self._get_cached_path(user_id, workspace_id)
         if cached and cached.exists():
@@ -125,19 +126,19 @@ class WorkspaceManager:
         return allocated
 
     # ---------------- Public API ----------------
-    def get_current_workspace_id(self, user_id: str) -> Optional[str]:
+    def get_current_workspace_id(self, user_id: str) -> str | None:
         entry = self._current.get(user_id)
         if not entry:
             return None
         return entry.get("wid")
 
-    def get_current_workspace(self, user_id: str) -> Optional[Any]:
+    def get_current_workspace(self, user_id: str) -> Any | None:
         entry = self._current.get(user_id)
         if not entry:
             return None
         return entry.get("workspace")
 
-    def set_current_workspace(self, user_id: str, workspace_id: Optional[str]) -> bool:
+    def set_current_workspace(self, user_id: str, workspace_id: str | None) -> bool:
         if workspace_id is None:
             self.unload_workspace(user_id, save=True)
             return True
@@ -290,7 +291,7 @@ class WorkspaceManager:
             self._task_managers[user_id] = tm
         return tm
 
-    def get_workspace_dir(self, user_id: str, workspace_id: str) -> Optional[Path]:
+    def get_workspace_dir(self, user_id: str, workspace_id: str) -> Path | None:
         cached = self._get_indexed_path(user_id, workspace_id)
         if cached is None:
             self._refresh_user_workspace_paths(user_id)
@@ -305,7 +306,7 @@ class WorkspaceManager:
 
     def get_workspace_artifacts_dir(
         self, user_id: str, workspace_id: str
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Get workspace analysis artifact directory path (without creating it)."""
         workspace_dir = self.get_workspace_dir(user_id, workspace_id)
         if workspace_dir is None:
@@ -314,7 +315,7 @@ class WorkspaceManager:
 
     def ensure_workspace_artifacts_dir(
         self, user_id: str, workspace_id: str
-    ) -> Optional[Path]:
+    ) -> Path | None:
         """Create workspace analysis artifact directory if missing.
 
         Called on workspace load/switch to guarantee a dedicated transient
@@ -340,7 +341,7 @@ class WorkspaceManager:
     def unload_workspace(
         self,
         user_id: str,
-        workspace_id: Optional[str] = None,
+        workspace_id: str | None = None,
         save: bool = True,
     ) -> bool:
         """Unload current workspace object from memory, optionally persisting first.

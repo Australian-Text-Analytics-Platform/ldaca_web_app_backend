@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 import platform
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     import numpy as np
@@ -43,7 +43,7 @@ def _select_providers() -> list[str]:
     """
     import onnxruntime as ort
 
-    available = set(ort.get_available_providers())
+    available = set(cast(Any, ort).get_available_providers())
     if "DmlExecutionProvider" in available:
         return ["DmlExecutionProvider", "CPUExecutionProvider"]
     return ["CPUExecutionProvider"]
@@ -79,8 +79,8 @@ def _mean_pool(
     import numpy as np
 
     mask = attention_mask[:, :, np.newaxis].astype(np.float32)  # (B, L, 1)
-    summed = (token_embeddings * mask).sum(axis=1)               # (B, D)
-    count = mask.sum(axis=1).clip(min=1e-9)                      # (B, 1)
+    summed = (token_embeddings * mask).sum(axis=1)  # (B, D)
+    count = mask.sum(axis=1).clip(min=1e-9)  # (B, 1)
     return summed / count
 
 
@@ -157,10 +157,11 @@ class OnnxEmbedder:
             if "sentence_embedding" in self._output_names:
                 # Some ONNX exports include the pooling + normalisation layer.
                 outputs = self._session.run(["sentence_embedding"], feeds)
-                chunk = outputs[0].astype(np.float32)
+                chunk = cast(np.ndarray, outputs[0]).astype(np.float32)
             else:
                 outputs = self._session.run(["last_hidden_state"], feeds)
-                chunk = _l2_normalize(_mean_pool(outputs[0], attention_mask))
+                token_embeddings = cast(np.ndarray, outputs[0])
+                chunk = _l2_normalize(_mean_pool(token_embeddings, attention_mask))
 
             chunks.append(chunk)
 

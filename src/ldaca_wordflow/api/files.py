@@ -5,10 +5,17 @@ import logging
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, cast
 
 import polars as pl
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Query,
+    UploadFile,
+)
 from fastapi.responses import Response, StreamingResponse
 
 try:
@@ -32,6 +39,9 @@ from ..core.workspace import workspace_manager
 from ..models import (
     CreateFolderRequest,
     CreateFolderResponse,
+    DemoSnapshotEntry,
+    DemoSnapshotImportResult,
+    DemoSnapshotsCatalogueResponse,
     FileInfoResponse,
     FilePreviewRequest,
     FilePreviewResponse,
@@ -40,9 +50,6 @@ from ..models import (
     FilesTasksListResponse,
     FileTreeNodeResponse,
     FileUploadResponse,
-    DemoSnapshotEntry,
-    DemoSnapshotImportResult,
-    DemoSnapshotsCatalogueResponse,
     ImportDemoSnapshotsRequest,
     ImportDemoSnapshotsResponse,
     ImportSampleDataRequest,
@@ -202,7 +209,7 @@ def _lazy_scan(file_path, file_type: str) -> pl.LazyFrame:
     return pl.DataFrame().lazy()
 
 
-def _get_supported_types_by_extension(file_type: str) -> List[str]:
+def _get_supported_types_by_extension(file_type: str) -> list[str]:
     """Return supported backend data representations by file extension.
 
     Used by:
@@ -213,7 +220,7 @@ def _get_supported_types_by_extension(file_type: str) -> List[str]:
     """
 
     ft = (file_type or "").lower()
-    mapping: Dict[str, List[str]] = {
+    mapping: dict[str, list[str]] = {
         "csv": ["LazyFrame"],
         "tsv": ["LazyFrame"],
         "jsonl": ["LazyFrame"],
@@ -243,7 +250,7 @@ def _read_excel_sheet(file_path: Path, sheet_name: str) -> pl.DataFrame:
 
 def _coerce_excel_result_to_dataframe(
     result: Any,
-    preferred_sheet: Optional[str] = None,
+    preferred_sheet: str | None = None,
 ) -> pl.DataFrame:
     """Normalize Polars Excel reads into a single DataFrame.
 
@@ -274,7 +281,7 @@ def _coerce_excel_result_to_dataframe(
     raise TypeError(f"Unexpected Excel read result type: {type(result)!r}")
 
 
-def _list_excel_sheet_names(file_path: Path) -> List[str]:
+def _list_excel_sheet_names(file_path: Path) -> list[str]:
     """Return workbook sheet names in a Polars-version-tolerant way.
 
     Used by:
@@ -315,7 +322,7 @@ def _list_excel_sheet_names(file_path: Path) -> List[str]:
         with zipfile.ZipFile(file_path) as zf:
             with zf.open("xl/workbook.xml") as workbook_xml:
                 root = ET.parse(workbook_xml).getroot()
-                names: List[str] = []
+                names: list[str] = []
                 for sheet in root.iter():
                     tag = sheet.tag.rsplit("}", 1)[-1]
                     if tag != "sheet":
@@ -530,7 +537,9 @@ async def get_sample_data_catalogue(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+        raise HTTPException(
+            status_code=503, detail="Sample data remote URL not configured."
+        )
 
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -538,12 +547,14 @@ async def get_sample_data_catalogue(
             resp.raise_for_status()
             catalogue = resp.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch sample data catalogue.")
+        raise HTTPException(
+            status_code=502, detail="Could not fetch sample data catalogue."
+        )
 
     user_id = current_user["id"]
     target_dir = get_user_data_folder(user_id) / "sample_data"
 
-    collections: List[SampleDataCollection] = []
+    collections: list[SampleDataCollection] = []
     for col in catalogue.get("collections", []):
         status = _compute_collection_status(col, target_dir)
         collections.append(
@@ -568,15 +579,18 @@ async def get_sample_data_catalogue(
 
 @router.get("/sample-data/readme")
 async def get_sample_data_readme(
-    path: str = Query(..., description="Relative path of the README inside the sample data repo"),
+    path: str = Query(
+        ..., description="Relative path of the README inside the sample data repo"
+    ),
     current_user: dict = Depends(get_current_user),
 ):
     """Proxy a README.md from the remote sample data repository.
 
     Only .md files are permitted; path traversal is rejected.
     """
-    import httpx
     from pathlib import PurePosixPath
+
+    import httpx
 
     from ..settings import settings
 
@@ -590,7 +604,9 @@ async def get_sample_data_readme(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+        raise HTTPException(
+            status_code=503, detail="Sample data remote URL not configured."
+        )
 
     url = f"{remote_base}/{safe}"
     try:
@@ -626,7 +642,9 @@ async def import_sample_data(
         raise HTTPException(status_code=404, detail=str(e)) from e
 
     remote_url = (settings.sample_data_remote_url or "").strip()
-    collection_ids: list[str] | None = request.collection_ids if request.collection_ids else None
+    collection_ids: list[str] | None = (
+        request.collection_ids if request.collection_ids else None
+    )
     if remote_url:
         background_tasks.add_task(download_remote_sample_data, user_id, collection_ids)
 
@@ -701,14 +719,18 @@ async def get_demo_snapshots_catalogue(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+        raise HTTPException(
+            status_code=503, detail="Sample data remote URL not configured."
+        )
 
     url = f"{remote_base}/{_DEMO_SNAPSHOT_REMOTE_DIR}/catalogue.json"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url)
     except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+        raise HTTPException(
+            status_code=502, detail="Could not fetch demo-snapshot catalogue."
+        )
 
     # Catalogue missing → return an empty list. Anything else 4xx/5xx is
     # surfaced so misconfiguration is visible rather than silently empty.
@@ -718,12 +740,14 @@ async def get_demo_snapshots_catalogue(
         resp.raise_for_status()
         catalogue = resp.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+        raise HTTPException(
+            status_code=502, detail="Could not fetch demo-snapshot catalogue."
+        )
 
     user_id = current_user["id"]
     snapshots_dir = get_user_snapshots_folder(user_id)
 
-    snapshots: List[DemoSnapshotEntry] = []
+    snapshots: list[DemoSnapshotEntry] = []
     for entry in catalogue.get("snapshots", []):
         status = _compute_demo_snapshot_status(entry, snapshots_dir)
         snapshots.append(
@@ -769,8 +793,9 @@ async def import_demo_snapshots(
     The user's own snapshot saves are never touched unless explicitly
     opted in via ``replace_ids``.
     """
-    import httpx
     from pathlib import PurePosixPath
+
+    import httpx
 
     from ..settings import settings
 
@@ -780,7 +805,9 @@ async def import_demo_snapshots(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(status_code=503, detail="Sample data remote URL not configured.")
+        raise HTTPException(
+            status_code=503, detail="Sample data remote URL not configured."
+        )
 
     # Refetch the catalogue server-side so we authoritatively know which
     # path + sha256 to fetch. The frontend's ``snapshot_ids`` are the
@@ -792,13 +819,15 @@ async def import_demo_snapshots(
             cat_resp.raise_for_status()
             catalogue = cat_resp.json()
     except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch demo-snapshot catalogue.")
+        raise HTTPException(
+            status_code=502, detail="Could not fetch demo-snapshot catalogue."
+        )
 
-    by_id: Dict[str, dict] = {
+    by_id: dict[str, dict] = {
         e.get("id", ""): e for e in catalogue.get("snapshots", []) if e.get("id")
     }
 
-    results: List[DemoSnapshotImportResult] = []
+    results: list[DemoSnapshotImportResult] = []
     for snap_id in request.snapshot_ids:
         entry = by_id.get(snap_id)
         if not entry:
@@ -891,7 +920,10 @@ async def import_demo_snapshots(
             async with httpx.AsyncClient(timeout=300) as client:
                 async with client.stream("GET", url) as stream:
                     stream.raise_for_status()
-                    tmp = dest.with_suffix(dest.suffix + f".tmp_{hashlib.sha256(snap_id.encode()).hexdigest()[:12]}")
+                    tmp = dest.with_suffix(
+                        dest.suffix
+                        + f".tmp_{hashlib.sha256(snap_id.encode()).hexdigest()[:12]}"
+                    )
                     hasher = hashlib.sha256()
                     try:
                         with tmp.open("wb") as fh:
@@ -914,13 +946,17 @@ async def import_demo_snapshots(
                             continue
                         # Replace any conflicting local copy atomically.
                         import os
+
                         os.replace(tmp, dest)
                     except Exception:
                         tmp.unlink(missing_ok=True)
                         raise
         except Exception as exc:
             logger.warning(
-                "Failed to download demo snapshot %s from %s", snap_id, url, exc_info=True
+                "Failed to download demo snapshot %s from %s",
+                snap_id,
+                url,
+                exc_info=True,
             )
             results.append(
                 DemoSnapshotImportResult(
@@ -1007,8 +1043,8 @@ async def list_files_tasks(current_user: dict = Depends(get_current_user)):
 
 @router.post("/tasks/clear", response_model=FilesTaskActionResponse)
 async def clear_files_tasks(
-    task_type: Optional[str] = None,
-    task_id: Optional[str] = None,
+    task_type: str | None = None,
+    task_id: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
     """Clear persisted file-import task records.
@@ -1075,11 +1111,11 @@ async def unified_file_preview(
     page_size = max(1, min(500, int(req.page_size)))
     offset = page * page_size
 
-    columns: List[str] = []
-    preview: List[Dict[str, Any]] = []
+    columns: list[str] = []
+    preview: list[dict[str, Any]] = []
     total_rows = 0
-    sheet_names: Optional[List[str]] = None
-    selected_sheet: Optional[str] = None
+    sheet_names: list[str] | None = None
+    selected_sheet: str | None = None
 
     try:
         if file_type == "excel":

@@ -13,7 +13,7 @@ import zipfile
 from contextlib import nullcontext
 from importlib import resources
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Union, overload
+from typing import Any, Iterable, overload
 
 import polars as pl
 
@@ -177,7 +177,7 @@ def ensure_display_folder_name(current_folder: Path, desired_name: str) -> Path:
         counter += 1
 
 
-def setup_user_folders(user_id: str) -> Dict[str, Path]:
+def setup_user_folders(user_id: str) -> dict[str, Path]:
     """Create the complete per-user folder layout and return the paths.
 
     Used by the auth login/session bootstrap endpoints to guarantee every
@@ -194,7 +194,7 @@ def setup_user_folders(user_id: str) -> Dict[str, Path]:
     }
 
 
-def import_sample_data_for_user(user_id: str) -> Dict[str, Any]:
+def import_sample_data_for_user(user_id: str) -> dict[str, Any]:
     """Import (or re-import) sample data for a user on demand.
 
     Removes any existing sample_data folder then copies from the canonical
@@ -283,7 +283,9 @@ async def download_remote_sample_data(
             resp.raise_for_status()
             catalogue = resp.json()
     except Exception:
-        logger.warning("Could not fetch remote sample data catalogue from %s", remote_base)
+        logger.warning(
+            "Could not fetch remote sample data catalogue from %s", remote_base
+        )
         return
 
     collections = catalogue.get("collections", [])
@@ -322,7 +324,9 @@ async def download_remote_sample_data(
                         tmp = dest.with_suffix(dest.suffix + f".tmp_{uuid.uuid4().hex}")
                         try:
                             with tmp.open("wb") as fh:
-                                async for chunk in stream.aiter_bytes(chunk_size=1 << 20):
+                                async for chunk in stream.aiter_bytes(
+                                    chunk_size=1 << 20
+                                ):
                                     fh.write(chunk)
                             os.replace(tmp, dest)
                             logger.info("Downloaded %s", rel_path)
@@ -330,7 +334,11 @@ async def download_remote_sample_data(
                             tmp.unlink(missing_ok=True)
                             raise
             except Exception:
-                logger.warning("Failed to download remote sample dataset: %s", rel_path, exc_info=True)
+                logger.warning(
+                    "Failed to download remote sample dataset: %s",
+                    rel_path,
+                    exc_info=True,
+                )
 
 
 def detect_file_type(filename: str) -> str:
@@ -359,8 +367,8 @@ def detect_file_type(filename: str) -> str:
 
 def load_data_file(
     file_path: Path,
-    sheet_name: Optional[str] = None,
-) -> Union[pl.DataFrame, pl.LazyFrame, Any]:
+    sheet_name: str | None = None,
+) -> Any:
     """Load data file into appropriate DataFrame type - defaults to polars LazyFrame for efficiency"""
     file_type = detect_file_type(file_path.name)
 
@@ -428,7 +436,7 @@ def read_text_file(file_path: Path) -> pl.DataFrame:
 # Canonical dtype profile — see project_dtype_normalization in agent memory.
 # Datetime[μs, UTC], Int64, Float64, Utf8. Naive datetimes are assumed UTC.
 _CANONICAL_DATETIME = pl.Datetime(time_unit="us", time_zone="UTC")
-_INTEGERS_TO_PROMOTE: set[pl.DataType] = {
+_INTEGERS_TO_PROMOTE = {
     pl.Int8,
     pl.Int16,
     pl.Int32,
