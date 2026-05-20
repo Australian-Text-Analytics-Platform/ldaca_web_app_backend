@@ -125,6 +125,26 @@ DEFAULT_COMPACTION_THRESHOLD = 16
 # different code path.
 CONTENT_HASH_COLUMN = "__ldaca_content_hash__"
 
+# Canonical schema for every per-bucket cache parquet (including delta files
+# and stub parquets emitted by the workspace-load repair pass when a donor's
+# cache files are missing on the receiver). Matches what
+# ``polars_text.tokenize_with_offsets`` produces:
+#   - ``token`` is ``DataType::String``  (polars-text/src/expressions.rs:242)
+#   - ``start`` / ``end`` are ``DataType::Int64``  (lines 243-244)
+# The content hash comes from ``pl.col(source).hash()`` which is ``UInt64``.
+TOKENS_CACHE_SCHEMA: dict[str, "pl.DataType"] = {
+    CONTENT_HASH_COLUMN: pl.UInt64,
+    "tokens": pl.List(
+        pl.Struct(
+            {
+                "token": pl.String,
+                "start": pl.Int64,
+                "end": pl.Int64,
+            }
+        )
+    ),
+}
+
 
 # --------------------------------------------------------------------------- #
 # Paths                                                                       #
@@ -903,6 +923,8 @@ def _reset_for_tests(user_id: str) -> None:
 __all__ = [
     "CACHE_ROOT_ENV",
     "CONTENT_HASH_COLUMN",
+    "TOKENS_CACHE_SCHEMA",
+    "TOKENS_CACHE_SUBDIR",
     "CacheReference",
     "add_reference",
     "cache_exists",
