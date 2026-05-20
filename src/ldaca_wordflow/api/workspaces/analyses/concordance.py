@@ -31,7 +31,7 @@ from ....models import (
     ConcordanceDispersionDetachRequest,
     ConcordanceMaterializeRequest,
 )
-from ..utils import update_workspace
+from ..utils import assert_tokens_available_for_nodes, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
@@ -152,6 +152,16 @@ async def run_concordance(
 
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is not None:
+        # Friendly fail when tokens mode would otherwise hit
+        # ``unable to find column 'token'; valid columns: []``. Only fires
+        # for tokens-mode runs; regex/whole-word/exact stay unguarded since
+        # they don't depend on the tokens cache.
+        if request.search_mode == "tokens":
+            assert_tokens_available_for_nodes(
+                workspace,
+                list(request.node_ids),
+                action="concordance tokens mode",
+            )
         document_column_updated = False
         for node_id in request.node_ids:
             try:

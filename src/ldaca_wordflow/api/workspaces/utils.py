@@ -11,6 +11,7 @@ import polars as pl
 from fastapi import HTTPException
 
 from ...analysis.models import AnalysisStatus
+from ...core.tokens_cache_repair import get_stubbed_node_ids
 from ...core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
@@ -256,6 +257,48 @@ def stage_parquet_artifact_as_lazy(
     return _scan_workspace_parquet(persisted_path), persisted_path
 
 
+def assert_tokens_available_for_nodes(
+    workspace: Any, node_ids: list[str], *, action: str
+) -> None:
+    """Pre-flight guard for analyses that depend on tokenised columns.
+
+    Raises ``HTTPException(400)`` with a user-readable message naming the
+    affected block(s) if any of ``node_ids`` is recorded in the workspace's
+    tokens-cache repair sidecar (i.e. the workspace was loaded from another
+    machine and that node's tokens cache parquet was stubbed empty).
+
+    Without this guard, the analysis worker hits a deep polars error like
+    ``unable to find column 'token'; valid columns: []`` that gives the user
+    no idea what's wrong. This raises early with the actual root cause and
+    a pointer to the fix.
+
+    Pass ``action`` as a short noun phrase that names the analysis the user
+    just tried to run — it goes straight into the message body, e.g.
+    ``"this token-frequency analysis"`` or ``"concordance tokens mode"``.
+    """
+    workspace_dir = getattr(workspace, "ws_root_dir", None)
+    stubbed = get_stubbed_node_ids(workspace_dir)
+    if not stubbed:
+        return
+    affected = [nid for nid in node_ids if nid in stubbed]
+    if not affected:
+        return
+    names: list[str] = []
+    for nid in affected:
+        node = getattr(workspace, "nodes", {}).get(nid)
+        names.append(str(getattr(node, "name", None) or nid))
+    blocks = ", ".join(f"'{n}'" for n in names)
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Tokens cache is missing for block{'s' if len(names) > 1 else ''} "
+            f"{blocks}. This workspace was loaded from another machine and "
+            f"its tokens cache files weren't carried over. Re-tokenise from "
+            f"the Workspace Graph view to enable {action}."
+        ),
+    )
+
+
 __all__ = [
     "success",
     "running",
@@ -263,4 +306,5 @@ __all__ = [
     "update_workspace",
     "stage_dataframe_as_lazy",
     "stage_parquet_artifact_as_lazy",
+    "assert_tokens_available_for_nodes",
 ]

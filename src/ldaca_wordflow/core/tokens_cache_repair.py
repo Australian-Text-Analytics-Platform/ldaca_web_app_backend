@@ -281,10 +281,29 @@ def clear_node_from_sidecar(workspace_dir: Path, node_id: str) -> None:
     write_repair_sidecar(workspace_dir, remaining)
 
 
+# --------------------------------------------------------------------------- #
+# Helpers for callers that need to know "is this node currently broken?"      #
+# --------------------------------------------------------------------------- #
+
+
+def get_stubbed_node_ids(workspace_dir: Path | None) -> set[str]:
+    """Return the set of node IDs in the workspace's sidecar (empty if none).
+
+    Thin wrapper over ``read_repair_sidecar`` that returns a set for cheap
+    membership testing. Tolerates a ``None`` workspace_dir (returns empty)
+    so callers don't have to guard against the ``ws_root_dir`` attribute
+    being absent.
+    """
+    if workspace_dir is None:
+        return set()
+    return set(read_repair_sidecar(workspace_dir).get("stubbed_node_ids", []))
+
+
 __all__ = [
     "REPAIR_SIDECAR_FILENAME",
     "TokensCacheRepairReport",
     "clear_node_from_sidecar",
+    "get_stubbed_node_ids",
     "read_repair_sidecar",
     "repair_tokens_cache_paths",
     "write_repair_sidecar",

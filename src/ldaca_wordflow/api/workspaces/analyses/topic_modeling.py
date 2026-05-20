@@ -32,7 +32,11 @@ from ....models import (
     TopicModelingResponse,
 )
 from ....core.utils import get_user_cache_folder, get_user_data_folder
-from ..utils import ensure_task_synced, update_workspace
+from ..utils import (
+    assert_tokens_available_for_nodes,
+    ensure_task_synced,
+    update_workspace,
+)
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOPIC_COLUMN, TOPIC_MEANING_COLUMN, is_derived_column_name
@@ -329,6 +333,14 @@ async def run_topic_modeling(
         raise HTTPException(
             status_code=400, detail="At least one node ID must be provided"
         )
+    # Friendly fail when a node's tokens cache was stubbed by the
+    # workspace-load repair pass. Topic modelling tokenises internally if
+    # no derived tokens column exists, but when one *is* present the
+    # downstream label stage hits the same empty-column error as
+    # token-frequency, so guard the same way.
+    assert_tokens_available_for_nodes(
+        ws, list(request.node_ids), action="this topic-modeling analysis"
+    )
 
     node_infos: list[dict[str, object]] = []
     for node_id in request.node_ids:
