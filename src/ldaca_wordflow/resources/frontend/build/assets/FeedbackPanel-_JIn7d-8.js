@@ -1,1 +1,0 @@
-import{t as e}from"./FeedbackPanel-CDpWDYTh.js";export{e as FeedbackPanel,e as default};
