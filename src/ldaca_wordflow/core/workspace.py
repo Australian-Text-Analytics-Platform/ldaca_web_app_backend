@@ -19,6 +19,7 @@ from docworkspace import Workspace
 from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 from ldaca_wordflow.models import WorkspaceSummary
 
+from .tokens_cache_repair import repair_tokens_cache_paths
 from .utils import (
     allocate_workspace_folder,
     ensure_display_folder_name,
@@ -170,6 +171,16 @@ class WorkspaceManager:
 
             # 3. Rebase plbin source paths to the finalized folder.
             rebase_workspace_sources(updated_dir)
+
+            # 3b. Repair tokens-cache scan paths. The rebaser above only
+            # handles parquets that travelled with the workspace bundle —
+            # tokens cache files live outside the bundle by design (they
+            # can be gigabytes, see HANDOVER.md), so absolute paths from
+            # the donor machine survive into the deserialise step and
+            # crash the first collect() against any tokenised node. The
+            # repair pass remaps to the receiver's cache when present and
+            # writes a 0-row stub otherwise, so loads always succeed.
+            repair_tokens_cache_paths(updated_dir, user_id)
 
             # 4. Full load (deserialize nodes — paths are now correct).
             new_ws = Workspace.load(updated_dir)
