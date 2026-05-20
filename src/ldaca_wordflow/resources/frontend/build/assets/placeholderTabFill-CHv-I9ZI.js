@@ -1,0 +1,2 @@
+var e=(e,t)=>{let n=()=>{document.activeElement===e&&e.setSelectionRange(t.length,t.length)};if(typeof window<`u`&&typeof window.requestAnimationFrame==`function`){window.requestAnimationFrame(n);return}setTimeout(n,0)},t=({event:t,value:n,setValue:r})=>{if(t.key!==`Tab`||t.shiftKey||t.altKey||t.ctrlKey||t.metaKey||n.trim().length>0)return;let i=t.currentTarget.placeholder.trim();i&&(t.preventDefault(),r(i),e(t.currentTarget,i))};export{t};
+//# sourceMappingURL=placeholderTabFill-CHv-I9ZI.js.map

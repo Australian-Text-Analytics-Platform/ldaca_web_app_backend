@@ -598,14 +598,14 @@ wheels = [
 
 [[package]]
 name = "docworkspace"
-version = "0.2.8"
+version = "0.2.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "polars-text" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cf/7d/c7c6446753d35c9092aeb7683facc6c494c41db4872c33fda351e2c6cbb0/docworkspace-0.2.8.tar.gz", hash = "sha256:089fad0c351ce610da00b7504ae98c91161bd4c45ff00649beb096b4e31e3820", size = 35594, upload-time = "2026-05-14T15:16:27.348Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/cb/7e6217de5a2dac0e44e1c48d51c1ce00cc256e3e62caedc5ab3aeca23615/docworkspace-0.2.9.tar.gz", hash = "sha256:8ae02a956e8b4108a11b9226af6108c7aefda80a416b49d623b0400c3da25eb8", size = 36063, upload-time = "2026-05-20T15:46:33.011Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/01/b9938e3520108f10b8708c9eab110acda2ce9168e85f1111e59a34614f1d/docworkspace-0.2.8-py3-none-any.whl", hash = "sha256:05dab8a2f8f75ddef3a715d91e18641ce0a4ffb834fe30bd4ea5db5f5db02c91", size = 19010, upload-time = "2026-05-14T15:16:25.923Z" },
+    { url = "https://files.pythonhosted.org/packages/96/83/8a332d9e5edce84b34d39a88d05dfa175b08fcf6ee456be06bd283b65937/docworkspace-0.2.9-py3-none-any.whl", hash = "sha256:07f60dc08c87c088baf4044f49fe23d8d6d7ce680c06ec28f327d30157d18052", size = 19224, upload-time = "2026-05-20T15:46:31.478Z" },
 ]
 
 [[package]]
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "ldaca-wordflow"
-version = "0.5.0"
+version = "0.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -1484,7 +1484,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.21.0" },
     { name = "bertopic", specifier = ">=0.17.3" },
-    { name = "docworkspace", specifier = ">=0.2.8" },
+    { name = "docworkspace", specifier = ">=0.2.9" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.135.0" },
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14.0.1" },
     { name = "fastexcel", specifier = ">=0.18.0" },
@@ -1497,7 +1497,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.18.0" },
     { name = "openai", specifier = ">=2.26.0" },
     { name = "polars", extras = ["rtcompat"], specifier = ">=1.40.0" },
-    { name = "polars-text", specifier = ">=0.2.2" },
+    { name = "polars-text", specifier = ">=0.3.0" },
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "pyarrow", specifier = ">=16.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
@@ -2196,16 +2196,16 @@ wheels = [
 
 [[package]]
 name = "polars-text"
-version = "0.2.2"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "polars" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/da/df619d0b6aab52c9e0784ffbfbd6b27dff22262b5cf62225ed162581e38b/polars_text-0.2.2.tar.gz", hash = "sha256:012b9431f9b0d268eb90fb16eb1d342de028d1d213ff880dd838216a3d4af8b8", size = 5383504, upload-time = "2026-05-20T00:29:30.514Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/5f/8709a4fec1d9932eebe954a99a47edee7167795c2f2293a31a39bc1f8104/polars_text-0.3.0.tar.gz", hash = "sha256:1bb49b39ea2bd2057574c544a26232d5bec5e2dc05ff29eaf57f23fb27d38207", size = 5404708, upload-time = "2026-05-20T16:12:04.095Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/60/3468555e242b547e78d99e7c34d0e5fc0ff0e4f8416f5f2928c89b9bbb72/polars_text-0.2.2-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:251549c6ac92beedd9829dbbf9c44dab55aaf7e1cd98fef94456efa5cb1ae81a", size = 21856474, upload-time = "2026-05-20T00:29:20.212Z" },
-    { url = "https://files.pythonhosted.org/packages/e6/90/46e76a4f2541a734a9221f3313d7a67c5cccba4704eff508b3120955fa7f/polars_text-0.2.2-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:782b8f87b0942f3981f5e7ca4e67411c27377c05eb412dabe0a0c733126f44f6", size = 27034097, upload-time = "2026-05-20T00:29:23.695Z" },
-    { url = "https://files.pythonhosted.org/packages/67/e1/3a475f060c6c375884c753bf567599a237df7539b5fa3aef353f97aa250b/polars_text-0.2.2-cp314-cp314-win_amd64.whl", hash = "sha256:d997320c4045e2fba0f53b6935d81f2b151dd65bb397d7ad7c6ad8c3f6d62d71", size = 21929637, upload-time = "2026-05-20T00:29:27.463Z" },
+    { url = "https://files.pythonhosted.org/packages/55/69/e8b7f60261411b77485c9e64f1d3cfd04cd287f54e9d9e072a78434971b4/polars_text-0.3.0-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:459b0f8a5d811043b45c5aea5458f3d19d10290c6f4c21d9ea3825a89dd8cbc0", size = 25264310, upload-time = "2026-05-20T16:11:53.784Z" },
+    { url = "https://files.pythonhosted.org/packages/76/34/f9caf8fcd475b0435d928c534a0632f6bee823c97de2cc7d8c3d9ac93fcc/polars_text-0.3.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:d1df45b67dc78cf7264614ee6773c3751dd32548851ed96e197117a5f14ef5fa", size = 30601421, upload-time = "2026-05-20T16:11:57.44Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/f0/1e2d60b686d0b00a223c98570051a6c073f8da5f6b26295e095a4e25870c/polars_text-0.3.0-cp314-cp314-win_amd64.whl", hash = "sha256:5c24808c717f3e1c29a655037d5b8fb9c1ccb150f8bf30bd7fcd826967f3c13f", size = 25245896, upload-time = "2026-05-20T16:12:00.63Z" },
 ]
 
 [[package]]
