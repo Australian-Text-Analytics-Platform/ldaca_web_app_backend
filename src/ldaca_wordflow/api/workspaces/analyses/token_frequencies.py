@@ -27,7 +27,11 @@ from ....core.analysis_helpers import sanitize_stop_words
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
-from ..utils import ensure_task_synced, update_workspace
+from ..utils import (
+    assert_tokens_available_for_nodes,
+    ensure_task_synced,
+    update_workspace,
+)
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import TOKENS_FORM
@@ -419,6 +423,12 @@ async def calculate_token_frequencies(
         raise HTTPException(
             status_code=400, detail="Maximum of 2 nodes can be compared"
         )
+    # Friendly fail when a stubbed node sneaks past the banner. Without
+    # this, the worker hits a deep polars "unable to find column 'token';
+    # valid columns: []" error that gives the user no idea what's wrong.
+    assert_tokens_available_for_nodes(
+        ws, list(request.node_ids), action="this token-frequency analysis"
+    )
 
     requested_token_limit = getattr(request, "token_limit", None)
     effective_limit = (
