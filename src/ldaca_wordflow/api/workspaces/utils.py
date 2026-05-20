@@ -11,7 +11,6 @@ import polars as pl
 from fastapi import HTTPException
 
 from ...analysis.models import AnalysisStatus
-from ...core.tokens_cache_repair import detect_invalid_token_cache_node_ids
 from ...core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
@@ -257,59 +256,6 @@ def stage_parquet_artifact_as_lazy(
     return _scan_workspace_parquet(persisted_path), persisted_path
 
 
-def assert_tokens_available_for_nodes(
-    workspace: Any, node_ids: list[str], *, action: str
-) -> None:
-    """Pre-flight guard for analyses that depend on tokenised columns.
-
-    Raises ``HTTPException(400)`` with a user-readable message naming the
-    affected block(s) when any of ``node_ids`` has a plan that references a
-    missing or 0-row tokens-cache parquet right now (path-validity check,
-    not a stale sidecar lookup).
-
-    Without this guard, the analysis worker hits a deep polars error like
-    ``unable to find column 'token'; valid columns: []`` that gives the user
-    no idea what's wrong. This raises early with the actual root cause and
-    a pointer to the fix.
-
-    Pass ``action`` as a short noun phrase that names the analysis the user
-    just tried to run — it goes straight into the message body, e.g.
-    ``"this token-frequency analysis"`` or ``"concordance tokens mode"``.
-    """
-    # Phase 2/2.5 — when LDACA_LAZY_TOKENISE is on, every collect goes
-    # through `polars_text.tokenize_with_cache_lookup`, which treats a
-    # missing or empty cache file as a cache miss and recomputes on
-    # demand. The preflight's "missing tokens" failure mode is no longer
-    # reachable for freshly lazy-tokenised nodes, and for migrated nodes
-    # the lazy expression shadows the eager scan's output. Skip the
-    # guard so its (now-incorrect) error doesn't fire under the flag.
-    # Retired entirely in Phase 4.5 — see design doc §15.
-    from ...core.derived_columns import _lazy_tokenise_enabled
-
-    if _lazy_tokenise_enabled():
-        return
-
-    workspace_dir = getattr(workspace, "ws_root_dir", None)
-    affected = detect_invalid_token_cache_node_ids(workspace_dir, node_ids)
-    if not affected:
-        return
-    names: list[str] = []
-    for nid in affected:
-        node = getattr(workspace, "nodes", {}).get(nid)
-        names.append(str(getattr(node, "name", None) or nid))
-    blocks = ", ".join(f"'{n}'" for n in names)
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"Tokens cache is missing for block{'s' if len(names) > 1 else ''} "
-            f"{blocks}. The tokens cache files for {'these blocks' if len(names) > 1 else 'this block'} "
-            f"are missing or empty on this machine — usually because the workspace "
-            f"was loaded from another machine. Re-tokenise from the Workspace "
-            f"Graph view to enable {action}."
-        ),
-    )
-
-
 __all__ = [
     "success",
     "running",
@@ -317,5 +263,4 @@ __all__ = [
     "update_workspace",
     "stage_dataframe_as_lazy",
     "stage_parquet_artifact_as_lazy",
-    "assert_tokens_available_for_nodes",
 ]

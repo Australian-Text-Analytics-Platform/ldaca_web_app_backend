@@ -16,7 +16,6 @@ from fastapi.responses import StreamingResponse
 
 from ...core.auth import get_current_user
 from ...core.tokens_cache import drop_workspace_references
-from ...core.tokens_cache_repair import detect_invalid_token_cache_node_ids
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
@@ -462,52 +461,13 @@ async def upload_workspace_zip(
         raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {exc}")
 
 
-def _runtime_tokens_cache_state(workspace) -> dict | None:
-    """Walk each node's plan and return the set of nodes whose tokens cache
-    is missing or empty *right now*. Returns ``None`` when there's nothing
-    to report, so callers can omit the field from the response and let the
-    frontend banner naturally hide.
-
-    Path-validity-based — preferred over the persistent sidecar because the
-    sidecar reflects only the most recent load's outcome. If the user
-    manually restores the cache (or it spontaneously breaks for some other
-    reason) the banner should follow that.
-    """
-    # Phase 2/2.5 — when LDACA_LAZY_TOKENISE is on, "empty token cache"
-    # is the lazy expression's normal state on a fresh machine (the
-    # expression treats missing files as cache misses and computes on
-    # demand). The banner's "tokens cache missing" framing no longer
-    # applies, and the per-node walk that backs it adds noticeable
-    # latency on the graph endpoint. Skip it under the flag — the banner
-    # disappears entirely. Retired for good in Phase 4.5 (design doc §15).
-    from ...core.derived_columns import _lazy_tokenise_enabled
-
-    if _lazy_tokenise_enabled():
-        return None
-
-    workspace_dir = getattr(workspace, "ws_root_dir", None)
-    if not isinstance(workspace_dir, Path):
-        return None
-    nodes = getattr(workspace, "nodes", {})
-    invalid = detect_invalid_token_cache_node_ids(workspace_dir, list(nodes))
-    if not invalid:
-        return None
-    return {"stubbed_node_ids": invalid}
-
-
 @router.get("/info")
 async def get_workspace_info(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    info = workspace.info_json()
-    # Attach the runtime tokens-cache state so the frontend banner reflects
-    # current on-disk validity — see developer-guide/tokens-cache-portability.md.
-    state = _runtime_tokens_cache_state(workspace)
-    if state is not None:
-        info["tokens_cache_repair"] = state
-    return info
+    return workspace.info_json()
 
 
 @router.get("/graph")
@@ -533,12 +493,6 @@ async def get_workspace_graph(
         for entry in graph.get("nodes", [])
         if entry.get("id") in workspace.nodes
     ]
-    # Attach the runtime tokens-cache state. Lives on the graph response (in
-    # addition to /info) because the frontend already polls graph on every
-    # workspace activation — no extra fetch needed for the banner.
-    state = _runtime_tokens_cache_state(workspace)
-    if state is not None:
-        graph["tokens_cache_repair"] = state
     return graph
 
 
