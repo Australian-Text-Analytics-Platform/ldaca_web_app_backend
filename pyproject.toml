@@ -30,6 +30,12 @@ dependencies = [
     "fastapi-users[sqlalchemy]>=14.0.1",        # Includes fastapi, python-multipart, sqlalchemy
     "fastapi[standard]>=0.135.0",               # Includes uvicorn, pydantic, starlette
     "fastexcel>=0.18.0",
+    # Mojibake repair at the data-loader boundary. Configured in
+    # `core.text_normalize` to enable ONLY the encoding fixers — Latin-centric
+    # cleanups (uncurl_quotes, fix_character_width, NFKC) are disabled so the
+    # repair is safe on CJK / Arabic / Cyrillic corpora. >=6.3 is the line we
+    # tested against; nothing in 6.x is known to break our usage.
+    "ftfy>=6.3.0",
     "xlsxwriter>=3.2.0",                        # Required by polars DataFrame.write_excel for xlsx export
     "google-auth-oauthlib>=1.2.2",              # Includes google-auth
     "httpx>=0.27.0",

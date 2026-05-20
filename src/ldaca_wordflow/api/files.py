@@ -17,6 +17,7 @@ except Exception:  # pragma: no cover - optional import hardening
     fastexcel: Any | None = None
 
 from ..core.auth import get_current_user
+from ..core.text_normalize import repair_text_columns
 from ..core.utils import (
     detect_file_type,
     download_remote_sample_data,
@@ -1109,6 +1110,9 @@ async def unified_file_preview(
 
             total_rows = int(base_df.height)
             df = base_df.slice(offset, page_size)
+            # Mojibake-repair runs after the slice so we only pay for the page
+            # the user actually sees, not the full sheet.
+            df = cast(pl.DataFrame, repair_text_columns(df))
 
             columns = list(df.columns)
             preview = df.fill_null("None").to_dicts()
@@ -1118,6 +1122,7 @@ async def unified_file_preview(
             total_rows = int(df.height)
             if offset or page_size:
                 df = df.slice(offset, page_size)
+            df = cast(pl.DataFrame, repair_text_columns(df))
             columns = list(df.columns)
             preview = df.fill_null("None").to_dicts()
         elif file_type == "text":
@@ -1125,12 +1130,14 @@ async def unified_file_preview(
             total_rows = int(df.height)
             if offset or page_size:
                 df = df.slice(offset, page_size)
+            df = cast(pl.DataFrame, repair_text_columns(df))
             columns = list(df.columns)
             preview = df.fill_null("None").to_dicts()
         else:
             # Non-Excel: prefer lazy scan where available
             lf = _lazy_scan(file_path, file_type).slice(offset, page_size)
             df = cast(pl.DataFrame, lf.collect())
+            df = cast(pl.DataFrame, repair_text_columns(df))
             columns = list(df.columns)
             preview = df.fill_null("None").to_dicts()
             total_rows = 0  # unknown unless we count eagerly

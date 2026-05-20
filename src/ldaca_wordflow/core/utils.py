@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, Optional, Union, overload
 import polars as pl
 
 from ..settings import settings
+from .text_normalize import repair_text_columns
 
 logger = logging.getLogger(__name__)
 
@@ -361,19 +362,26 @@ def load_data_file(
     file_path: Path,
     sheet_name: Optional[str] = None,
 ) -> Union[pl.DataFrame, pl.LazyFrame, Any]:
-    """Load data file into appropriate DataFrame type - defaults to polars LazyFrame for efficiency"""
+    """Load data file into appropriate DataFrame type - defaults to polars LazyFrame for efficiency.
+
+    Every string column passes through `repair_text_columns` so UTF-8/CP-1252
+    round-trip mojibake (``â€œ``, ``Ã©``, ``Â£``, …) is fixed before the data
+    reaches any downstream analysis or token cache. The repair is gated on a
+    cheap regex inside `repair_mojibake` so clean text (including all
+    correctly-encoded CJK / Arabic / Cyrillic) skips the ftfy call.
+    """
     file_type = detect_file_type(file_path.name)
 
     # Load as polars LazyFrame by default for better performance and memory efficiency
     if file_type == "csv":
-        return pl.scan_csv(file_path)
+        return repair_text_columns(pl.scan_csv(file_path))
     elif file_type == "parquet":
-        return pl.scan_parquet(file_path)
+        return repair_text_columns(pl.scan_parquet(file_path))
     elif file_type == "json":
         # JSON doesn't have scan_json, fall back to read_json
-        return pl.read_json(file_path)
+        return repair_text_columns(pl.read_json(file_path))
     elif file_type == "tsv":
-        return pl.scan_csv(file_path, separator="\t")
+        return repair_text_columns(pl.scan_csv(file_path, separator="\t"))
     elif file_type == "excel":
         # Use Polars to read Excel directly; returns an eager DataFrame
         def _coerce_excel_result_to_dataframe(result: Any) -> pl.DataFrame:
@@ -395,23 +403,25 @@ def load_data_file(
 
         try:
             if sheet_name:
-                return _coerce_excel_result_to_dataframe(
+                df = _coerce_excel_result_to_dataframe(
                     pl.read_excel(file_path, sheet_name=sheet_name)
                 )
-            return _coerce_excel_result_to_dataframe(pl.read_excel(file_path))
+            else:
+                df = _coerce_excel_result_to_dataframe(pl.read_excel(file_path))
         except Exception as ex:
             # Some versions require specifying sheet id/name
             try:
-                return _coerce_excel_result_to_dataframe(
+                df = _coerce_excel_result_to_dataframe(
                     pl.read_excel(file_path, sheet_id=0)
                 )
             except Exception as ex2:
                 logger.error("Failed to read Excel file %s: %s", file_path, ex2)
                 raise RuntimeError(f"Failed to read Excel via polars: {ex2}") from ex
+        return repair_text_columns(df)
     elif file_type == "zip":
-        return read_zip_file(file_path)
+        return repair_text_columns(read_zip_file(file_path))
     elif file_type == "text":
-        return read_text_file(file_path)
+        return repair_text_columns(read_text_file(file_path))
     else:
         raise ValueError(f"Unsupported file type: {file_type}")
 
