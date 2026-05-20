@@ -151,6 +151,22 @@ def tokenise_column(
             ),
         )
 
+    # Each cache miss inside `tokenize_with_cache_lookup` writes a fresh
+    # `<bucket>__delta__<uuid>.parquet`, so a bucket that the user
+    # tokenises against many slightly-different source corpora accumulates
+    # one delta per analysis run. Compact opportunistically — cheap when
+    # below threshold (just a directory listing), and capped per call so
+    # we never block tokenise_column waiting on a giant merge. Best-effort:
+    # a failure here doesn't affect the lazy plan we just stamped.
+    try:
+        tokens_cache.compact_bucket_if_needed(user_id, model, params)
+    except Exception:  # pragma: no cover — defensive
+        logger.exception(
+            "compact_bucket_if_needed failed for user=%s model=%s; ignoring",
+            user_id,
+            model,
+        )
+
     return derived_name
 
 

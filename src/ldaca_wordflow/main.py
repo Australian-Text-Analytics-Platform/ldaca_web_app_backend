@@ -68,18 +68,20 @@ async def lifespan(app: FastAPI):
 
     # Both the Python `tokens_cache` module and the Rust
     # `tokenize_with_cache_lookup` expression resolve the cache directory
-    # from `LDACA_TOKENS_CACHE_DIR + user_id + tokens/`. If the env is
-    # missing the two sides previously fell back to DIFFERENT paths
-    # (Python: {data_root}/.../user_cache/tokens; Rust: /tmp/...), so
-    # manifests and cache files diverged. Set a sensible default at
-    # startup so they always agree. External configuration still wins —
-    # operators / Tauri / conftest can pre-set the env to override.
+    # from `LDACA_TOKENS_CACHE_DIR + user_id + tokens/`. Set a default
+    # at startup so they always agree. External configuration still wins
+    # — operators / Tauri / conftest can pre-set the env to override.
+    #
+    # The umbrella name is just `.cache/` (dot-prefixed so it's hidden
+    # in the data-loader UI). Future cross-machine-portable per-row
+    # caches (lemmatisation, embeddings, NER, …) can live as siblings of
+    # `tokens/` under the same `{user_id}/` per-user dir.
     if "LDACA_TOKENS_CACHE_DIR" not in os.environ:
-        default_tokens_cache = current_settings.get_data_root() / ".tokens-cache"
-        os.environ["LDACA_TOKENS_CACHE_DIR"] = str(default_tokens_cache)
+        default_cache_base = current_settings.get_data_root() / ".cache"
+        os.environ["LDACA_TOKENS_CACHE_DIR"] = str(default_cache_base)
         logger.info(
             "LDACA_TOKENS_CACHE_DIR not set externally; using default %s",
-            default_tokens_cache,
+            default_cache_base,
         )
 
     await init_db()
@@ -96,9 +98,9 @@ async def lifespan(app: FastAPI):
     # the grace period — we only delete cache files that have had zero
     # node references for the default 7 days. Best-effort: a failure here
     # must not block backend startup, since the cache is purely a perf
-    # optimisation. The cache is per-user (lives at
-    # ``{user_root}/user_cache/tokens/``) so the sweep walks every user
-    # that has a cache directory on disk.
+    # optimisation. The cache lives at
+    # ``${LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens/`` so the sweep walks
+    # every user dir on disk.
     try:
         from .core.tokens_cache import sweep_unreferenced
 
@@ -113,6 +115,31 @@ async def lifespan(app: FastAPI):
                 )
     except Exception:  # pragma: no cover — best-effort
         logger.exception("tokens-cache startup sweep failed; cache may be stale")
+
+    # Compact buckets that accumulated many small delta parquets in
+    # prior sessions. Each lazy-tokenise cache miss writes a fresh
+    # delta; without this hook, a long-lived install would carry an
+    # unbounded delta count per bucket (slowing every cache read).
+    # `tokenise_column` also calls compact_bucket_if_needed per
+    # tokenise click to catch growth within a session — this startup
+    # pass handles cross-session accumulation. Best-effort, same as
+    # the sweep above.
+    try:
+        from .core.tokens_cache import compact_all_buckets
+
+        per_user_compacted = compact_all_buckets()
+        for uid, count in per_user_compacted.items():
+            if count:
+                logger.info(
+                    "tokens-cache startup compaction merged %d bucket(s) for user %s",
+                    count,
+                    uid,
+                )
+    except Exception:  # pragma: no cover — best-effort
+        logger.exception(
+            "tokens-cache startup compaction failed; bucket-file count "
+            "may grow until next call to tokenise_column"
+        )
 
     logger.info(
         "Backend ready: docs=http://%s:%s/api/docs health=http://%s:%s/health",
