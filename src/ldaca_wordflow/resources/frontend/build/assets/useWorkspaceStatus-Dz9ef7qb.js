@@ -1,0 +1,2 @@
+import{c as e,n as t}from"./jsx-runtime-BjieVXav.js";import{m as n}from"./tutorialRegistry-DH00pzmQ.js";var r=e(t(),1),i=()=>{let e=(0,r.useContext)(n);if(!e)throw Error(`useWorkspaceStatus must be used within a WorkspaceProvider`);return e};export{i as t};
+//# sourceMappingURL=useWorkspaceStatus-Dz9ef7qb.js.map
