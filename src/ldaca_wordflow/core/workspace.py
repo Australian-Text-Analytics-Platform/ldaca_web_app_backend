@@ -173,6 +173,17 @@ class WorkspaceManager:
 
             # 4. Full load (deserialize nodes — paths are now correct).
             new_ws = Workspace.load(updated_dir)
+            # 4b. Multi-user safety: a workspace authored by user A may
+            # have ``tokenize_with_cache_lookup`` expressions baked with
+            # A's cache relpath. If the *current* user is B, scrub
+            # those expressions and re-stamp them under B's identity
+            # so analyses never write to A's tree. No-op when the
+            # plan already matches the current user (the common case).
+            # Lazy import breaks circular dep:
+            # workspace.py → derived_columns → api.workspaces → workspace.py
+            from .derived_columns import align_tokens_for_current_user
+
+            align_tokens_for_current_user(new_ws, user_id)
             self._attach_workspace_dir(new_ws, updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover

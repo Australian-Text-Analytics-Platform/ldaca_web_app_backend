@@ -68,16 +68,20 @@ async def lifespan(app: FastAPI):
 
     # Both the Python `tokens_cache` module and the Rust
     # `tokenize_with_cache_lookup` expression resolve the cache directory
-    # from `LDACA_TOKENS_CACHE_DIR + user_id + tokens/`. Set a default
-    # at startup so they always agree. External configuration still wins
-    # — operators / Tauri / conftest can pre-set the env to override.
+    # by joining this env var with the user-cache-relpath
+    # (e.g. ``user_root/user_cache``) and the ``tokens/`` subdir. Set a
+    # default at startup so they always agree. External configuration
+    # still wins — operators / Tauri / conftest can pre-set the env.
     #
-    # The umbrella name is just `.cache/` (dot-prefixed so it's hidden
-    # in the data-loader UI). Future cross-machine-portable per-row
-    # caches (lemmatisation, embeddings, NER, …) can live as siblings of
-    # `tokens/` under the same `{user_id}/` per-user dir.
+    # The default points at the parent of the per-user folders so the
+    # resolved cache lands inside each user's own tree:
+    #   {data_root}/{user_data_folder}/user_<id>/user_cache/tokens/
+    # Same parent as embeddings and snapshots — backups, ACLs, and
+    # "delete this user" all see the cache as part of the user's data.
     if "LDACA_TOKENS_CACHE_DIR" not in os.environ:
-        default_cache_base = current_settings.get_data_root() / ".cache"
+        default_cache_base = (
+            current_settings.get_data_root() / current_settings.user_data_folder
+        )
         os.environ["LDACA_TOKENS_CACHE_DIR"] = str(default_cache_base)
         logger.info(
             "LDACA_TOKENS_CACHE_DIR not set externally; using default %s",
