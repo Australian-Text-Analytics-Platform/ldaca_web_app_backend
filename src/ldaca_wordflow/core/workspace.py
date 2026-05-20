@@ -19,7 +19,10 @@ from docworkspace import Workspace
 from docworkspace.workspace.io import read_workspace_metadata, rebase_workspace_sources
 from ldaca_wordflow.models import WorkspaceSummary
 
-from .tokens_cache_repair import repair_tokens_cache_paths
+from .tokens_cache_repair import (
+    repair_tokens_cache_paths,
+    write_repair_sidecar,
+)
 from .utils import (
     allocate_workspace_folder,
     ensure_display_folder_name,
@@ -180,7 +183,12 @@ class WorkspaceManager:
             # crash the first collect() against any tokenised node. The
             # repair pass remaps to the receiver's cache when present and
             # writes a 0-row stub otherwise, so loads always succeed.
-            repair_tokens_cache_paths(updated_dir, user_id)
+            #
+            # Always rewrite the sidecar (even when empty) so a fresh
+            # load on the donor's own machine clears any stale state
+            # left over from a previous cross-machine round-trip.
+            repair_report = repair_tokens_cache_paths(updated_dir, user_id)
+            write_repair_sidecar(updated_dir, repair_report.stubbed_node_ids)
 
             # 4. Full load (deserialize nodes — paths are now correct).
             new_ws = Workspace.load(updated_dir)

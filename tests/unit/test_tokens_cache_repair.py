@@ -30,8 +30,12 @@ from ldaca_wordflow.core.tokens_cache import (
     tokens_cache_dir,
 )
 from ldaca_wordflow.core.tokens_cache_repair import (
+    REPAIR_SIDECAR_FILENAME,
     TokensCacheRepairReport,
+    clear_node_from_sidecar,
+    read_repair_sidecar,
     repair_tokens_cache_paths,
+    write_repair_sidecar,
 )
 
 
@@ -303,3 +307,124 @@ def test_report_needed_repair_property() -> None:
     assert TokensCacheRepairReport().needed_repair is False
     assert TokensCacheRepairReport(relocated=[(Path("/a"), Path("/b"))]).needed_repair is True
     assert TokensCacheRepairReport(stubbed=[Path("/c")]).needed_repair is True
+
+
+# --------------------------------------------------------------------------- #
+# Node-ID derivation                                                           #
+# --------------------------------------------------------------------------- #
+
+
+def test_stubbed_node_ids_derived_from_plbin_stem(
+    cache_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Docworkspace writes each node's plan as ``data/<node_id>.plbin``,
+    so the repair report can recover the node id by taking the plbin stem."""
+    donor_path = (
+        tmp_path / "donor" / "user_cache" / TOKENS_CACHE_SUBDIR / "model_a_111111111111.parquet"
+    )
+    _write_tokens_parquet(donor_path)
+
+    workspace_dir = tmp_path / "workspace"
+    plbin = workspace_dir / "data" / "node-xyz-7.plbin"
+    _make_plbin_referencing(donor_path, plbin)
+    _make_workspace(workspace_dir, "data/node-xyz-7.plbin")
+    donor_path.unlink()
+
+    report = repair_tokens_cache_paths(workspace_dir, USER_ID)
+
+    assert report.stubbed_node_ids == ["node-xyz-7"]
+
+
+def test_stubbed_node_ids_relocate_case_does_not_appear(
+    cache_root: Path,
+    tmp_path: Path,
+) -> None:
+    """Case A (relocate) is not a 'stubbed' event — the receiver has real
+    tokens for the bucket, the user doesn't need to do anything. So the
+    node id must NOT appear in stubbed_node_ids."""
+    donor_path = (
+        tmp_path / "donor" / "user_cache" / TOKENS_CACHE_SUBDIR / "model_b_222222222222.parquet"
+    )
+    _write_tokens_parquet(donor_path)
+
+    workspace_dir = tmp_path / "workspace"
+    plbin = workspace_dir / "data" / "node-relocated.plbin"
+    _make_plbin_referencing(donor_path, plbin)
+    _make_workspace(workspace_dir, "data/node-relocated.plbin")
+
+    local_path = cache_root / donor_path.name
+    _write_tokens_parquet(local_path)
+    donor_path.unlink()
+
+    report = repair_tokens_cache_paths(workspace_dir, USER_ID)
+
+    assert report.stubbed_node_ids == []
+    assert len(report.relocated) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Sidecar persistence                                                          #
+# --------------------------------------------------------------------------- #
+
+
+def test_sidecar_round_trip(tmp_path: Path) -> None:
+    workspace_dir = tmp_path / "ws"
+    workspace_dir.mkdir()
+
+    write_repair_sidecar(workspace_dir, ["node-1", "node-2", "node-1"])
+
+    sidecar_file = workspace_dir / REPAIR_SIDECAR_FILENAME
+    assert sidecar_file.exists()
+
+    state = read_repair_sidecar(workspace_dir)
+    # Dedup + sort, both done by write.
+    assert state == {"stubbed_node_ids": ["node-1", "node-2"]}
+
+
+def test_sidecar_empty_write_removes_existing(tmp_path: Path) -> None:
+    workspace_dir = tmp_path / "ws"
+    workspace_dir.mkdir()
+
+    write_repair_sidecar(workspace_dir, ["node-1"])
+    sidecar_file = workspace_dir / REPAIR_SIDECAR_FILENAME
+    assert sidecar_file.exists()
+
+    # An empty-id write means "we just successfully reloaded with no stubs"
+    # — the file should be removed so the banner clears.
+    write_repair_sidecar(workspace_dir, [])
+    assert not sidecar_file.exists()
+    assert read_repair_sidecar(workspace_dir) == {}
+
+
+def test_sidecar_clear_node_removes_one_entry(tmp_path: Path) -> None:
+    workspace_dir = tmp_path / "ws"
+    workspace_dir.mkdir()
+    write_repair_sidecar(workspace_dir, ["a", "b", "c"])
+
+    clear_node_from_sidecar(workspace_dir, "b")
+    assert read_repair_sidecar(workspace_dir) == {"stubbed_node_ids": ["a", "c"]}
+
+    clear_node_from_sidecar(workspace_dir, "a")
+    clear_node_from_sidecar(workspace_dir, "c")
+    # All cleared → file deleted.
+    assert not (workspace_dir / REPAIR_SIDECAR_FILENAME).exists()
+
+
+def test_sidecar_clear_node_is_noop_when_absent(tmp_path: Path) -> None:
+    workspace_dir = tmp_path / "ws"
+    workspace_dir.mkdir()
+
+    # No sidecar yet — calling clear must not crash and must not create one.
+    clear_node_from_sidecar(workspace_dir, "node-1")
+    assert not (workspace_dir / REPAIR_SIDECAR_FILENAME).exists()
+
+
+def test_sidecar_read_tolerates_corrupt_json(tmp_path: Path) -> None:
+    workspace_dir = tmp_path / "ws"
+    workspace_dir.mkdir()
+    (workspace_dir / REPAIR_SIDECAR_FILENAME).write_text("{not valid json")
+
+    # Returns empty dict rather than raising — sidecar is a UX hint, not a
+    # load-blocking invariant.
+    assert read_repair_sidecar(workspace_dir) == {}
