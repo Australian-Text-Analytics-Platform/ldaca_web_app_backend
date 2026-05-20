@@ -47,6 +47,7 @@ from typing import Iterable
 import polars as pl
 
 from .tokens_cache import (
+    DELTA_INFIX,
     TOKENS_CACHE_SCHEMA,
     TOKENS_CACHE_SUBDIR,
     tokens_cache_dir,
@@ -319,23 +320,64 @@ def _parquet_row_count(path: Path) -> int | None:
         return None
 
 
+def _bucket_key_from_path(p: Path) -> str:
+    """Extract the bucket key from a tokens-cache parquet path.
+
+    Mirrors :func:`tokens_cache._bucket_key_from_filename`'s semantics,
+    duplicated here to avoid importing private helpers across the module
+    boundary. A bucket spans one legacy ``<bucket>.parquet`` plus any
+    number of ``<bucket>__delta__<uuid>.parquet`` siblings.
+    """
+    stem = p.stem  # strips one .parquet
+    if DELTA_INFIX in stem:
+        return stem.split(DELTA_INFIX, 1)[0]
+    return stem
+
+
+def _bucket_has_real_tokens(bucket_dir: Path, bucket_key: str) -> bool:
+    """True iff at least one parquet file in ``bucket_dir`` matching the
+    given bucket key has >0 rows. Used to decide whether a node's
+    tokens-cache reference is actually broken or merely co-exists with
+    a leftover 0-row stub.
+
+    After a successful re-tokenise the plan references multiple files
+    for the same bucket — the original stub (still 0 rows) and the new
+    delta (real tokens). Checking only the file the plbin points at
+    would flag the stub and incorrectly mark the node as broken; checking
+    the bucket as a whole reflects what the lazy plan actually
+    materialises (``scan_parquet([all files]) + unique(keep="first")``).
+    """
+    if not bucket_dir.exists():
+        return False
+    legacy = bucket_dir / f"{bucket_key}.parquet"
+    candidates: list[Path] = []
+    if legacy.exists():
+        candidates.append(legacy)
+    candidates.extend(bucket_dir.glob(f"{bucket_key}{DELTA_INFIX}*.parquet"))
+    for candidate in candidates:
+        rows = _parquet_row_count(candidate)
+        if rows is not None and rows > 0:
+            return True
+    return False
+
+
 def detect_invalid_token_cache_node_ids(
     workspace_dir: Path | None, node_ids: Iterable[str]
 ) -> list[str]:
-    """Return node IDs whose plan references a missing or 0-row tokens-cache
-    parquet, walking each node's serialised plan on disk.
+    """Return node IDs whose plan references a tokens-cache *bucket* with
+    no real tokens (every file in the bucket is missing or 0 rows).
 
-    This is the runtime path-validity check that drives the workspace
-    banner — preferred over the persistent sidecar because the sidecar
-    only reflects state from the most recent load. If the user manually
-    repairs the cache (or it spontaneously becomes invalid for some
-    other reason) we want the banner to reflect that immediately.
+    Walks each node's plbin via ``list_source_paths``, groups tokens-cache
+    references by their bucket key (``<model_safe>_<params_hash>``), and
+    flags the node only when ALL parquets for at least one referenced
+    bucket are empty — matching what the lazy plan would actually
+    materialise. Files are read via parquet metadata only
+    (``pq.read_metadata().num_rows``), so the check stays cheap.
 
-    The check is cheap: ``list_source_paths`` reads only the plbin's
-    source-path manifest (no plan evaluation), and ``_parquet_row_count``
-    reads parquet footer metadata only (no column data). For a typical
-    workspace with N tokenised nodes each holding one tokens cache
-    reference, the total cost is O(N) tiny IO ops.
+    Preferred over the persistent sidecar because the sidecar reflects
+    only the most recent load's outcome. If the user manually repairs a
+    cache (or it spontaneously becomes invalid for some other reason)
+    this check follows current on-disk state.
     """
     if workspace_dir is None:
         return []
@@ -344,6 +386,9 @@ def detect_invalid_token_cache_node_ids(
     data_dir = workspace_dir / "data"
     invalid: list[str] = []
     seen: set[str] = set()
+    # Memoise per-bucket "has real tokens" so a workspace with N nodes
+    # all pointing at the same bucket only reads metadata once.
+    bucket_has_tokens: dict[tuple[str, str], bool] = {}
     for node_id in node_ids:
         if node_id in seen:
             continue
@@ -359,11 +404,14 @@ def detect_invalid_token_cache_node_ids(
             p = Path(raw)
             if not _looks_like_tokens_cache_path(p):
                 continue
-            if not p.exists():
-                invalid.append(node_id)
-                break
-            rows = _parquet_row_count(p)
-            if rows == 0:
+            bucket_dir = p.parent
+            bucket_key = _bucket_key_from_path(p)
+            cache_key = (str(bucket_dir), bucket_key)
+            if cache_key not in bucket_has_tokens:
+                bucket_has_tokens[cache_key] = _bucket_has_real_tokens(
+                    bucket_dir, bucket_key
+                )
+            if not bucket_has_tokens[cache_key]:
                 invalid.append(node_id)
                 break
     return invalid

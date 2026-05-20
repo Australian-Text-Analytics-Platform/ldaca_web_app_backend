@@ -504,6 +504,53 @@ class TestDetectInvalidTokenCacheNodeIds:
         result = detect_invalid_token_cache_node_ids(workspace_dir, ["node-healthy"])
         assert result == []
 
+    def test_does_not_flag_when_stub_coexists_with_real_delta_in_same_bucket(
+        self, cache_root: Path, tmp_path: Path
+    ) -> None:
+        """Reproduces the post-re-tokenise scenario. After a re-tokenise,
+        ``tokens_cache_lazyframe`` rebuilds the plan against every file in
+        the bucket — so the plbin now references both the original 0-row
+        stub AND the freshly-written delta with real tokens. The plan
+        materialises real tokens (scan_parquet + unique-by-hash drops the
+        stub's 0 rows), so the node is NOT broken. A naive "flag any 0-row
+        file" detector would still mark the node and keep the banner
+        showing. Bucket-aware detection groups by bucket key and clears
+        the flag once any sibling has rows.
+        """
+        bucket = "model_z_cafebabe1234"
+        stub_path = (
+            tmp_path
+            / "donor"
+            / "user_cache"
+            / TOKENS_CACHE_SUBDIR
+            / f"{bucket}.parquet"
+        )
+        _write_tokens_parquet(stub_path)  # 0-row stub
+
+        # Sibling delta with one real row, matching the bucket key.
+        delta_path = (
+            stub_path.parent
+            / f"{bucket}__delta__deadbeef.parquet"
+        )
+        pl.DataFrame(
+            {CONTENT_HASH_COLUMN: [9876], "tokens": [[]]},
+            schema=TOKENS_CACHE_SCHEMA,
+        ).write_parquet(delta_path)
+
+        # The plbin still only references the stub (that's what gets
+        # baked into ``scan_parquet([all files])`` at the time the new
+        # plan was built; in practice ``tokens_cache_lazyframe`` lists
+        # all bucket files but the test stresses the worst case where
+        # the plbin path is the empty one).
+        workspace_dir = tmp_path / "workspace"
+        plbin = workspace_dir / "data" / "node-recovered.plbin"
+        _make_plbin_referencing(stub_path, plbin)
+
+        result = detect_invalid_token_cache_node_ids(
+            workspace_dir, ["node-recovered"]
+        )
+        assert result == []
+
     def test_ignores_non_tokens_cache_paths(
         self, cache_root: Path, tmp_path: Path
     ) -> None:
