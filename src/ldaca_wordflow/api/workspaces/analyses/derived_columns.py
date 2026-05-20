@@ -33,6 +33,8 @@ from pydantic import BaseModel
 from pathlib import Path
 from typing import List
 
+from polars_text import scrub_plugin_expressions
+
 from ....core.auth import get_current_user
 from ....core.derived_columns import tokenise_column
 from ....core.tokens_cache import (
@@ -42,6 +44,10 @@ from ....core.tokens_cache import (
 from ....core.workspace import workspace_manager
 from ..utils import update_workspace
 from .generated_columns import TOKENS_FORM
+
+# Same symbol stamped by tokenise_column. Kept in sync there so a
+# rename would surface in code-review of both modules at once.
+_TOKENS_PLUGIN_SYMBOL = "tokenize_with_cache_lookup"
 
 router = APIRouter(prefix="/workspaces", tags=["derived_columns"])
 logger = logging.getLogger(__name__)
@@ -154,9 +160,24 @@ async def delete_derived_column(
         else None
     )
 
-    schema_names = node.data.collect_schema().names()
-    if column_name in schema_names:
-        node.data = node.data.drop(column_name, strict=False)
+    # For tokens-form derived columns we scrub the underlying
+    # ``tokenize_with_cache_lookup`` expression from the plan itself —
+    # ``LazyFrame.drop()`` would only add a ``Select{drop=[col]}`` step
+    # on top, leaving the plugin call alive in the serialised plan
+    # forever (polars only DCEs it at collect time, never on save).
+    # See backend/docs/developer-guide/lazy-tokenisation-refactor.md.
+    meta = node.derived[column_name]
+    is_tokens_form = isinstance(meta, dict) and meta.get("form") == TOKENS_FORM
+    if is_tokens_form:
+        node.data, _ = scrub_plugin_expressions(
+            node.data,
+            aliases=[column_name],
+            symbol=_TOKENS_PLUGIN_SYMBOL,
+        )
+    else:
+        schema_names = node.data.collect_schema().names()
+        if column_name in schema_names:
+            node.data = node.data.drop(column_name, strict=False)
     node.unregister_derived_column(column_name)
 
     if cache_filename:

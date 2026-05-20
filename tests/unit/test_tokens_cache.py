@@ -43,6 +43,17 @@ def isolated_cache_root(tmp_path, monkeypatch):
     yield tmp_path / "tokens-cache"
 
 
+@pytest.fixture
+def multi_user_mode(monkeypatch):
+    """Force settings.multi_user = True so per-user-id tests get
+    distinct cache dirs (single-user mode collapses every user_id to
+    the shared ``user_root/user_cache/`` path)."""
+    from ldaca_wordflow import settings as _settings_module
+
+    monkeypatch.setattr(_settings_module.settings, "multi_user", True)
+    yield
+
+
 def _toy_rows(hash_to_tokens: dict[int, list[dict]]) -> pl.DataFrame:
     """Build a (content-hash, tokens) DataFrame matching the cache schema."""
     return pl.DataFrame(
@@ -91,20 +102,31 @@ def _ref(workspace: str, node: str) -> tc.CacheReference:
 # --------------------------------------------------------------------------- #
 
 
-def test_cache_dir_honours_env_with_per_user_subdir(isolated_cache_root):
+def test_cache_dir_single_user_uses_user_root_prefix(isolated_cache_root):
+    """In single-user mode every logical user_id collapses to ``user_root``
+    — the cache lives at ``{env}/user_root/user_cache/tokens/``."""
     got = tc.tokens_cache_dir(TEST_USER)
-    assert got == isolated_cache_root / TEST_USER / tc.TOKENS_CACHE_SUBDIR
+    assert got == (
+        isolated_cache_root / "user_root" / "user_cache" / tc.TOKENS_CACHE_SUBDIR
+    )
     assert got.exists()
 
 
-def test_cache_dir_isolates_users(isolated_cache_root):
+def test_cache_dir_isolates_users_in_multi_user_mode(
+    isolated_cache_root, multi_user_mode
+):
+    """Multi-user mode: each user_id maps to a distinct ``user_<id>``
+    subdir under env. Single-user mode collapses to ``user_root``, so
+    isolation by user_id only exists in multi-user mode."""
     a = tc.tokens_cache_dir("alice")
     b = tc.tokens_cache_dir("bob")
     assert a != b
-    # Layout: {env}/{user_id}/{TOKENS_CACHE_SUBDIR} — so the COMMON
-    # ancestor is the env root, two levels up.
-    assert a.parent.parent == b.parent.parent
-    assert a.parent.parent == isolated_cache_root
+    assert a == (
+        isolated_cache_root / "user_alice" / "user_cache" / tc.TOKENS_CACHE_SUBDIR
+    )
+    assert b == (
+        isolated_cache_root / "user_bob" / "user_cache" / tc.TOKENS_CACHE_SUBDIR
+    )
 
 
 def test_cache_dir_raises_when_env_missing(monkeypatch):
@@ -308,9 +330,12 @@ def test_sweep_cleans_manifest_entries_for_vanished_files():
     assert bucket not in _manifest(TEST_USER)["entries"]
 
 
-def test_sweep_walks_all_users_when_user_id_omitted():
+def test_sweep_walks_all_users_when_user_id_omitted(multi_user_mode):
     """The startup-hook path: ``sweep_unreferenced()`` without a user
-    must iterate every user that has a cache directory on disk."""
+    must iterate every user that has a cache directory on disk.
+
+    Requires multi-user mode so the two users get distinct dirs;
+    single-user mode would collapse them to the same ``user_root``."""
     params = {"lowercase": False}
     # Two users, both with unreferenced caches eligible for eviction.
     _seed_bucket("alice", "jieba", params, 1)
@@ -374,9 +399,11 @@ def test_compaction_collapses_many_deltas_into_one():
     )
 
 
-def test_compact_all_buckets_walks_all_users_and_buckets():
+def test_compact_all_buckets_walks_all_users_and_buckets(multi_user_mode):
     """compact_all_buckets() with no user_id is the startup-hook entry
-    point — it must visit every user dir and every bucket within."""
+    point — it must visit every user dir and every bucket within.
+
+    Requires multi-user mode so the two users get distinct dirs."""
     params_jieba = {"lowercase": False}
     params_lindera = {"lowercase": False, "remove_punct": True}
     threshold = tc.DEFAULT_COMPACTION_THRESHOLD
@@ -412,7 +439,7 @@ def test_compact_all_buckets_walks_all_users_and_buckets():
     assert _bucket_files_count("bob", "jieba", params_jieba) == 1
 
 
-def test_compact_all_buckets_scoped_to_one_user():
+def test_compact_all_buckets_scoped_to_one_user(multi_user_mode):
     """compact_all_buckets(user_id) only touches that user's buckets."""
     params = {"lowercase": False}
     threshold = tc.DEFAULT_COMPACTION_THRESHOLD

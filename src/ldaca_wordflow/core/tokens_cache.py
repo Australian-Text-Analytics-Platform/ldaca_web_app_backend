@@ -112,17 +112,45 @@ TOKENS_CACHE_SCHEMA: dict[str, "pl.DataType"] = {
 # --------------------------------------------------------------------------- #
 
 
-def tokens_cache_dir(user_id: str) -> Path:
-    """Return ``{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens`` for ``user_id``.
+def cache_relpath_for_user(user_id: str) -> str:
+    """Path under `LDACA_TOKENS_CACHE_DIR` for ``user_id``'s cache umbrella.
 
-    Both this module and the Rust ``tokenize_with_cache_lookup`` expression
-    resolve the cache directory from this same env var, so manifest writes
-    (Python) and cache-parquet writes (Rust) always land in the same
-    place. The backend's startup hook (`main.py` lifespan) sets a default
-    value when the env var is not externally configured; this function
-    raises only if called outside that context (e.g. an ad-hoc script
-    that imported the module without going through the backend lifespan
-    or the test-suite conftest).
+    Returns the same relative path Wordflow uses for the rest of the
+    per-user data tree (single-user: ``user_root/user_cache``; multi-user:
+    ``user_<id>/user_cache``). Combined with the env var (which the
+    startup hook points at ``{data_root}/{user_data_folder}``) this lands
+    the cache inside each user's own folder, sibling of ``embeddings/``
+    and ``snapshots/`` — so backups, ACLs, and "delete this user"
+    operations all see the cache as part of the user's data.
+
+    Crucially, this value is also passed as the ``user_id`` kwarg to
+    the Rust lazy expression — the expression resolves to the same
+    path Python's manifest writes to. The workspace-load alignment
+    hook (see :func:`align_tokens_for_current_user`) detects when a
+    plan's baked relpath doesn't match the current user's expected
+    one and scrub-and-recreates the expression, so a workspace
+    imported by user B never writes into user A's tree.
+    """
+    # Avoid the circular-import problem at module level — settings is
+    # imported lazily, only when this helper is called.
+    from ..settings import settings
+
+    folder_name = "user_root" if not settings.multi_user else f"user_{user_id}"
+    return f"{folder_name}/user_cache"
+
+
+def tokens_cache_dir(user_id: str) -> Path:
+    """Return the absolute cache directory for ``user_id``.
+
+    Combines `LDACA_TOKENS_CACHE_DIR` with :func:`cache_relpath_for_user`
+    and the ``tokens/`` subdir — the absolute path is e.g.
+    ``{data_root}/{user_data_folder}/user_root/user_cache/tokens/``
+    in single-user mode.
+
+    Both this module and the Rust ``tokenize_with_cache_lookup``
+    expression resolve to this same path: Python composes it directly
+    here; Rust takes the (env, kwarg) pair and joins them. The startup
+    hook in `main.py` lifespan sets the env if not externally configured.
     """
     override = os.environ.get(CACHE_ROOT_ENV)
     if not override:
@@ -131,7 +159,11 @@ def tokens_cache_dir(user_id: str) -> Path:
             f"sets a default; if you're seeing this in a script or REPL, "
             f"set the env var explicitly before importing tokens_cache."
         )
-    root = Path(override).expanduser() / user_id / TOKENS_CACHE_SUBDIR
+    root = (
+        Path(override).expanduser()
+        / cache_relpath_for_user(user_id)
+        / TOKENS_CACHE_SUBDIR
+    )
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -590,11 +622,13 @@ def _compact_bucket_if_needed(
 def _all_user_ids_with_cache() -> list[str]:
     """Enumerate every user that has a tokens-cache directory on disk.
 
-    Walks the env-rooted layout ``{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens/``.
-    The startup hook in `main.py` lifespan guarantees the env var is set
-    before any backend code path calls this; if it isn't (e.g. an ad-hoc
-    script importing the module), returns an empty list rather than
-    raising — the all-users sweep is best-effort.
+    Walks the per-user layout
+    ``{LDACA_TOKENS_CACHE_DIR}/{user_root_folder}/user_cache/tokens/``,
+    extracting the user_id from the ``user_root_folder`` prefix
+    (``user_root`` → ``"root"``, ``user_<id>`` → ``<id>``). The startup
+    hook in `main.py` lifespan guarantees the env var is set before any
+    backend code path calls this; if it isn't (an ad-hoc script), returns
+    an empty list rather than raising.
     """
     override = os.environ.get(CACHE_ROOT_ENV)
     if not override:
@@ -606,9 +640,18 @@ def _all_user_ids_with_cache() -> list[str]:
     for entry in sorted(base.iterdir()):
         if not entry.is_dir():
             continue
-        if not (entry / TOKENS_CACHE_SUBDIR).exists():
+        # Layout: {base}/{user_root_folder}/user_cache/tokens/
+        if not (entry / "user_cache" / TOKENS_CACHE_SUBDIR).exists():
             continue
-        out.append(entry.name)
+        name = entry.name
+        if name == "user_root":
+            out.append("root")
+        elif name.startswith("user_"):
+            out.append(name[len("user_") :])
+        else:
+            # Tolerate bare-name dirs (tests, custom layouts) — fall back
+            # to the directory name as-is.
+            out.append(name)
     return out
 
 
