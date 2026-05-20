@@ -242,6 +242,50 @@ def test_migration_attribute_cleanup_after_walk(lazy_off: None) -> None:
     assert not hasattr(node, "_ldaca_lazy_migration_user")
 
 
+def test_preflight_skips_when_lazy_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When LDACA_LAZY_TOKENISE is on, `assert_tokens_available_for_nodes`
+    must short-circuit without touching the per-node walk that would
+    otherwise raise on empty/missing cache parquets. The lazy expression
+    treats missing files as cache misses, so the "missing tokens"
+    failure mode is unreachable for freshly lazy nodes and shadowed
+    for migrated ones — surfacing it would be incorrect."""
+    from ldaca_wordflow.api.workspaces.utils import (
+        assert_tokens_available_for_nodes,
+    )
+
+    # Sentinel that would explode if the function tried to deref it
+    class _Workspace:
+        ws_root_dir = None
+        nodes = {"some-node": object()}
+
+    monkeypatch.setenv(LAZY_TOKENISE_ENV, "1")
+    # Should NOT raise — the gate skips the detection walk entirely.
+    assert_tokens_available_for_nodes(
+        _Workspace(), ["some-node"], action="test analysis"
+    )
+
+
+def test_banner_state_returns_none_when_lazy_flag_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The /graph endpoint attaches `tokens_cache_repair` via
+    `_runtime_tokens_cache_state`. Under the lazy flag the banner makes
+    no sense (empty cache is the lazy expression's normal state), so
+    the helper returns None and the field is omitted from the response."""
+    from ldaca_wordflow.api.workspaces.lifecycle import (
+        _runtime_tokens_cache_state,
+    )
+
+    class _Workspace:
+        ws_root_dir = None
+        nodes = {}
+
+    monkeypatch.setenv(LAZY_TOKENISE_ENV, "1")
+    assert _runtime_tokens_cache_state(_Workspace()) is None
+
+
 def test_phase2_tokenise_with_flag_on_tags_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

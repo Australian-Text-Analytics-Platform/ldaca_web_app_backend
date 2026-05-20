@@ -473,6 +473,18 @@ def _runtime_tokens_cache_state(workspace) -> dict | None:
     manually restores the cache (or it spontaneously breaks for some other
     reason) the banner should follow that.
     """
+    # Phase 2/2.5 — when LDACA_LAZY_TOKENISE is on, "empty token cache"
+    # is the lazy expression's normal state on a fresh machine (the
+    # expression treats missing files as cache misses and computes on
+    # demand). The banner's "tokens cache missing" framing no longer
+    # applies, and the per-node walk that backs it adds noticeable
+    # latency on the graph endpoint. Skip it under the flag — the banner
+    # disappears entirely. Retired for good in Phase 4.5 (design doc §15).
+    from ...core.derived_columns import _lazy_tokenise_enabled
+
+    if _lazy_tokenise_enabled():
+        return None
+
     workspace_dir = getattr(workspace, "ws_root_dir", None)
     if not isinstance(workspace_dir, Path):
         return None

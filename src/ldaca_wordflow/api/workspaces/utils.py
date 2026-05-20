@@ -276,6 +276,19 @@ def assert_tokens_available_for_nodes(
     just tried to run — it goes straight into the message body, e.g.
     ``"this token-frequency analysis"`` or ``"concordance tokens mode"``.
     """
+    # Phase 2/2.5 — when LDACA_LAZY_TOKENISE is on, every collect goes
+    # through `polars_text.tokenize_with_cache_lookup`, which treats a
+    # missing or empty cache file as a cache miss and recomputes on
+    # demand. The preflight's "missing tokens" failure mode is no longer
+    # reachable for freshly lazy-tokenised nodes, and for migrated nodes
+    # the lazy expression shadows the eager scan's output. Skip the
+    # guard so its (now-incorrect) error doesn't fire under the flag.
+    # Retired entirely in Phase 4.5 — see design doc §15.
+    from ...core.derived_columns import _lazy_tokenise_enabled
+
+    if _lazy_tokenise_enabled():
+        return
+
     workspace_dir = getattr(workspace, "ws_root_dir", None)
     affected = detect_invalid_token_cache_node_ids(workspace_dir, node_ids)
     if not affected:
