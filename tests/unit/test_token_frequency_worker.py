@@ -58,38 +58,3 @@ def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypat
         "Preparing text data" in message for _progress, message in progress_updates
     )
     assert progress_updates[-1] == (1.0, "Token frequency analysis completed")
-
-
-def test_patch_stats_keyness_columns_recovers_lancaster_formulas() -> None:
-    """Backend patch should overwrite polars-text 0.2.1's two buggy
-    keyness columns with the Lancaster wizard's documented formulas:
-    `%DIFF` = ((NF_studied − NF_ref) / NF_ref) × 100, and `log_ratio` =
-    log₂(NF_studied / NF_ref). Verified on a small frame with a known
-    doubling (NF_studied = 2 × NF_ref) so the expected values are
-    +100% and +1.0 exactly."""
-    import polars as pl
-
-    from ldaca_wordflow.core.worker_tasks_token import _patch_stats_keyness_columns
-
-    stats = pl.DataFrame(
-        {
-            "token": ["alpha", "only_studied"],
-            "freq_corpus_0": [5, 0],
-            "freq_corpus_1": [10, 4],
-            "corpus_0_total": [1000, 1000],
-            "corpus_1_total": [1000, 1000],
-            # The two buggy columns coming back from polars-text 0.2.1.
-            # Specific values aren't checked; we just verify the patch
-            # overwrites them.
-            "percent_diff": [-999.0, -999.0],
-            "log_ratio": [-999.0, -999.0],
-        }
-    )
-
-    patched = _patch_stats_keyness_columns(stats).to_dicts()
-    alpha = next(r for r in patched if r["token"] == "alpha")
-    only_studied = next(r for r in patched if r["token"] == "only_studied")
-    assert alpha["percent_diff"] == 100.0
-    assert alpha["log_ratio"] == 1.0
-    assert only_studied["percent_diff"] == float("inf")
-    assert only_studied["log_ratio"] is None

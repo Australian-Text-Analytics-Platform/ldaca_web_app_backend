@@ -15,43 +15,6 @@ from .analysis_helpers import sanitize_stop_words
 logger = logging.getLogger(__name__)
 
 
-def _patch_stats_keyness_columns(stats_df):
-    """Overwrite `percent_diff` and `log_ratio` on a polars-text stats frame
-    with the formulas the Lancaster keyness wizard documents.
-
-    polars-text 0.2.1 (the pinned floor) emits a `percent_diff` that omits
-    the Gabrielatos & Marchi (2012) denominator and a `log_ratio` that uses
-    a natural log instead of Hardie's binary log; it also puts the
-    reference corpus in the numerator, so the sign points opposite to the
-    direction the keyness table caption claims. Recompute both from the
-    raw frequency counts the same frame already carries — the call is
-    idempotent against polars-text 0.2.2+ (which already does this).
-    """
-    import polars as pl
-
-    nf_0 = pl.col("freq_corpus_0") / pl.col("corpus_0_total")
-    nf_1 = pl.col("freq_corpus_1") / pl.col("corpus_1_total")
-    return stats_df.with_columns(
-        [
-            pl
-            .when(pl.col("freq_corpus_0") == 0)
-            .then(
-                pl
-                .when(pl.col("freq_corpus_1") > 0)
-                .then(pl.lit(float("inf")))
-                .otherwise(None)
-            )
-            .otherwise(((nf_1 - nf_0) / nf_0) * 100)
-            .alias("percent_diff"),
-            pl
-            .when((pl.col("freq_corpus_0") > 0) & (pl.col("freq_corpus_1") > 0))
-            .then((nf_1 / nf_0).log(2.0))
-            .otherwise(None)
-            .alias("log_ratio"),
-        ]
-    )
-
-
 def run_token_frequencies_task(
     configure_worker_environment,
     user_id: str,
@@ -186,10 +149,6 @@ def run_token_frequencies_task(
                 frequency_results[node_ids[0]],
                 frequency_results[node_ids[1]],
             )
-            # Correct the two keyness columns where polars-text 0.2.1
-            # diverged from the Lancaster wizard's documented formulas
-            # — see _patch_stats_keyness_columns docstring.
-            stats_df = _patch_stats_keyness_columns(stats_df)
 
         if progress_callback:
             progress_callback(0.85, "Writing token-frequency results...")
