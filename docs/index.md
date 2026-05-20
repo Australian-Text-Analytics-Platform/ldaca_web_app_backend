@@ -14,6 +14,10 @@
 
 **Answer:** See `developer-guide/architecture.md`.
 
+**Question:** _Why does a tokenised workspace sometimes break when moved between machines, and how is it repaired on load?_
+
+**Answer:** See `developer-guide/tokens-cache-portability.md`.
+
 ## Configuration and tasks
 
 **Question:** _Where are environment variables and background task docs?_
