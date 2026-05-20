@@ -59,7 +59,7 @@ dependencies = [
     # `hive_partitions`, `scan_lines`, `dtype-extension`, ...) is also
     # retained so workspace save/load still covers the full DslPlan
     # surface that Python polars 1.40 wheels emit.
-    "polars-text>=0.2.1",
+    "polars-text>=0.2.2",
     "pyarrow>=16.0.0",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
