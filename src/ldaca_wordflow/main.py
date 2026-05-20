@@ -98,20 +98,6 @@ async def lifespan(app: FastAPI):
     except Exception:  # pragma: no cover — best-effort
         logger.exception("tokens-cache startup sweep failed; cache may be stale")
 
-    # TEMPORARY (Phase 2/2.5 local-testing aid) — banner-style log when
-    # lazy tokenisation is on so devs can confirm the flag was picked up
-    # without grepping. REMOVE BEFORE PUBLISH together with the
-    # frontend dev badge and the /config field.
-    from .core.derived_columns import _lazy_tokenise_enabled
-
-    if _lazy_tokenise_enabled():
-        logger.info("=" * 72)
-        logger.info("  LDACA_LAZY_TOKENISE=on — lazy on-demand tokens cache is ACTIVE")
-        logger.info("  Tokenise clicks defer cache writes until first analysis.")
-        logger.info("  Workspace loads auto-migrate eager hash-join plans.")
-        logger.info("  See backend/docs/developer-guide/lazy-tokenisation-refactor.md")
-        logger.info("=" * 72)
-
     logger.info(
         "Backend ready: docs=http://%s:%s/api/docs health=http://%s:%s/health",
         current_settings.server_host,

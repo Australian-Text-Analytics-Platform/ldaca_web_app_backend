@@ -14,9 +14,9 @@
 
 **Answer:** See `developer-guide/architecture.md`.
 
-**Question:** _Why does a tokenised workspace sometimes break when moved between machines, and how is it repaired on load?_
+**Question:** _How does the lazy on-demand tokens cache work, and why are tokenised workspaces cross-machine portable?_
 
-**Answer:** See `developer-guide/tokens-cache-portability.md`.
+**Answer:** See `developer-guide/lazy-tokenisation-refactor.md`.
 
 ## Configuration and tasks
 
