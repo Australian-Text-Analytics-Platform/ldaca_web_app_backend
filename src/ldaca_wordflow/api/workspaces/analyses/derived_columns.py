@@ -22,12 +22,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from pathlib import Path
+
 from ....core.auth import get_current_user
 from ....core.derived_columns import tokenise_column
 from ....core.tokens_cache import (
     CacheReference,
     drop_reference as drop_cache_reference,
 )
+from ....core.tokens_cache_repair import clear_node_from_sidecar
 from ....core.workspace import workspace_manager
 from ..utils import update_workspace
 from .generated_columns import TOKENS_FORM
@@ -90,6 +93,13 @@ async def create_derived_tokens(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     update_workspace(user_id, workspace_id, best_effort=True)
+    # If this node was flagged as needing retokenise after a cross-machine
+    # workspace import, clear the flag now that real tokens have been
+    # written. The banner disappears the next time the frontend reads
+    # /workspaces/info. See backend/docs/developer-guide/tokens-cache-portability.md.
+    workspace_dir = getattr(workspace, "ws_root_dir", None)
+    if isinstance(workspace_dir, Path):
+        clear_node_from_sidecar(workspace_dir, node_id)
     return TokeniseColumnResponse(
         column=derived_name,
         is_new=existing is None,

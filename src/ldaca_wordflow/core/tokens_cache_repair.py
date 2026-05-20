@@ -37,8 +37,10 @@ Non-goals
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -51,6 +53,12 @@ from .tokens_cache import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Sidecar file written into the workspace directory whenever the repair pass
+# stubs a tokens cache parquet on load. Lives next to ``metadata.json`` so it
+# survives restarts but is invisible to docworkspace's own serialiser (which
+# only reads its known keys from ``metadata.json``).
+REPAIR_SIDECAR_FILENAME = ".tokens_cache_repair.json"
 
 
 @dataclass
@@ -75,6 +83,11 @@ class TokensCacheRepairReport:
     plbins_modified: list[Path] = field(default_factory=list)
     """The set of plbin files whose serialised source paths were rewritten.
     Useful for logging and for tests that want to assert at-most-once IO."""
+
+    stubbed_node_ids: list[str] = field(default_factory=list)
+    """Node IDs whose plan now references at least one stub parquet. Derived
+    from plbin filenames (docworkspace serialises each node's plan as
+    ``data/<node_id>.plbin``). Order matches discovery order; deduped."""
 
     @property
     def needed_repair(self) -> bool:
@@ -144,6 +157,7 @@ def repair_tokens_cache_paths(
     report = TokensCacheRepairReport()
     target_cache_dir = tokens_cache_dir(user_id)
 
+    seen_stubbed_nodes: set[str] = set()
     for plbin in _iter_plbin_paths(workspace_dir):
         try:
             sources = list_source_paths(plbin)
@@ -158,6 +172,7 @@ def repair_tokens_cache_paths(
             continue
 
         mapping: dict[str, str] = {}
+        node_was_stubbed = False
         for raw in sources:
             old_path = Path(raw)
             if old_path.exists():
@@ -172,6 +187,7 @@ def repair_tokens_cache_paths(
             else:
                 _write_stub_parquet(local_path)
                 report.stubbed.append(local_path)
+                node_was_stubbed = True
 
             new_str = str(local_path)
             if raw != new_str:
@@ -186,6 +202,12 @@ def repair_tokens_cache_paths(
                     "tokens_cache_repair: failed to rewrite %s: %s", plbin, exc
                 )
 
+        if node_was_stubbed:
+            node_id = plbin.stem  # docworkspace writes data/<node_id>.plbin
+            if node_id not in seen_stubbed_nodes:
+                seen_stubbed_nodes.add(node_id)
+                report.stubbed_node_ids.append(node_id)
+
     if report.needed_repair:
         logger.info(
             "tokens_cache_repair: relocated=%d stubbed=%d plbins_modified=%d",
@@ -197,7 +219,73 @@ def repair_tokens_cache_paths(
     return report
 
 
+# --------------------------------------------------------------------------- #
+# Sidecar persistence — survives across server restarts                       #
+# --------------------------------------------------------------------------- #
+
+
+def _sidecar_path(workspace_dir: Path) -> Path:
+    return workspace_dir / REPAIR_SIDECAR_FILENAME
+
+
+def write_repair_sidecar(workspace_dir: Path, node_ids: Iterable[str]) -> None:
+    """Persist the set of nodes that need retokenising.
+
+    Writes ``.tokens_cache_repair.json`` next to ``metadata.json``. If the set
+    is empty, removes any existing sidecar so the frontend banner clears
+    automatically. Idempotent — safe to call on every workspace load.
+    """
+    ids = sorted({nid for nid in node_ids if nid})
+    sidecar = _sidecar_path(workspace_dir)
+    if not ids:
+        sidecar.unlink(missing_ok=True)
+        return
+    payload = {
+        "version": 1,
+        "stubbed_node_ids": ids,
+        "stubbed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    sidecar.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def read_repair_sidecar(workspace_dir: Path) -> dict:
+    """Return ``{"stubbed_node_ids": [...]}`` or an empty dict if no sidecar.
+
+    Tolerant of missing files, corrupt JSON, or unexpected shapes — the
+    sidecar is a UX hint, not a load-blocking invariant. A bad sidecar
+    means the banner just doesn't render this session.
+    """
+    sidecar = _sidecar_path(workspace_dir)
+    if not sidecar.exists():
+        return {}
+    try:
+        data = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("tokens_cache_repair: bad sidecar at %s: %s", sidecar, exc)
+        return {}
+    node_ids = data.get("stubbed_node_ids", [])
+    if not isinstance(node_ids, list):
+        return {}
+    return {"stubbed_node_ids": [str(n) for n in node_ids if isinstance(n, str)]}
+
+
+def clear_node_from_sidecar(workspace_dir: Path, node_id: str) -> None:
+    """Remove ``node_id`` from the sidecar after a successful retokenise.
+
+    No-op if the sidecar is absent or doesn't contain that id. When the
+    last id is removed, the sidecar file itself is deleted so the banner
+    state goes fully clean.
+    """
+    state = read_repair_sidecar(workspace_dir)
+    remaining = [nid for nid in state.get("stubbed_node_ids", []) if nid != node_id]
+    write_repair_sidecar(workspace_dir, remaining)
+
+
 __all__ = [
+    "REPAIR_SIDECAR_FILENAME",
     "TokensCacheRepairReport",
+    "clear_node_from_sidecar",
+    "read_repair_sidecar",
     "repair_tokens_cache_paths",
+    "write_repair_sidecar",
 ]

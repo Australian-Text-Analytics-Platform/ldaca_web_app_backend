@@ -16,6 +16,7 @@ from fastapi.responses import StreamingResponse
 
 from ...core.auth import get_current_user
 from ...core.tokens_cache import drop_workspace_references
+from ...core.tokens_cache_repair import read_repair_sidecar
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
@@ -467,7 +468,16 @@ async def get_workspace_info(
 ):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
-    return workspace.info_json()
+    info = workspace.info_json()
+    # Attach the repair-sidecar state so the frontend can surface a banner
+    # listing which nodes had their tokens cache stubbed on the last load.
+    # See backend/docs/developer-guide/tokens-cache-portability.md.
+    workspace_dir = getattr(workspace, "ws_root_dir", None)
+    if isinstance(workspace_dir, Path):
+        sidecar = read_repair_sidecar(workspace_dir)
+        if sidecar.get("stubbed_node_ids"):
+            info["tokens_cache_repair"] = sidecar
+    return info
 
 
 @router.get("/graph")
@@ -493,6 +503,14 @@ async def get_workspace_graph(
         for entry in graph.get("nodes", [])
         if entry.get("id") in workspace.nodes
     ]
+    # Attach the repair-sidecar state. Lives on the graph response (in
+    # addition to /info) because the frontend already polls graph on every
+    # workspace activation — no extra fetch needed for the banner.
+    workspace_dir = getattr(workspace, "ws_root_dir", None)
+    if isinstance(workspace_dir, Path):
+        sidecar = read_repair_sidecar(workspace_dir)
+        if sidecar.get("stubbed_node_ids"):
+            graph["tokens_cache_repair"] = sidecar
     return graph
 
 
