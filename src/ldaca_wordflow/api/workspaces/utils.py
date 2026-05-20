@@ -11,7 +11,7 @@ import polars as pl
 from fastapi import HTTPException
 
 from ...analysis.models import AnalysisStatus
-from ...core.tokens_cache_repair import get_stubbed_node_ids
+from ...core.tokens_cache_repair import detect_invalid_token_cache_node_ids
 from ...core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
@@ -263,9 +263,9 @@ def assert_tokens_available_for_nodes(
     """Pre-flight guard for analyses that depend on tokenised columns.
 
     Raises ``HTTPException(400)`` with a user-readable message naming the
-    affected block(s) if any of ``node_ids`` is recorded in the workspace's
-    tokens-cache repair sidecar (i.e. the workspace was loaded from another
-    machine and that node's tokens cache parquet was stubbed empty).
+    affected block(s) when any of ``node_ids`` has a plan that references a
+    missing or 0-row tokens-cache parquet right now (path-validity check,
+    not a stale sidecar lookup).
 
     Without this guard, the analysis worker hits a deep polars error like
     ``unable to find column 'token'; valid columns: []`` that gives the user
@@ -277,10 +277,7 @@ def assert_tokens_available_for_nodes(
     ``"this token-frequency analysis"`` or ``"concordance tokens mode"``.
     """
     workspace_dir = getattr(workspace, "ws_root_dir", None)
-    stubbed = get_stubbed_node_ids(workspace_dir)
-    if not stubbed:
-        return
-    affected = [nid for nid in node_ids if nid in stubbed]
+    affected = detect_invalid_token_cache_node_ids(workspace_dir, node_ids)
     if not affected:
         return
     names: list[str] = []
@@ -292,9 +289,10 @@ def assert_tokens_available_for_nodes(
         status_code=400,
         detail=(
             f"Tokens cache is missing for block{'s' if len(names) > 1 else ''} "
-            f"{blocks}. This workspace was loaded from another machine and "
-            f"its tokens cache files weren't carried over. Re-tokenise from "
-            f"the Workspace Graph view to enable {action}."
+            f"{blocks}. The tokens cache files for {'these blocks' if len(names) > 1 else 'this block'} "
+            f"are missing or empty on this machine — usually because the workspace "
+            f"was loaded from another machine. Re-tokenise from the Workspace "
+            f"Graph view to enable {action}."
         ),
     )
 
