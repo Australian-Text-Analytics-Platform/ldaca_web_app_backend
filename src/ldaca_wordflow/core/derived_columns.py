@@ -22,6 +22,7 @@ revision can wrap the upsert step in a worker task for a progress UX.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -34,6 +35,20 @@ from ..api.workspaces.analyses.generated_columns import (
 from . import tokens_cache
 
 logger = logging.getLogger(__name__)
+
+
+# Phase 2 feature gate — when on, `tokenise_column` skips the eager
+# `_upsert_for_node` + hash-join shape and instead stamps the node's plan
+# with a `polars_text.tokenize_with_cache_lookup` expression that fills
+# the cache on first analysis collect. See
+# `backend/docs/developer-guide/lazy-tokenisation-refactor.md`.
+LAZY_TOKENISE_ENV = "LDACA_LAZY_TOKENISE"
+
+
+def _lazy_tokenise_enabled() -> bool:
+    """True iff the env flag is set to a truthy string. Default off."""
+    val = os.environ.get(LAZY_TOKENISE_ENV, "").strip().lower()
+    return val in {"1", "true", "yes", "on"}
 
 # Models whose backend scripts have no case (Chinese, Japanese, Korean).
 # Passing ``lowercase=True`` to these would burn a full Unicode case-fold
@@ -117,28 +132,50 @@ def tokenise_column(
     else:
         base_lf = node.data
 
-    # Upsert: tokenise any rows whose content hash isn't in the cache,
-    # then return the canonical bucket path (used purely as a stable
-    # identifier in derived metadata — the actual files for this bucket
-    # live alongside it as ``<bucket>__delta__*.parquet`` siblings).
-    cache_path = _upsert_for_node(
-        base_lf=base_lf,
-        source_column=source_column,
-        model=model,
-        params=params,
-        user_id=user_id,
-    )
+    if _lazy_tokenise_enabled():
+        # Lazy on-demand path (Phase 2). The plan carries a
+        # ``polars_text.tokenize_with_cache_lookup`` expression that
+        # resolves the cache dir at execution time from
+        # ``LDACA_TOKENS_CACHE_DIR + user_id`` — so no parquet paths get
+        # baked into the serialised plan. Cache population is deferred
+        # until the first analysis ``.collect()``.
+        cache_filename = tokens_cache.cache_filename(model, params)
+        cache_path = tokens_cache.cache_path(user_id, model, params)
+        new_lf = _build_lazy_plan(
+            base_lf=base_lf,
+            source_column=source_column,
+            user_id=user_id,
+            model=model,
+            params=params,
+            bucket_filename=cache_filename,
+            derived_name=derived_name,
+        )
+    else:
+        # Eager hash-join path (legacy). Will be retired in Phase 4.5
+        # once the lazy path has soaked. Documented in §15 of the design
+        # doc.
+        # Upsert: tokenise any rows whose content hash isn't in the cache,
+        # then return the canonical bucket path (used purely as a stable
+        # identifier in derived metadata — the actual files for this bucket
+        # live alongside it as ``<bucket>__delta__*.parquet`` siblings).
+        cache_path = _upsert_for_node(
+            base_lf=base_lf,
+            source_column=source_column,
+            model=model,
+            params=params,
+            user_id=user_id,
+        )
 
-    # Rewrite ``node.data`` to look up the tokens column by content-hash
-    # join over the union of every delta file in this bucket.
-    new_lf = _build_cache_join(
-        base_lf=base_lf,
-        source_column=source_column,
-        user_id=user_id,
-        model=model,
-        params=params,
-        derived_name=derived_name,
-    )
+        # Rewrite ``node.data`` to look up the tokens column by content-hash
+        # join over the union of every delta file in this bucket.
+        new_lf = _build_cache_join(
+            base_lf=base_lf,
+            source_column=source_column,
+            user_id=user_id,
+            model=model,
+            params=params,
+            derived_name=derived_name,
+        )
 
     if existing is not None:
         node.unregister_derived_column(existing)
@@ -292,6 +329,51 @@ def _build_cache_join(
         )
         .join(cache_lf, on=tokens_cache.CONTENT_HASH_COLUMN, how="left")
         .drop(tokens_cache.CONTENT_HASH_COLUMN)
+    )
+
+
+def _build_lazy_plan(
+    *,
+    base_lf,
+    source_column: str,
+    user_id: str,
+    model: str,
+    params: dict,
+    bucket_filename: str,
+    derived_name: str,
+):
+    """Phase 2 lazy plan — `tokenize_with_cache_lookup` expression.
+
+    Unlike :func:`_build_cache_join`, this plan does **no** eager work.
+    The plan carries the (model, params, bucket_filename, user_id) tuple
+    inline; the Rust expression resolves the cache dir from
+    ``LDACA_TOKENS_CACHE_DIR + user_id`` at execution time. The first
+    analysis ``.collect()`` populates the cache; subsequent collects on
+    related plans sharing the same bucket get the same rows back.
+
+    Crucially, the resulting ``LazyFrame.serialize(format='binary')``
+    output carries no absolute paths — workspace .plbin files become
+    cross-machine portable for the first time without a repair pass.
+    """
+    import polars as pl
+    import polars_text as pt
+
+    return base_lf.with_columns(
+        pt.tokenize_with_cache_lookup(
+            pl.col(source_column),
+            user_id=user_id,
+            bucket_filename=bucket_filename,
+            lowercase=params["lowercase"],
+            remove_punct=params["remove_punct"],
+            model=model,
+            # Set to ``False`` so test environments (which set the env
+            # via conftest) still work, AND so dev environments that
+            # forget to set it fall back to /tmp rather than crashing.
+            # Production deployments running the lazy flag MUST set
+            # ``LDACA_TOKENS_CACHE_DIR`` explicitly — that's gated at
+            # backend startup once Phase 3 flips the default.
+            require_env_cache_dir=False,
+        ).alias(derived_name)
     )
 
 
