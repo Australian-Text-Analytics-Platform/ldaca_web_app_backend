@@ -62,9 +62,26 @@ Identical to `tokenize_with_offsets`: `List<Struct<token: Utf8, start: Int64, en
 ## 5) Cache-dir resolution
 
 - The plan carries only the **bucket filename** (`bert-base-uncased_a1b2c3d4e5f6.parquet`), which is stable across machines because it's a hash of the `(model, params)` tuple.
-- The Rust expression reads `LDACA_TOKENS_CACHE_DIR` and the `user_id` kwarg at execution time. Same env var the rest of the cache code uses.
-- If the env var is missing AND `require_env_cache_dir=True` is set, the expression returns a `polars` error naming the path it was looking for — fail loud, not silent.
+- The Rust expression reads `LDACA_TOKENS_CACHE_DIR` and the `user_id` kwarg at execution time. Same env var the Python side uses.
+- Default umbrella: `{data_root}/.cache/` (dot-prefixed so it's hidden from the data-loader file tree; the data-loader's listing also filters dotfiles explicitly). The backend's lifespan sets the env to this default if not externally configured. Operators / Tauri / conftest can pre-set the env to override.
+- Layout: `{LDACA_TOKENS_CACHE_DIR}/{user_id}/tokens/{bucket}__delta__*.parquet`. Future cross-machine-portable per-row caches (lemmatisation, embeddings, …) can live as siblings of `tokens/` under the same `{user_id}/` per-user dir.
 - For tests, `tests/conftest.py` sets `LDACA_TOKENS_CACHE_DIR` per session via an autouse fixture.
+
+## 5.1) Compaction
+
+Each cache miss writes a fresh `<bucket>__delta__<uuid>.parquet`. Without compaction a long-lived install would accumulate dozens or hundreds of small deltas per bucket, slowing every cache read (each `scan_parquet` includes a per-file footer parse).
+
+Compaction merges every file in a bucket into one fresh delta when the file count exceeds `DEFAULT_COMPACTION_THRESHOLD` (16). It runs in two places:
+
+1. **Per-tokenise trigger** (`tokenise_column`, after `add_reference`): catches buckets that crossed the threshold during the current session. Cheap when below threshold — just a directory listing.
+2. **Startup trigger** (`main.py` lifespan, alongside `sweep_unreferenced`): walks every per-user bucket and compacts those over threshold. Catches cross-session accumulation.
+
+Both triggers go through `compact_bucket_if_needed` / `compact_all_buckets` in `tokens_cache.py`. The merge logic is:
+- Read the union of every file in the bucket and dedupe by `__ldaca_content_hash__`.
+- Write the merged content to a fresh `<bucket>__delta__<uuid>.parquet`.
+- Delete the prior files.
+
+No lock is taken on compaction — the new delta file is brand-new (no concurrent writer targets it) and the old files are only deleted after the new one lands. Readers racing with compaction see either the old files, the new merged delta, or both; the Rust expression's `load_cache_map` dedupes by hash on read (first-writer-wins) so duplication is harmless.
 
 ## 6) Python integration
 

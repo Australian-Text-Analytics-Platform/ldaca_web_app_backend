@@ -224,21 +224,6 @@ def _new_delta_path(user_id: str, bucket: str) -> Path:
     return tokens_cache_dir(user_id) / f"{bucket}{DELTA_INFIX}{uuid.uuid4().hex}.parquet"
 
 
-def _bucket_from_cache_filename(filename: str) -> str:
-    """Inverse of :func:`_new_delta_path` + the legacy single-file layout.
-
-    Maps either form back to the bucket key it belongs to:
-    * ``<bucket>.parquet`` (legacy) → ``<bucket>``
-    * ``<bucket>__delta__<uuid>.parquet`` (new) → ``<bucket>``
-
-    Used by sweep to map files on disk back to manifest bucket entries.
-    """
-    stem = filename[: -len(".parquet")] if filename.endswith(".parquet") else filename
-    if DELTA_INFIX in stem:
-        return stem.split(DELTA_INFIX, 1)[0]
-    return stem
-
-
 # --------------------------------------------------------------------------- #
 # File locks                                                                  #
 # --------------------------------------------------------------------------- #
@@ -475,60 +460,63 @@ def drop_node_references(
         _write_manifest_unlocked(user_id, manifest)
 
 
-def touch_access(user_id: str, filename: str) -> None:
-    """Update ``last_accessed_at`` without changing references — call
-    on every cache hit so the LRU-sweep doesn't evict hot files.
-
-    Accepts either the legacy filename or the bucket key.
-    """
-    bucket = _bucket_key_from_filename(filename)
-    with _file_lock(_manifest_path(user_id)):
-        manifest = _read_manifest_unlocked(user_id)
-        entries = manifest.get("entries", {})
-        if bucket not in entries:
-            return
-        entries[bucket]["last_accessed_at"] = _now_iso()
-        _write_manifest_unlocked(user_id, manifest)
-
-
 # --------------------------------------------------------------------------- #
-# Cache I/O                                                                   #
+# Compaction                                                                  #
 # --------------------------------------------------------------------------- #
 
 
-def cache_exists(user_id: str, model: str, params: dict) -> bool:
-    """True iff *any* cache file exists for the bucket — legacy single
-    file or any of the new delta files."""
-    return len(_bucket_files(user_id, _bucket_key(model, params))) > 0
+def compact_bucket_if_needed(
+    user_id: str,
+    model: str,
+    params: dict,
+    *,
+    threshold: int = DEFAULT_COMPACTION_THRESHOLD,
+) -> bool:
+    """Public entry point — merge a bucket's many small delta files back
+    into one when the file count exceeds ``threshold``. Returns True iff
+    a merge actually happened.
 
-
-def read_cached_hashes(user_id: str, model: str, params: dict) -> set[int]:
-    """Return the set of content-hashes covered by any file in the bucket.
-
-    Used by :func:`derived_columns.tokenise_column` to decide which
-    source rows need fresh tokenisation. Empty set when the bucket has
-    no files yet.
+    Called from `tokenise_column` after each registration (per-tokenise
+    trigger) and from the backend startup sweep (per-session trigger).
+    See `docs/developer-guide/lazy-tokenisation-refactor.md`.
     """
-    files = _bucket_files(user_id, _bucket_key(model, params))
-    if not files:
-        return set()
-    df = (
-        pl.scan_parquet([str(p) for p in files])
-        .select(CONTENT_HASH_COLUMN)
-        .unique()
-        .collect()
+    return _compact_bucket_if_needed(
+        user_id, _bucket_key(model, params), threshold=threshold
     )
-    return set(int(h) for h in df.get_column(CONTENT_HASH_COLUMN).to_list())
 
 
-def _bucket_total_size(user_id: str, bucket: str) -> int:
-    total = 0
-    for p in _bucket_files(user_id, bucket):
-        try:
-            total += p.stat().st_size
-        except OSError:
-            continue
-    return total
+def compact_all_buckets(
+    user_id: Optional[str] = None,
+    *,
+    threshold: int = DEFAULT_COMPACTION_THRESHOLD,
+) -> dict[str, int]:
+    """Scan every bucket for ``user_id`` (or every user when ``None``)
+    and compact those over ``threshold``. Returns ``{user_id: compacted_count}``.
+
+    Cheap when buckets are below threshold — just a directory listing
+    per bucket. Designed for the backend startup hook.
+    """
+    if user_id is None:
+        results: dict[str, int] = {}
+        for uid in _all_user_ids_with_cache():
+            results[uid] = _compact_all_buckets_for_user(uid, threshold=threshold)
+        return results
+    return {user_id: _compact_all_buckets_for_user(user_id, threshold=threshold)}
+
+
+def _compact_all_buckets_for_user(user_id: str, *, threshold: int) -> int:
+    """Walk every bucket under ``user_id``'s cache dir and compact those
+    over ``threshold``. Returns the count of buckets compacted."""
+    cache_dir = tokens_cache_dir(user_id)
+    seen_buckets: set[str] = set()
+    for path in cache_dir.glob("*.parquet"):
+        bucket = _bucket_key_from_filename(path.name).split(DELTA_INFIX, 1)[0]
+        seen_buckets.add(bucket)
+    compacted = 0
+    for bucket in seen_buckets:
+        if _compact_bucket_if_needed(user_id, bucket, threshold=threshold):
+            compacted += 1
+    return compacted
 
 
 def _compact_bucket_if_needed(
@@ -536,25 +524,27 @@ def _compact_bucket_if_needed(
     bucket: str,
     *,
     threshold: int = DEFAULT_COMPACTION_THRESHOLD,
-) -> None:
+) -> bool:
     """Merge a bucket's many small delta files back into one when the
-    file count exceeds ``threshold``.
+    file count exceeds ``threshold``. Returns True iff a merge happened.
 
     Strategy:
     * Read the union of all current bucket files and dedupe by hash.
     * Write the merged content to one fresh delta file.
     * Delete the prior files.
 
-    A reader racing with compaction sees either the old files, the new
-    merged delta, or both — the read-side ``.unique()`` in
-    :func:`tokens_cache_lazyframe` cleans up any duplication, and the
-    files are immutable so no read sees torn bytes. We do not lock here
-    because the new file is brand-new and the old files are only
-    deleted *after* it lands.
+    A reader racing with compaction (the Rust lazy expression
+    `tokenize_with_cache_lookup` building its in-memory cache map) sees
+    either the old files, the new merged delta, or both — `load_cache_map`
+    dedupes by hash on read with first-writer-wins, and parquet writes
+    are atomic-on-close (tmp + rename) so partial writes never expose
+    torn data. We do not take the bucket flock here because the new
+    delta file is brand-new (no concurrent writer can target it) and
+    the old files are only deleted *after* it lands.
     """
     files = _bucket_files(user_id, bucket)
     if len(files) <= threshold:
-        return
+        return False
     try:
         merged = (
             pl.scan_parquet([str(p) for p in files])
@@ -563,7 +553,7 @@ def _compact_bucket_if_needed(
         )
     except Exception as exc:
         logger.warning("compaction: failed to read bucket %s: %s", bucket, exc)
-        return
+        return False
     new_path = _new_delta_path(user_id, bucket)
     try:
         _atomic_write_parquet(merged, new_path)
@@ -571,7 +561,7 @@ def _compact_bucket_if_needed(
         logger.warning(
             "compaction: failed to write merged delta for %s: %s", bucket, exc
         )
-        return
+        return False
     for old in files:
         try:
             old.unlink()
@@ -583,112 +573,13 @@ def _compact_bucket_if_needed(
                 old,
                 exc,
             )
-
-
-def write_or_append_cache(
-    user_id: str,
-    model: str,
-    params: dict,
-    new_rows: pl.DataFrame,
-) -> Path:
-    """Persist freshly-tokenised rows for the (model, params) bucket.
-
-    ``new_rows`` must carry exactly ``CONTENT_HASH_COLUMN`` and a
-    ``tokens`` list-of-struct column. Each call writes a brand-new
-    ``<bucket>__delta__<uuid>.parquet`` rather than read-merging into a
-    single shared file — so concurrent writers never race over the same
-    bytes, and readers can never observe a torn parquet during a
-    rewrite. Cross-row deduplication happens lazily on read.
-
-    Returns the canonical bucket path (``<bucket>.parquet`` — may not
-    exist on disk) so callers can store a stable identifier in derived
-    metadata.
-    """
-    expected_cols = {CONTENT_HASH_COLUMN, "tokens"}
-    missing = expected_cols - set(new_rows.columns)
-    if missing:
-        raise ValueError(
-            f"write_or_append_cache: new_rows missing columns {sorted(missing)}; "
-            f"got {new_rows.columns}"
-        )
-
-    bucket = _bucket_key(model, params)
-    bucket_path = cache_path(user_id, model, params)
-
-    if new_rows.height == 0:
-        # Nothing to write — but still bump the manifest's
-        # ``last_accessed_at`` so the sweep doesn't reap a hot bucket.
-        with _file_lock(_manifest_path(user_id)):
-            manifest = _read_manifest_unlocked(user_id)
-            entry = _ensure_entry(
-                manifest, bucket, size_bytes=_bucket_total_size(user_id, bucket)
-            )
-            entry["last_accessed_at"] = _now_iso()
-            _write_manifest_unlocked(user_id, manifest)
-        return bucket_path
-
-    delta_path = _new_delta_path(user_id, bucket)
-    _atomic_write_parquet(new_rows, delta_path)
-
-    with _file_lock(_manifest_path(user_id)):
-        manifest = _read_manifest_unlocked(user_id)
-        entry = _ensure_entry(
-            manifest, bucket, size_bytes=_bucket_total_size(user_id, bucket)
-        )
-        entry["size_bytes"] = _bucket_total_size(user_id, bucket)
-        entry["last_accessed_at"] = _now_iso()
-        _write_manifest_unlocked(user_id, manifest)
-
-    _compact_bucket_if_needed(user_id, bucket)
-
-    return bucket_path
-
-
-def tokens_cache_lazyframe(
-    user_id: str, model: str, params: dict
-) -> Optional[pl.LazyFrame]:
-    """LazyFrame unioning every file in the bucket, deduplicated by hash.
-
-    Schema: ``CONTENT_HASH_COLUMN, tokens``. Join your source frame on
-    ``CONTENT_HASH_COLUMN`` to attach tokens without re-tokenising.
-    Returns ``None`` when the bucket has no files.
-
-    The read-side ``.unique()`` makes concurrent writers safe: even if
-    two delta files contain the same hash (two requests independently
-    tokenised the same row), the join sees one row per hash.
-
-    A `list.eval` pass strips the SentencePiece word-boundary marker
-    ``\\u2581`` (``▁``) that HuggingFace SentencePiece-based tokenisers
-    (XLM-R, mBERT-base-multilingual via SP, T5, etc.) prepend to
-    word-start tokens. The marker is added by the tokeniser, not
-    present in the source text, so removing it leaves the per-token
-    `start`/`end` character offsets unchanged. WordPiece-style models
-    (BERT) don't use this marker so the strip is a no-op for them.
-    Applied here (read side) rather than at write so existing buckets
-    written before the fix start returning clean tokens immediately.
-    """
-    files = _bucket_files(user_id, _bucket_key(model, params))
-    if not files:
-        return None
-    # ``_bucket_files`` returns oldest-first, so ``keep="first"`` matches the
-    # pre-delta semantics where the earliest write of a given content hash
-    # was the canonical one (later writes were silently skipped by the old
-    # read-merge-replace path).
-    return (
-        pl.scan_parquet([str(p) for p in files])
-        .unique(subset=[CONTENT_HASH_COLUMN], keep="first")
-        .with_columns(
-            pl.col("tokens").list.eval(
-                pl.struct(
-                    pl.element().struct.field("token")
-                    .str.strip_prefix("▁")
-                    .alias("token"),
-                    pl.element().struct.field("start").alias("start"),
-                    pl.element().struct.field("end").alias("end"),
-                )
-            )
-        )
+    logger.info(
+        "compaction: bucket %s merged %d files -> 1 (user=%s)",
+        bucket,
+        len(files),
+        user_id,
     )
+    return True
 
 
 # --------------------------------------------------------------------------- #
@@ -873,20 +764,18 @@ def _reset_for_tests(user_id: str) -> None:
 __all__ = [
     "CACHE_ROOT_ENV",
     "CONTENT_HASH_COLUMN",
+    "DEFAULT_COMPACTION_THRESHOLD",
     "TOKENS_CACHE_SCHEMA",
     "TOKENS_CACHE_SUBDIR",
     "CacheReference",
     "add_reference",
-    "cache_exists",
     "cache_filename",
     "cache_path",
+    "compact_all_buckets",
+    "compact_bucket_if_needed",
     "drop_node_references",
     "drop_reference",
     "drop_workspace_references",
-    "read_cached_hashes",
     "sweep_unreferenced",
     "tokens_cache_dir",
-    "tokens_cache_lazyframe",
-    "touch_access",
-    "write_or_append_cache",
 ]
