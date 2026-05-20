@@ -671,6 +671,16 @@ def tokens_cache_lazyframe(
     The read-side ``.unique()`` makes concurrent writers safe: even if
     two delta files contain the same hash (two requests independently
     tokenised the same row), the join sees one row per hash.
+
+    A `list.eval` pass strips the SentencePiece word-boundary marker
+    ``\\u2581`` (``▁``) that HuggingFace SentencePiece-based tokenisers
+    (XLM-R, mBERT-base-multilingual via SP, T5, etc.) prepend to
+    word-start tokens. The marker is added by the tokeniser, not
+    present in the source text, so removing it leaves the per-token
+    `start`/`end` character offsets unchanged. WordPiece-style models
+    (BERT) don't use this marker so the strip is a no-op for them.
+    Applied here (read side) rather than at write so existing buckets
+    written before the fix start returning clean tokens immediately.
     """
     files = _bucket_files(user_id, _bucket_key(model, params))
     if not files:
@@ -679,8 +689,20 @@ def tokens_cache_lazyframe(
     # pre-delta semantics where the earliest write of a given content hash
     # was the canonical one (later writes were silently skipped by the old
     # read-merge-replace path).
-    return pl.scan_parquet([str(p) for p in files]).unique(
-        subset=[CONTENT_HASH_COLUMN], keep="first"
+    return (
+        pl.scan_parquet([str(p) for p in files])
+        .unique(subset=[CONTENT_HASH_COLUMN], keep="first")
+        .with_columns(
+            pl.col("tokens").list.eval(
+                pl.struct(
+                    pl.element().struct.field("token")
+                    .str.strip_prefix("▁")
+                    .alias("token"),
+                    pl.element().struct.field("start").alias("start"),
+                    pl.element().struct.field("end").alias("end"),
+                )
+            )
+        )
     )
 
 
