@@ -181,17 +181,20 @@ def tokenise_column(
         node.unregister_derived_column(existing)
     node.data = new_lf
 
-    node.register_derived_column(
-        derived_name,
-        {  # type: ignore[arg-type]
-            "source_column": source_column,
-            "form": TOKENS_FORM,
-            "model": model,
-            "language": language,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "cache_filename": cache_path.name,
-        },
-    )
+    derived_meta: dict = {
+        "source_column": source_column,
+        "form": TOKENS_FORM,
+        "model": model,
+        "language": language,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "cache_filename": cache_path.name,
+    }
+    if _lazy_tokenise_enabled():
+        # Tag the metadata so Phase 2.5's auto-migration walker on
+        # subsequent workspace loads can skip this node (already lazy).
+        # See `tokens_lazy_migration.PLAN_SHAPE_LAZY_V1`.
+        derived_meta["plan_shape"] = "lazy_v1"
+    node.register_derived_column(derived_name, derived_meta)  # type: ignore[arg-type]
 
     # Reference the cache so the sweep keeps it alive while this node
     # is using it. ``workspace_id`` is optional in unit-test contexts

@@ -29,6 +29,16 @@ from .utils import (
     get_user_workspace_folder,
 )
 
+# `.derived_columns` and `.tokens_lazy_migration` are imported lazily
+# from inside `set_current_workspace` to break the import cycle:
+#   workspace.py
+#     → derived_columns
+#       → api.workspaces.analyses.generated_columns
+#         → api.workspaces.__init__
+#           → core.workspace (this module)
+# The lazy import is the smallest local change; the cycle is structural
+# and predates this refactor.
+
 logger = logging.getLogger(__name__)
 
 
@@ -192,6 +202,21 @@ class WorkspaceManager:
 
             # 4. Full load (deserialize nodes — paths are now correct).
             new_ws = Workspace.load(updated_dir)
+            # 4b. Phase 2.5 — when the lazy-tokenisation flag is on,
+            # walk every tokenised node and overlay the lazy expression
+            # so subsequent collects materialise tokens via the lazy
+            # path instead of the eager hash-join. Idempotent: nodes
+            # already marked `plan_shape: lazy_v1` are skipped. The
+            # walk is best-effort — exceptions are logged + swallowed
+            # so a single bad node never blocks opening the workspace.
+            # Lazy imports break the circular dep (see top-of-file note).
+            from .derived_columns import _lazy_tokenise_enabled
+            from .tokens_lazy_migration import (
+                migrate_workspace_to_lazy_for_user,
+            )
+
+            if _lazy_tokenise_enabled():
+                migrate_workspace_to_lazy_for_user(new_ws, user_id)
             self._attach_workspace_dir(new_ws, updated_dir)
             self._set_cached_path(user_id, workspace_id, updated_dir)
         except Exception as e:  # pragma: no cover
