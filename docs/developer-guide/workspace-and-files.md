@@ -31,6 +31,20 @@ state. It should resolve the user's workspace through `workspace_manager`.
 - sample-data and demo-snapshot import,
 - LDaCA RO-Crate import through a background worker task.
 
+LDaCA import is backed by the LDaCA Data Portal Oni API. The files router
+exposes `/files/ldaca/featured` for staff-picked collections,
+`/files/ldaca/search` for keyword and identifier portal searches, and
+`/files/import-ldaca` to submit the selected ARCP identifier as a background
+task. Search responses include collection and file-format metadata so the
+frontend can filter returned results without exposing Oni credentials. API keys
+or bearer tokens stay in backend settings; the frontend never calls Oni
+directly.
+
+The import worker fetches RO-Crate metadata through Oni, loads the backend-owned
+`ldaca_tabular_configs` resource, tabulates metadata with the vendored
+`rocrate-tabular` package, and writes the selected table to
+`LDaCA/<corpus>/<corpus>.parquet` in the user's data folder.
+
 The file router validates paths against the user's data root to avoid path
 traversal. Data preview prefers lazy Polars scans where possible and collects
 only for preview serialization.

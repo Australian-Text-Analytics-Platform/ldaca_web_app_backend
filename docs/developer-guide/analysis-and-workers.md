@@ -31,6 +31,10 @@ Registered worker tasks include:
 - quotation detach and materialization,
 - topic modeling.
 
+The LDaCA import worker uses `core/oni_client.py` to retrieve RO-Crate metadata
+from the LDaCA Oni API, then invokes the vendored `rocrate-tabular` converter.
+Keep new LDaCA import work in that Oni plus `rocrate-tabular` path.
+
 Worker functions should be picklable, import heavy modules inside the worker
 body, report progress through the provided queue, and write large outputs to
 artifacts instead of returning huge payloads.

@@ -99,6 +99,7 @@ def ldaca_import_task(
     workspace_id: str,
     url: str,
     filename: str | None = None,
+    api_token: str | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
@@ -109,6 +110,7 @@ def ldaca_import_task(
         workspace_id,
         url,
         filename,
+        api_token,
         cb,
     )
 

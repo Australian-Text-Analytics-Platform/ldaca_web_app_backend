@@ -68,6 +68,7 @@ def test_import_ldaca_starts_background_task_under_user_scope(client: TestClient
     ):
         response = client.post(
             "/api/files/import-ldaca",
+            headers={"X-LDACA-API-Token": " portal-token "},
             json={"url": "https://example.org/dataset.zip"},
         )
 
@@ -77,6 +78,10 @@ def test_import_ldaca_starts_background_task_under_user_scope(client: TestClient
     assert payload["metadata"]["task_id"] == "task-123"
     get_task_manager.assert_called_once_with("test_user")
     mock_tm.submit_task.assert_awaited_once()
+    await_args = mock_tm.submit_task.await_args
+    assert await_args is not None
+    submit_kwargs = await_args.kwargs
+    assert submit_kwargs["task_args"]["api_token"] == "portal-token"
 
 
 def test_import_ldaca_ignores_current_workspace_for_task_scope(client: TestClient):
@@ -136,3 +141,84 @@ def test_list_files_tasks_returns_user_scope_tasks(client: TestClient):
     assert payload["state"] == "successful"
     assert payload["data"][0]["task_id"] == "task-abc"
     mock_user_tm.list.assert_awaited_once_with(user_id="test_user")
+
+
+def test_ldaca_featured_returns_staff_picked_collections(client: TestClient):
+    """Featured LDaCA collections should be served through the backend proxy."""
+    from ldaca_wordflow.api import files as files_api
+
+    fake_client = MagicMock()
+    fake_client.featured_collections = AsyncMock(
+        return_value=[
+            {
+                "id": "arcp://name,hdl10.26180~23961609",
+                "crate_id": "arcp://name,hdl10.26180~23961609",
+                "title": "A COrpus of Oz Early English (COOEE)",
+                "description": "Historical English corpus",
+                "types": ["Dataset", "RepositoryCollection"],
+                "license": "https://creativecommons.org/licenses/by/4.0/",
+                "importable": True,
+                "stats": {"documents": 600},
+            }
+        ]
+    )
+
+    with patch.object(
+        files_api.OniClient, "from_settings", return_value=fake_client
+    ) as from_settings:
+        response = client.get("/api/files/ldaca/featured")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "successful"
+    assert payload["data"][0]["title"] == "A COrpus of Oz Early English (COOEE)"
+    from_settings.assert_called_once_with(files_api.settings, token=None)
+    fake_client.featured_collections.assert_awaited_once()
+
+
+def test_ldaca_search_proxies_typed_search(client: TestClient):
+    """Search requests should preserve the requested method and query."""
+    from ldaca_wordflow.api import files as files_api
+    from ldaca_wordflow.core.oni_client import OniSearchMethod
+
+    fake_client = MagicMock()
+    fake_client.search = AsyncMock(
+        return_value=[
+            {
+                "id": "arcp://name,hdl10.26180~23961609",
+                "crate_id": "arcp://name,hdl10.26180~23961609",
+                "title": "A COrpus of Oz Early English (COOEE)",
+                "description": None,
+                "types": ["Dataset"],
+                "license": None,
+                "importable": True,
+                "stats": {},
+            }
+        ]
+    )
+
+    with patch.object(
+        files_api.OniClient, "from_settings", return_value=fake_client
+    ) as from_settings:
+        response = client.post(
+            "/api/files/ldaca/search",
+            headers={"X-LDACA-API-Token": "portal-token"},
+            json={
+                "method": "identifier",
+                "query": "https://data.ldaca.edu.au/collection?id=arcp%3A%2F%2Fname%2Chdl10.26180~23961609",
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["state"] == "successful"
+    assert payload["data"][0]["id"] == "arcp://name,hdl10.26180~23961609"
+    from_settings.assert_called_once_with(files_api.settings, token="portal-token")
+    fake_client.search.assert_awaited_once_with(
+        method=OniSearchMethod.IDENTIFIER,
+        query="https://data.ldaca.edu.au/collection?id=arcp%3A%2F%2Fname%2Chdl10.26180~23961609",
+        limit=10,
+        offset=0,
+    )

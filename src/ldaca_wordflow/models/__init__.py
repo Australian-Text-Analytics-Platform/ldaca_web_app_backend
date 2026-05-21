@@ -138,6 +138,7 @@ class SampleDataCatalogueResponse(BaseModel):
 # snapshot folder (``get_user_snapshots_folder``) so each tool's Load
 # dialog picks them up automatically.
 
+
 class DemoSnapshotEntry(BaseModel):
     """A single demo-snapshot bundle in the catalogue."""
 
@@ -210,6 +211,33 @@ class DataFileInfo(BaseModel):
 class LDaCAImportRequest(BaseModel):
     url: str
     filename: Optional[str] = None
+
+
+class OniSearchRequest(BaseModel):
+    method: str = Field(default="keyword")
+    query: str = Field(default="")
+    limit: int = Field(default=25, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+
+
+class OniSearchResult(BaseModel):
+    id: str
+    crate_id: str | None = None
+    title: str
+    description: str | None = None
+    types: list[str] = Field(default_factory=list)
+    license: str | None = None
+    importable: bool = True
+    access: dict[str, Any] | None = None
+    collections: list[str] = Field(default_factory=list)
+    file_formats: list[str] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class OniSearchResponse(BaseModel):
+    state: str
+    data: list[OniSearchResult]
+    message: str
 
 
 class FileTreeNodeResponse(BaseModel):
@@ -700,7 +728,15 @@ class SequentialAnalysisRequest(BaseModel):
     # client-side coarsening in the viewer. Live users wanting per-second
     # buckets can still reach them via the ``custom`` flow.
     frequency: Literal[
-        "second", "minute", "hourly", "daily", "weekly", "monthly", "quarterly", "yearly", "custom"
+        "second",
+        "minute",
+        "hourly",
+        "daily",
+        "weekly",
+        "monthly",
+        "quarterly",
+        "yearly",
+        "custom",
     ] = "monthly"
     sort_by_time: bool = True
     column_type: Literal["datetime", "numeric"] = "datetime"
@@ -1130,7 +1166,9 @@ class AiAnnotationResponse(BaseModel):
 class TopicModelingRequest(BaseModel):
     node_ids: List[str]  # 1 or 2 node IDs
     node_columns: Dict[str, str]  # Maps node_id -> column_name
-    min_topic_size: Optional[int] = 10  # kept for backwards compat; ignored when topic_size_mode != "min"
+    min_topic_size: Optional[int] = (
+        10  # kept for backwards compat; ignored when topic_size_mode != "min"
+    )
     random_seed: Optional[int] = 42
     representative_words_count: Optional[int] = 5
     # Sampling: one entry per corpus in node_ids order. None = no sampling for that corpus.

@@ -19,6 +19,7 @@ def test_user_preferences_defaults_language_and_tokenizer_to_none() -> None:
     prefs = UserPreferences()
     assert prefs.default_language is None
     assert prefs.default_tokenizer_model is None
+    assert prefs.ldaca_oni_api_token is None
 
 
 def test_merge_preferences_sets_default_language() -> None:
@@ -49,6 +50,21 @@ def test_merge_preferences_none_means_no_change() -> None:
     assert merged.favorite_workspaces == ["a"]
 
 
+def test_merge_preferences_sets_and_clears_ldaca_token() -> None:
+    current = UserPreferences()
+    saved = merge_preferences(
+        current,
+        UserPreferencesUpdate(ldaca_oni_api_token="portal-token"),
+    )
+    assert saved.ldaca_oni_api_token == "portal-token"
+
+    cleared = merge_preferences(
+        saved,
+        UserPreferencesUpdate(ldaca_oni_api_token=None),
+    )
+    assert cleared.ldaca_oni_api_token is None
+
+
 def test_round_trip_json_serialisation() -> None:
     """Persistence + REST contract: fields round-trip through JSON without
     surprises."""
@@ -60,6 +76,7 @@ def test_round_trip_json_serialisation() -> None:
     rehydrated = UserPreferences.model_validate_json(serialized)
     assert rehydrated.default_language == "zh"
     assert rehydrated.default_tokenizer_model == "jieba"
+    assert rehydrated.ldaca_oni_api_token is None
 
 
 def test_legacy_preferences_without_new_fields_load_with_defaults() -> None:
@@ -69,3 +86,4 @@ def test_legacy_preferences_without_new_fields_load_with_defaults() -> None:
     prefs = UserPreferences.model_validate_json(legacy_json)
     assert prefs.default_language is None
     assert prefs.default_tokenizer_model is None
+    assert prefs.ldaca_oni_api_token is None

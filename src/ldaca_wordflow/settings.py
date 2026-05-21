@@ -4,6 +4,8 @@ Settings are loaded from environment variables with sensible defaults.
 Users are responsible for setting environment variables themselves.
 """
 
+import json
+import re
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
@@ -137,6 +139,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # LDaCA Data Portal / Oni API configuration
+    ldaca_oni_api_base_url: str = Field(
+        default="https://data.ldaca.edu.au/api",
+        description="Base URL for the LDaCA Data Portal Oni API",
+    )
+    ldaca_oni_api_token: str | None = Field(
+        default=None,
+        description="Optional bearer token for LDaCA Oni API requests",
+    )
+    ldaca_oni_timeout: float = Field(
+        default=30.0,
+        description="Timeout (seconds) for LDaCA Oni API requests",
+    )
+    ldaca_oni_default_limit: int = Field(
+        default=25,
+        description="Default result limit for LDaCA Oni searches",
+    )
+    ldaca_oni_download_concurrency: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description="Concurrent text-file downloads for LDaCA Oni imports",
+    )
+    ldaca_oni_featured_collection_ids: str = Field(
+        default="arcp://name,hdl10.26180~23961609",
+        description="Featured LDaCA collection crate ids as JSON, semicolon, or newline separated values",
+    )
+
     model_config = SettingsConfigDict(
         case_sensitive=False,
         extra="ignore",
@@ -218,6 +248,26 @@ class Settings(BaseSettings):
             for email in self.admin_emails.split(",")
             if email.strip()
         }
+
+    def get_ldaca_oni_featured_collection_ids(self) -> list[str]:
+        """Return normalized staff-picked LDaCA collection ids."""
+        raw_collection_ids = self.ldaca_oni_featured_collection_ids.strip()
+        if not raw_collection_ids:
+            return []
+
+        if raw_collection_ids.startswith("["):
+            parsed_collection_ids = json.loads(raw_collection_ids)
+            return [
+                str(collection_id).strip()
+                for collection_id in parsed_collection_ids
+                if str(collection_id).strip()
+            ]
+
+        return [
+            collection_id.strip()
+            for collection_id in re.split(r"[;\n]+", raw_collection_ids)
+            if collection_id.strip()
+        ]
 
 
 # Global settings instance

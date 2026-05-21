@@ -5,13 +5,14 @@ import logging
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import polars as pl
 from fastapi import (
     APIRouter,
     BackgroundTasks,
     Depends,
+    Header,
     HTTPException,
     Query,
     UploadFile,
@@ -24,6 +25,7 @@ except Exception:  # pragma: no cover - optional import hardening
     fastexcel: Any | None = None
 
 from ..core.auth import get_current_user
+from ..core.oni_client import OniClient, OniSearchMethod
 from ..core.utils import (
     detect_file_type,
     download_remote_sample_data,
@@ -57,15 +59,76 @@ from ..models import (
     LDaCAImportRequest,
     MessageResponse,
     MoveFileRequest,
+    OniSearchRequest,
+    OniSearchResponse,
     SampleDataCatalogueResponse,
     SampleDataCollection,
     SampleDataFileEntry,
 )
+from ..settings import settings
 
 router = APIRouter(prefix="/files", tags=["file_management"])
 logger = logging.getLogger(__name__)
 
 README_FILENAME = "README.md"
+LDACA_API_TOKEN_HEADER = "X-LDACA-API-Token"
+
+
+def _normalise_ldaca_api_token(api_token: str | None) -> str | None:
+    return api_token.strip() if api_token and api_token.strip() else None
+
+
+def _ldaca_oni_client(api_token: str | None) -> OniClient:
+    return OniClient.from_settings(
+        settings, token=_normalise_ldaca_api_token(api_token)
+    )
+
+
+@router.get("/ldaca/featured", response_model=OniSearchResponse)
+async def list_ldaca_featured_collections(
+    current_user: dict = Depends(get_current_user),
+    ldaca_api_token: Annotated[str | None, Header(alias=LDACA_API_TOKEN_HEADER)] = None,
+):
+    """Return staff-picked LDaCA collections for the import dialog."""
+    del current_user
+    client = _ldaca_oni_client(ldaca_api_token)
+    data = await client.featured_collections(
+        settings.get_ldaca_oni_featured_collection_ids()
+    )
+    return {
+        "state": "successful",
+        "data": data,
+        "message": "LDaCA featured collections loaded",
+    }
+
+
+@router.post("/ldaca/search", response_model=OniSearchResponse)
+async def search_ldaca_collections(
+    request: OniSearchRequest,
+    current_user: dict = Depends(get_current_user),
+    ldaca_api_token: Annotated[str | None, Header(alias=LDACA_API_TOKEN_HEADER)] = None,
+):
+    """Search LDaCA records through the backend ONI proxy."""
+    del current_user
+    try:
+        method = OniSearchMethod(request.method)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="Unsupported LDaCA search method"
+        ) from exc
+
+    client = _ldaca_oni_client(ldaca_api_token)
+    data = await client.search(
+        method=method,
+        query=request.query,
+        limit=request.limit,
+        offset=request.offset,
+    )
+    return {
+        "state": "successful",
+        "data": data,
+        "message": "LDaCA search completed",
+    }
 
 
 def _delete_parent_folder_if_redundant(file_path: Path, data_folder: Path) -> None:
@@ -987,6 +1050,7 @@ async def import_demo_snapshots(
 async def import_ldaca_dataset(
     request: LDaCAImportRequest,
     current_user: dict = Depends(get_current_user),
+    ldaca_api_token: Annotated[str | None, Header(alias=LDACA_API_TOKEN_HEADER)] = None,
 ):
     """Submit background task to import LDaCA dataset from URL.
 
@@ -1004,7 +1068,11 @@ async def import_ldaca_dataset(
         user_id=user_id,
         workspace_id=workspace_id,
         task_type="ldaca_import",
-        task_args={"url": request.url, "filename": request.filename},
+        task_args={
+            "url": request.url,
+            "filename": request.filename,
+            "api_token": _normalise_ldaca_api_token(ldaca_api_token),
+        },
     )
 
     return {

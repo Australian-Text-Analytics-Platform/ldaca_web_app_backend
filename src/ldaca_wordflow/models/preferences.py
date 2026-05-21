@@ -41,6 +41,7 @@ class UserPreferences(BaseModel):
     # English users see no behaviour change.
     default_language: str | None = None
     default_tokenizer_model: str | None = None
+    ldaca_oni_api_token: str | None = None
     # Demo-snapshot master switch. Default off — the analytic tools'
     # Save/Load buttons are unmounted entirely until the user opts in
     # via the sidebar dropdown menu. See ``docs/snapshot-view/plan.md``
@@ -67,6 +68,7 @@ class UserPreferencesUpdate(BaseModel):
     quotation: QuotationPreferences | None = None
     default_language: str | None = None
     default_tokenizer_model: str | None = None
+    ldaca_oni_api_token: str | None = None
     demo_snapshots_enabled: bool | None = None
 
     model_config = ConfigDict(extra="forbid")

@@ -1466,17 +1466,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ldaca-loader"
-version = "0.1.0"
-source = { git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator?branch=ldaca_web_app_integration#b1efdffa6c3ca235603b084dff636ed8d93bccfb" }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "pandas" },
-    { name = "requests" },
-    { name = "rocrate-tabular" },
-]
-
-[[package]]
 name = "ldaca-wordflow"
 version = "0.5.0"
 source = { editable = "." }
@@ -1496,6 +1485,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pyarrow" },
     { name = "pydantic-settings" },
+    { name = "rocrate-tabular" },
     { name = "sentence-transformers" },
     { name = "spacy" },
     { name = "tbb", marker = "sys_platform != 'darwin'" },
@@ -1507,9 +1497,6 @@ dependencies = [
 deploy = [
     { name = "ipython" },
     { name = "jupyter-server-proxy" },
-]
-ldaca = [
-    { name = "ldaca-loader" },
 ]
 
 [package.dev-dependencies]
@@ -1530,7 +1517,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "ipython", marker = "extra == 'deploy'", specifier = ">=9.5.0" },
     { name = "jupyter-server-proxy", marker = "extra == 'deploy'", specifier = ">=4.4.0" },
-    { name = "ldaca-loader", marker = "extra == 'ldaca'", git = "https://github.com/Australian-Text-Analytics-Platform/ldaca-tabulator?branch=ldaca_web_app_integration" },
     { name = "onnxruntime", specifier = ">=1.18.0" },
     { name = "openai", specifier = ">=2.26.0" },
     { name = "polars", extras = ["rtcompat"], specifier = ">=1.40.0" },
@@ -1538,13 +1524,14 @@ requires-dist = [
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "pyarrow", specifier = ">=16.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
+    { name = "rocrate-tabular", directory = "src/ldaca_wordflow/_vendor/rocrate-tabular" },
     { name = "sentence-transformers", specifier = ">=3.0.0" },
     { name = "spacy", specifier = ">=3.7.0" },
     { name = "tbb", marker = "sys_platform != 'darwin'", specifier = ">=2022.3.1" },
     { name = "tokenizers", specifier = ">=0.21.0" },
     { name = "xlsxwriter", specifier = ">=3.2.0" },
 ]
-provides-extras = ["ldaca", "deploy"]
+provides-extras = ["deploy"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2153,7 +2140,7 @@ name = "pexpect"
 version = "4.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "ptyprocess" },
+    { name = "ptyprocess", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/42/92/cc564bf6381ff43ce1f4d06852fc19a2f11d180f23dc32d9588bee2f149d/pexpect-4.9.0.tar.gz", hash = "sha256:ee7d41123f3c9911050ea2c2dac107568dc43b2d3b0c7557a33212c398ead30f", size = 166450, upload-time = "2023-11-25T09:07:26.339Z" }
 wheels = [
@@ -2968,12 +2955,28 @@ wheels = [
 [[package]]
 name = "rocrate-tabular"
 version = "0.1.4"
-source = { git = "https://github.com/AttiqUrRehmann/rocrate-tabular.git?rev=optimise_entity_table#79e7f0beb8bf132cb5f1111ad11e813413f08fa4" }
+source = { directory = "src/ldaca_wordflow/_vendor/rocrate-tabular" }
 dependencies = [
     { name = "requests" },
     { name = "sqlite-utils" },
     { name = "tinycrate" },
     { name = "tqdm" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "requests", specifier = ">=2.32.3" },
+    { name = "sqlite-utils", specifier = ">=3.37" },
+    { name = "tinycrate", specifier = "==0.1.2" },
+    { name = "tqdm", specifier = ">=4.67.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pre-commit", specifier = ">=4.0.1" },
+    { name = "pytest", specifier = ">=8.3.3" },
+    { name = "pytest-httpserver", specifier = ">=1.1.0" },
+    { name = "ruff", specifier = ">=0.7.4" },
 ]
 
 [[package]]
@@ -3475,15 +3478,15 @@ wheels = [
 
 [[package]]
 name = "tinycrate"
-version = "0.1.5"
+version = "0.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests" },
     { name = "types-requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/dc/06/54d337009d9e2820e982a37e7573cb057ecc495c2625ee1fd692de2b05ab/tinycrate-0.1.5.tar.gz", hash = "sha256:77000044048c8f097416bf9f9d87299d661cf90e6c7c505bdf27ef2e0745d9c2", size = 62231, upload-time = "2026-01-28T22:37:19.656Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/40/ede4d6566efc7fbc6b87d3d8a43fd8f4cfe50befeb9053425e19b49ff4bc/tinycrate-0.1.2.tar.gz", hash = "sha256:7ed3c720643f1bd967c6ded8658496ba8319669215a10a7eb1515a596320474c", size = 60307, upload-time = "2025-06-06T07:32:25.73Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bf/af/a50500471c8330c2e819ec93721f876d671e771c0fa64b91314b418490ad/tinycrate-0.1.5-py3-none-any.whl", hash = "sha256:f3ff9ddda2e7395c1d993b2d3f1d8cd9e2d88b20321e6f979d0720a7696c0353", size = 7005, upload-time = "2026-01-28T22:37:18.227Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/7b/d6ba447136d8c9e0a43c2e95e903245c61cb427748cc897f8c304c68711a/tinycrate-0.1.2-py3-none-any.whl", hash = "sha256:28c74950c9759c99d49aa3e8f3d6e12ca347c7b313cb234ae3c988e04857ab0c", size = 6998, upload-time = "2025-06-06T07:32:24.72Z" },
 ]
 
 [[package]]
