@@ -1,10 +1,4 @@
-"""Phase 2.7: token-frequency worker honors the derived-tokens path.
-
-When the API passes ``node_tokens`` (pre-tokenised lists from a derived
-column) the worker counts them directly with a Counter — no re-tokenisation,
-no divergence from concordance / POS. The raw-text path remains the default
-when ``node_tokens`` is absent.
-"""
+"""Token-frequency worker tests for raw text and token-stream inputs."""
 
 from __future__ import annotations
 
@@ -14,7 +8,6 @@ from types import ModuleType
 from typing import Any, cast
 
 import polars as pl
-
 from ldaca_wordflow.core.worker_tasks_token import run_token_frequencies_task
 
 
@@ -33,32 +26,6 @@ def _stub_polars_text(monkeypatch) -> None:
     fake.token_frequencies = _token_frequencies
     fake.token_frequency_stats = lambda *_args, **_kwargs: pl.DataFrame()
     monkeypatch.setitem(sys.modules, "polars_text", fake)
-
-
-def test_worker_uses_node_tokens_when_provided(tmp_path, monkeypatch):
-    _stub_polars_text(monkeypatch)
-
-    result = run_token_frequencies_task(
-        configure_worker_environment=lambda: None,
-        user_id="user-1",
-        workspace_id="ws-1",
-        node_corpora={},
-        node_tokens={
-            "node-1": [
-                ["alpha", "beta", "alpha"],
-                ["alpha"],
-            ],
-        },
-        node_display_names={"node-1": "ZH Corpus"},
-        artifact_dir=str(tmp_path),
-        artifact_prefix="token_freq_tokens",
-    )
-
-    assert result["state"] == "successful"
-    parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
-    counts = pl.read_parquet(parquet_path).to_dicts()
-    counts_map = {row["token"]: row["frequency"] for row in counts}
-    assert counts_map == {"alpha": 3, "beta": 1}
 
 
 def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
@@ -81,17 +48,19 @@ def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
     assert counts_map == {"alpha": 3, "beta": 1}
 
 
-def test_worker_mixes_tokens_and_text_paths(tmp_path, monkeypatch):
-    """Two-corpus comparison where one side has derived tokens and the
-    other doesn't. Both end up in the same frequency results dict."""
+def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
+    """Two-corpus comparison where one side uses a token stream."""
     _stub_polars_text(monkeypatch)
+
+    stream_path = tmp_path / "tokens-side-stream.parquet"
+    pl.DataFrame({"token": ["beta", "gamma", "gamma"]}).write_parquet(stream_path)
 
     result = run_token_frequencies_task(
         configure_worker_environment=lambda: None,
         user_id="user-1",
         workspace_id="ws-1",
         node_corpora={"text-side": ["alpha beta alpha"]},
-        node_tokens={"tokens-side": [["beta", "gamma", "gamma"]]},
+        node_token_streams={"tokens-side": str(stream_path)},
         node_display_names={"text-side": "EN", "tokens-side": "ZH"},
         artifact_dir=str(tmp_path),
         artifact_prefix="token_freq_mixed",
@@ -146,38 +115,8 @@ def test_worker_uses_node_token_streams_when_provided(tmp_path, monkeypatch):
     assert counts_map == {"alpha": 3, "beta": 1, "gamma": 2}
 
 
-def test_worker_stream_takes_precedence_over_legacy_tokens(tmp_path, monkeypatch):
-    """When both ``node_tokens`` and ``node_token_streams`` carry the
-    same node id, the stream wins — the legacy payload is only the
-    fallback for queued tasks that predate the stream path."""
-    _stub_polars_text(monkeypatch)
-
-    stream_path = tmp_path / "stream.parquet"
-    pl.DataFrame({"token": ["stream-only"]}).write_parquet(stream_path)
-
-    result = run_token_frequencies_task(
-        configure_worker_environment=lambda: None,
-        user_id="user-1",
-        workspace_id="ws-1",
-        node_corpora={},
-        node_tokens={"n": [["legacy-only"]]},
-        node_token_streams={"n": str(stream_path)},
-        node_display_names={"n": "Corpus"},
-        artifact_dir=str(tmp_path),
-        artifact_prefix="token_freq_pref",
-    )
-
-    parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
-    counts = pl.read_parquet(parquet_path).to_dicts()
-    counts_map = {row["token"]: row["frequency"] for row in counts}
-    assert counts_map == {"stream-only": 1}
-    assert "legacy-only" not in counts_map
-
-
-def test_worker_token_path_matches_manual_explode(tmp_path, monkeypatch):
-    """Consistency proof for decision 7: the worker tokens-path frequency
-    equals the polars equivalent of ``col.list.explode().value_counts()``
-    against the same derived-column data shape."""
+def test_worker_token_stream_matches_manual_explode(tmp_path, monkeypatch):
+    """The stream path matches the expected explode/group-by frequencies."""
     _stub_polars_text(monkeypatch)
 
     raw_token_lists = [
@@ -187,20 +126,18 @@ def test_worker_token_path_matches_manual_explode(tmp_path, monkeypatch):
     ]
 
     # The polars baseline against an equivalent List[String] column.
-    baseline_df = (
-        pl.DataFrame({"tokens": raw_token_lists})
-        .explode("tokens")
-        .group_by("tokens")
-        .agg(pl.len().alias("frequency"))
-    )
+    exploded_df = pl.DataFrame({"tokens": raw_token_lists}).explode("tokens")
+    baseline_df = exploded_df.group_by("tokens").agg(pl.len().alias("frequency"))
     expected = {row["tokens"]: row["frequency"] for row in baseline_df.to_dicts()}
+    stream_path = tmp_path / "stream.parquet"
+    exploded_df.rename({"tokens": "token"}).select("token").write_parquet(stream_path)
 
     result = run_token_frequencies_task(
         configure_worker_environment=lambda: None,
         user_id="user-1",
         workspace_id="ws-1",
         node_corpora={},
-        node_tokens={"node-1": raw_token_lists},
+        node_token_streams={"node-1": str(stream_path)},
         node_display_names={"node-1": "Corpus"},
         artifact_dir=str(tmp_path),
         artifact_prefix="token_freq_consistency",

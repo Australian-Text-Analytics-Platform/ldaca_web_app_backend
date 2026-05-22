@@ -6,7 +6,6 @@ Separated from `worker.py` to keep the worker module focused and smaller.
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, cast
 
@@ -26,7 +25,6 @@ def run_token_frequencies_task(
     token_limit: int = 10,
     stop_words: list[str] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
-    node_tokens: dict[str, list[list[str]]] | None = None,
     node_token_streams: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
@@ -74,13 +72,8 @@ def run_token_frequencies_task(
             MAX_SERVER_TOKEN_LIMIT,
         )
 
-        tokens_payload = node_tokens or {}
         token_streams = node_token_streams or {}
-        # Union of node ids reachable through any of the three input shapes.
-        # The stream path supersedes ``node_tokens`` when both appear —
-        # newer callers ship only the stream; older queued tasks may
-        # still arrive with the in-memory payload.
-        node_ids = list({**node_corpora, **tokens_payload, **token_streams}.keys())
+        node_ids = list({**node_corpora, **token_streams}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
@@ -127,16 +120,6 @@ def run_token_frequencies_task(
                     str(row["token"]): int(row["frequency"])
                     for row in freq_df.to_dicts()
                 }
-            elif node_id in tokens_payload:
-                # Legacy in-memory tokens payload for queued tasks from
-                # before the stream path landed. Kept until the queue
-                # drains; new callers won't take this branch.
-                counter: Counter[str] = Counter()
-                for token_list in tokens_payload[node_id]:
-                    counter.update(
-                        str(tok) for tok in (token_list or []) if tok is not None
-                    )
-                frequency_results[node_id] = dict(counter)
             else:
                 docs = node_corpora.get(node_id) or []
                 series = pl.Series(
@@ -204,6 +187,13 @@ def run_token_frequencies_task(
                 "version": 1,
                 "nodes": node_artifacts,
                 "statistics_parquet_path": statistics_path,
+                "input_token_streams": [
+                    {
+                        "node_id": node_id,
+                        "token_stream_parquet_path": path,
+                    }
+                    for node_id, path in token_streams.items()
+                ],
             },
             "token_limit": effective_limit,
             "analysis_params": analysis_params_dict,

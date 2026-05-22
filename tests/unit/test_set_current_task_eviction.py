@@ -9,18 +9,20 @@ should be removed.
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
 
 import polars as pl
 import pytest
-
 from ldaca_wordflow.analysis.manager import TaskManager
 from ldaca_wordflow.analysis.models import BaseAnalysisRequest
 from ldaca_wordflow.core import utils as core_utils
 from ldaca_wordflow.core import workspace as workspace_module
 from ldaca_wordflow.core.analysis_cache import materialized_cache_path
 from ldaca_wordflow.core.utils import generate_workspace_id
+from ldaca_wordflow.core.worker_task_manager import TaskInfo
 from ldaca_wordflow.core.workspace import WorkspaceManager
 
 
@@ -45,9 +47,7 @@ def _bootstrap_workspace(
     return workspace_id, target_dir
 
 
-def _write_cache(
-    workspace_dir: Path, feature: str, task_id: str, node_id: str
-) -> Path:
+def _write_cache(workspace_dir: Path, feature: str, task_id: str, node_id: str) -> Path:
     path = materialized_cache_path(workspace_dir, feature, task_id, node_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     pl.DataFrame({"a": [1]}).write_parquet(path)
@@ -57,9 +57,7 @@ def _write_cache(
 @pytest.fixture
 def isolated_manager(tmp_path, monkeypatch):
     monkeypatch.setattr(core_utils.settings, "multi_user", True, raising=False)
-    monkeypatch.setattr(
-        core_utils.settings, "user_data_folder", "users", raising=False
-    )
+    monkeypatch.setattr(core_utils.settings, "user_data_folder", "users", raising=False)
     monkeypatch.setattr(core_utils.settings, "data_root", tmp_path, raising=False)
 
     manager = WorkspaceManager()
@@ -157,3 +155,35 @@ def test_set_current_task_multi_user_isolation(isolated_manager, reset_task_stor
     )
     assert tm_alpha.get_task(a_task_1) is None
     assert tm_beta.get_task(b_task_1) is not None
+
+
+def test_unload_workspace_clears_worker_tasks_without_running_loop(
+    isolated_manager, reset_task_store
+):
+    user_id = "user_one"
+    workspace_id, _ws_dir = _bootstrap_workspace(isolated_manager, user_id, "ws")
+
+    analysis_tm = TaskManager(user_id)
+    analysis_task_id = analysis_tm.create_task(BaseAnalysisRequest())
+
+    worker_tm = isolated_manager.get_task_manager(user_id)
+    future = Future()
+    future.set_result({"state": "successful"})
+    worker_task = TaskInfo(
+        id="worker-task-to-clear-on-unload",
+        future=future,
+        task_type="token_frequencies",
+        user_id=user_id,
+        workspace_id=workspace_id,
+    )
+
+    async def add_worker_task() -> None:
+        async with worker_tm._lock:
+            worker_tm._tasks[worker_task.id] = worker_task
+
+    asyncio.run(add_worker_task())
+
+    assert isolated_manager.unload_workspace(user_id, workspace_id, save=True)
+
+    assert analysis_tm.get_task(analysis_task_id) is None
+    assert asyncio.run(worker_tm.get_task(worker_task.id)) is None

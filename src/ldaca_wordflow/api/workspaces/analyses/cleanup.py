@@ -15,11 +15,10 @@ running" short-circuit can do its job.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable
 
 from ....analysis.manager import get_task_manager
-from ....analysis.models import AnalysisStatus, AnalysisTask
+from ....analysis.models import AnalysisStatus
 from ....core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
@@ -36,42 +35,15 @@ _TERMINAL_STATUSES = {
 }
 
 
-def _iter_artifact_paths(node: object) -> Iterator[str]:
-    """Yield every string value whose key looks like an artifact path."""
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if isinstance(value, str) and isinstance(key, str) and key.endswith(
-                ("_path", "_parquet_path")
-            ):
-                yield value
-            else:
-                yield from _iter_artifact_paths(value)
-    elif isinstance(node, list):
-        for item in node:
-            yield from _iter_artifact_paths(item)
-
-
-def _delete_task_artifacts(task: AnalysisTask) -> None:
-    """Best-effort deletion of parquet artifacts referenced by a task result."""
-    if task.result is None:
-        return
-    try:
-        payload = task.result.to_json()
-    except Exception as exc:
-        logger.debug("Could not serialize task result for cleanup: %s", exc)
-        return
-    if not isinstance(payload, dict):
-        return
-    artifacts = payload.get("artifacts")
-    if not isinstance(artifacts, (dict, list)):
-        return
-    for raw_path in _iter_artifact_paths(artifacts):
-        try:
-            path = Path(raw_path)
-            if path.is_file():
-                path.unlink()
-        except Exception as exc:
-            logger.debug("Failed to delete artifact %s: %s", raw_path, exc)
+def _dedupe_task_ids(task_ids: Iterable[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for task_id in task_ids:
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        deduped.append(task_id)
+    return deduped
 
 
 async def clear_previous_completed_analysis_task(
@@ -104,7 +76,7 @@ async def clear_previous_completed_analysis_task(
             if task is None:
                 # Already gone from analysis store; still try worker side.
                 try:
-                    await worker_tm.clear_task(task_id)
+                    await worker_tm.clear_task_tree(task_id)
                 except Exception as exc:
                     logger.debug(
                         "Worker clear failed for orphan task %s: %s",
@@ -118,11 +90,21 @@ async def clear_previous_completed_analysis_task(
             if workspace_id and task.workspace_id and task.workspace_id != workspace_id:
                 continue
 
-            _delete_task_artifacts(task)
-            analysis_tm.clear_task(task_id)
-            try:
-                await worker_tm.clear_task(task_id)
-            except Exception as exc:
-                logger.debug(
-                    "Worker clear failed for task %s: %s", task_id, exc
-                )
+            task_ids_to_clear = _dedupe_task_ids(
+                [
+                    *analysis_tm.get_descendant_task_ids(task_id),
+                    *await worker_tm.get_descendant_task_ids(task_id),
+                    task_id,
+                ]
+            )
+
+            for current_task_id in task_ids_to_clear:
+                try:
+                    await worker_tm.clear_task_tree(current_task_id)
+                except Exception as exc:
+                    logger.debug(
+                        "Worker clear failed for task %s: %s", current_task_id, exc
+                    )
+
+            for current_task_id in task_ids_to_clear:
+                analysis_tm.clear_task(current_task_id)

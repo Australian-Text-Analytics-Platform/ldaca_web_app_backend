@@ -400,11 +400,17 @@ class WorkspaceManager:
         worker_tm = self._task_managers.get(user_id)
         if worker_tm is None:
             return
-        try:
-            import asyncio
+        import asyncio
 
+        try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            try:
+                asyncio.run(
+                    worker_tm.clear_tasks(user_id=user_id, workspace_id=workspace_id)
+                )
+            except Exception as exc:
+                logger.debug("Failed to clear worker tasks on unload: %s", exc)
             return
         try:
             loop.create_task(
@@ -412,6 +418,23 @@ class WorkspaceManager:
             )
         except Exception as exc:
             logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
+
+    async def clear_workspace_tasks(self, user_id: str, workspace_id: str) -> None:
+        """Await task cleanup for a workspace."""
+        try:
+            from ..analysis.manager import get_task_manager as _get_analysis_tm
+
+            _get_analysis_tm(user_id).clear_workspace(workspace_id)
+        except Exception as exc:
+            logger.debug("Failed to clear analysis tasks for workspace: %s", exc)
+
+        worker_tm = self._task_managers.get(user_id)
+        if worker_tm is None:
+            return
+        try:
+            await worker_tm.clear_tasks(user_id=user_id, workspace_id=workspace_id)
+        except Exception as exc:
+            logger.debug("Failed to clear worker tasks for workspace: %s", exc)
 
 
 workspace_manager = WorkspaceManager()

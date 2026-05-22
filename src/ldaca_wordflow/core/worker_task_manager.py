@@ -20,6 +20,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from .task_artifacts import cleanup_worker_task_artifacts
 from .worker import TASK_REGISTRY, get_worker_pool
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ class TaskInfo:
     name: str = ""
     user_id: str = ""
     workspace_id: str = ""
+    parent_task_id: str | None = None
     worker_pid: int | None = None  # PID of the worker process, set once known
 
     def update_status(self):
@@ -204,7 +206,33 @@ class WorkerTaskManager:
             "finished_at": task_info.finished_at,
             "progress": task_info.progress,
             "progress_message": task_info.progress_message,
+            "parent_task_id": task_info.parent_task_id,
         }
+
+    def _task_tree_ids_locked(self, task_id: str) -> builtins.list[str]:
+        """Return descendant task ids followed by the requested task id."""
+        ordered: builtins.list[str] = []
+        visited: set[str] = set()
+
+        def visit(parent_id: str) -> None:
+            for child_id, child in list(self._tasks.items()):
+                if child.parent_task_id != parent_id or child_id in visited:
+                    continue
+                visited.add(child_id)
+                visit(child_id)
+                ordered.append(child_id)
+
+        visit(task_id)
+        if task_id in self._tasks and task_id not in visited:
+            ordered.append(task_id)
+        return ordered
+
+    async def get_descendant_task_ids(self, task_id: str) -> builtins.list[str]:
+        """Return worker task descendants for *task_id* without removing them."""
+        async with self._lock:
+            return [
+                tid for tid in self._task_tree_ids_locked(task_id) if tid != task_id
+            ]
 
     def _cleanup_progress_queue(self, task_id: str) -> None:
         progress_queue = self._task_progress_queues.pop(task_id, None)
@@ -789,6 +817,7 @@ class WorkerTaskManager:
         task_type: str,
         task_args: dict[str, Any],
         task_name: str | None = None,
+        task_id: str | None = None,
     ) -> TaskInfo:
         """Submit a worker task, register tracking, and start monitors.
 
@@ -804,8 +833,10 @@ class WorkerTaskManager:
 
         task_func = TASK_REGISTRY[task_type]
 
-        # Create task ID for progress tracking
-        task_id = str(uuid.uuid4())
+        # Use pre-supplied ID when the caller needs the task ID to match a
+        # filename (e.g. materialize tasks that key the cache parquet by the
+        # child worker task ID); otherwise generate a fresh UUID.
+        task_id = task_id or str(uuid.uuid4())
 
         # Submit task to worker pool with process-safe progress queue
         worker_pool = get_worker_pool()
@@ -823,6 +854,11 @@ class WorkerTaskManager:
             progress_queue=progress_queue,
         )
 
+        raw_parent_task_id = task_args.get("parent_task_id")
+        parent_task_id = (
+            raw_parent_task_id if isinstance(raw_parent_task_id, str) else None
+        )
+
         task_info = TaskInfo(
             id=task_id,
             future=future,
@@ -832,6 +868,7 @@ class WorkerTaskManager:
             name=task_name or task_type,
             user_id=user_id,
             workspace_id=workspace_id,
+            parent_task_id=parent_task_id,
         )
 
         # Initialize progress tracking
@@ -1074,6 +1111,8 @@ class WorkerTaskManager:
             if not task_info:
                 return False
 
+            self._reconcile_task_progress(task_info)
+
             # Cancel the future if it's still running
             if not task_info.future.done():
                 task_info.future.cancel()
@@ -1082,7 +1121,61 @@ class WorkerTaskManager:
             del self._tasks[task_id]
             self._progress_store.pop(task_id, None)
             self._cleanup_progress_queue(task_id)
-            return True
+
+            user_id = task_info.user_id
+            workspace_id = task_info.workspace_id
+
+        cleanup_worker_task_artifacts(task_info)
+        await self.emit(
+            user_id,
+            workspace_id,
+            {
+                "type": "task_removed",
+                "task_id": task_id,
+                "workspace_id": workspace_id,
+                "timestamp": time.time(),
+            },
+        )
+        return True
+
+    async def clear_task_tree(self, task_id: str) -> builtins.list[str]:
+        """Clear a task and any worker tasks registered as its descendants."""
+        removed_tasks: builtins.list[tuple[str, str, str]] = []
+        removed_task_infos: builtins.list[TaskInfo] = []
+        async with self._lock:
+            task_ids_to_remove = self._task_tree_ids_locked(task_id)
+            for current_task_id in task_ids_to_remove:
+                task_info = self._tasks.get(current_task_id)
+                if task_info is None:
+                    continue
+                self._reconcile_task_progress(task_info)
+                if not task_info.future.done():
+                    task_info.future.cancel()
+                removed_task_infos.append(task_info)
+                removed_tasks.append(
+                    (current_task_id, task_info.user_id, task_info.workspace_id)
+                )
+                del self._tasks[current_task_id]
+                self._progress_store.pop(current_task_id, None)
+                self._cleanup_progress_queue(current_task_id)
+
+        for removed_task_info in removed_task_infos:
+            cleanup_worker_task_artifacts(removed_task_info)
+
+        timestamp = time.time()
+        for removed_task_id, removed_user_id, removed_workspace_id in removed_tasks:
+            await self.emit(
+                removed_user_id,
+                removed_workspace_id,
+                {
+                    "type": "task_removed",
+                    "task_id": removed_task_id,
+                    "workspace_id": removed_workspace_id,
+                    "timestamp": timestamp,
+                },
+            )
+
+        return [removed_task_id for removed_task_id, _, _ in removed_tasks]
 
     async def clear_tasks(
         self,
@@ -1092,7 +1185,8 @@ class WorkerTaskManager:
         workspace_id: str | None = None,
     ) -> int:
         """Clear and remove task records, optionally filtered."""
-        count = 0
+        removed_tasks: list[tuple[str, str, str]] = []
+        removed_task_infos: list[TaskInfo] = []
         async with self._lock:
             task_ids_to_remove = []
             for task_id, task_info in self._tasks.items():
@@ -1104,39 +1198,35 @@ class WorkerTaskManager:
                 if workspace_id and task_info.workspace_id != workspace_id:
                     continue
 
+                self._reconcile_task_progress(task_info)
                 if not task_info.future.done():
                     task_info.future.cancel()
                 task_ids_to_remove.append(task_id)
 
             for task_id in task_ids_to_remove:
+                task_info = self._tasks[task_id]
+                removed_task_infos.append(task_info)
+                removed_tasks.append(
+                    (task_id, task_info.user_id, task_info.workspace_id)
+                )
                 del self._tasks[task_id]
                 # Clean up progress store
                 self._progress_store.pop(task_id, None)
                 self._cleanup_progress_queue(task_id)
-                count += 1
 
-        return count
+        for removed_task_info in removed_task_infos:
+            cleanup_worker_task_artifacts(removed_task_info)
 
-    async def cleanup_finished_tasks(self, max_age_seconds: int = 3600):
-        """Clean up old finished tasks to prevent memory leaks."""
-        current_time = time.time()
-        async with self._lock:
-            task_ids_to_remove = []
-            for task_id, task_info in self._tasks.items():
-                task_info.update_status()
-                if task_info.status in [
-                    TaskStatus.SUCCESSFUL,
-                    TaskStatus.FAILED,
-                    TaskStatus.CANCELLED,
-                ]:
-                    if (
-                        task_info.finished_at
-                        and (current_time - task_info.finished_at) > max_age_seconds
-                    ):
-                        task_ids_to_remove.append(task_id)
+        for task_id, removed_user_id, removed_workspace_id in removed_tasks:
+            await self.emit(
+                removed_user_id,
+                removed_workspace_id,
+                {
+                    "type": "task_removed",
+                    "task_id": task_id,
+                    "workspace_id": removed_workspace_id,
+                    "timestamp": time.time(),
+                },
+            )
 
-            for task_id in task_ids_to_remove:
-                del self._tasks[task_id]
-                self._progress_store.pop(task_id, None)
-                self._cleanup_progress_queue(task_id)
-                self._cleanup_progress_queue(task_id)
+        return len(removed_tasks)

@@ -21,7 +21,7 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.i18n import effective_language
-from ....core.utils import get_user_cache_folder, get_user_data_folder
+from ....core.utils import get_user_cache_folder
 from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
@@ -242,17 +242,9 @@ async def clear_topic_modeling_results(
 
 
 def _embedding_cache_dirs(user_id: str) -> list[Path]:
-    """Return all embedding-cache directories that may hold parquet entries.
-
-    Includes the canonical location (`user_cache/embeddings`) and the legacy
-    `user_data/embedding_cache` so a Clear sweeps both during the migration
-    window. Only directories that actually exist are returned.
-    """
-    candidates = [
-        get_user_cache_folder(user_id) / "embeddings",
-        get_user_data_folder(user_id) / "embedding_cache",
-    ]
-    return [d for d in candidates if d.exists() and d.is_dir()]
+    """Return the embedding-cache directory if it currently exists."""
+    cache_dir = get_user_cache_folder(user_id) / "embeddings"
+    return [cache_dir] if cache_dir.exists() and cache_dir.is_dir() else []
 
 
 def _measure_embedding_cache(user_id: str) -> dict:
@@ -290,8 +282,7 @@ async def clear_topic_modeling_embedding_cache(
 ):
     """Delete every parquet entry in the user's embedding cache.
 
-    Sweeps the canonical `user_cache/embeddings/` directory and the legacy
-    `user_data/embedding_cache/` directory (one-time migration cleanup).
+    Sweeps the canonical `user_cache/embeddings/` directory.
     Returns total bytes and file count freed so the UI can confirm the
     reclaim. Clearing forces the next topic-modelling run to re-encode all
     documents from scratch.
@@ -310,12 +301,6 @@ async def clear_topic_modeling_embedding_cache(
                 continue
             bytes_freed += size
             files_removed += 1
-        # Drop the legacy folder once empty so the file tree stays clean.
-        if cache_dir.parent == get_user_data_folder(user_id):
-            try:
-                cache_dir.rmdir()
-            except OSError:
-                pass
     return {
         "state": "successful",
         "message": "Embedding cache cleared.",

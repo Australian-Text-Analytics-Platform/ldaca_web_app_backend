@@ -15,13 +15,23 @@ from fastapi import APIRouter, Depends, Header, Query
 from fastapi.responses import StreamingResponse
 
 from ..analysis.manager import get_task_manager as get_analysis_task_manager
-from ..core.analysis_cache import cleanup_task_caches
 from ..core.auth import get_current_user
 from ..core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tasks", tags=["task_streaming"])
+
+
+def _dedupe_task_ids(task_ids: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for task_id in task_ids:
+        if not task_id or task_id in seen:
+            continue
+        seen.add(task_id)
+        deduped.append(task_id)
+    return deduped
 
 
 @router.get("")
@@ -54,27 +64,59 @@ async def clear_tasks(
     tm = workspace_manager.get_task_manager(user_id)
 
     analysis_tm = get_analysis_task_manager(user_id)
-    analysis_task = analysis_tm.get_task(task_id)
+    analysis_descendant_ids = analysis_tm.get_descendant_task_ids(task_id)
+    worker_descendant_ids = await tm.get_descendant_task_ids(task_id)
+    task_ids_to_clear = _dedupe_task_ids(
+        [*analysis_descendant_ids, *worker_descendant_ids, task_id]
+    )
 
-    # Delete any analysis-cache parquets owned by this task. Detach already
-    # copies the parquet into a node-owned file, so deleting the original
-    # here is safe. Glob-based lookup catches files even when the task's
-    # request fields are stale (e.g. dispatcher crashed mid-update).
-    if analysis_task is not None:
-        cleanup_task_caches(user_id, analysis_task.workspace_id, task_id)
+    analysis_tasks = {
+        current_task_id: analysis_task
+        for current_task_id in task_ids_to_clear
+        if (analysis_task := analysis_tm.get_task(current_task_id)) is not None
+    }
 
-    cleared_worker = await tm.clear_task(task_id)
+    cleared_worker_ids: list[str] = []
+    for current_task_id in task_ids_to_clear:
+        for cleared_worker_id in await tm.clear_task_tree(current_task_id):
+            if cleared_worker_id not in cleared_worker_ids:
+                cleared_worker_ids.append(cleared_worker_id)
+    cleared_worker_id_set = set(cleared_worker_ids)
 
-    cleared_analysis = False
-    if analysis_task is not None:
-        analysis_tm.clear_task(task_id)
-        cleared_analysis = True
+    cleared_analysis_ids: list[str] = []
+    analysis_only_events: list[tuple[str, str]] = []
+    for current_task_id in task_ids_to_clear:
+        analysis_task = analysis_tasks.get(current_task_id)
+        if analysis_task is None:
+            continue
+        analysis_tm.clear_task(current_task_id)
+        cleared_analysis_ids.append(current_task_id)
+        if current_task_id not in cleared_worker_id_set:
+            analysis_only_events.append((current_task_id, analysis_task.workspace_id))
+
+    timestamp = time.time()
+    for removed_task_id, analysis_workspace_id in analysis_only_events:
+        await tm.emit(
+            user_id,
+            analysis_workspace_id,
+            {
+                "type": "task_removed",
+                "task_id": removed_task_id,
+                "workspace_id": analysis_workspace_id,
+                "timestamp": timestamp,
+            },
+        )
+
+    cleared_task_ids = _dedupe_task_ids([*cleared_worker_ids, *cleared_analysis_ids])
 
     return {
         "state": "successful",
         "data": {
-            "cleared_worker": cleared_worker,
-            "cleared_analysis": cleared_analysis,
+            "cleared_worker": bool(cleared_worker_ids),
+            "cleared_analysis": bool(cleared_analysis_ids),
+            "cleared_worker_ids": cleared_worker_ids,
+            "cleared_analysis_ids": cleared_analysis_ids,
+            "cleared_task_ids": cleared_task_ids,
         },
         "message": "Task cleared successfully.",
     }

@@ -193,6 +193,7 @@ def concordance_dispersion_detach_task(
     whole_word: bool,
     case_sensitive: bool,
     new_node_name: str,
+    child_task_id: str | None = None,
     parent_task_id: str | None = None,
     include_document_column: bool = True,
     extra_columns_data: dict[str, list] | None = None,
@@ -220,6 +221,7 @@ def concordance_dispersion_detach_task(
         whole_word,
         case_sensitive,
         new_node_name,
+        child_task_id=child_task_id,
         parent_task_id=parent_task_id,
         include_document_column=include_document_column,
         extra_columns_data=extra_columns_data,
@@ -239,6 +241,7 @@ def concordance_materialize_task(
     workspace_id: str,
     workspace_dir: str,
     node_corpus: list[str],
+    child_task_id: str,
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
@@ -261,6 +264,7 @@ def concordance_materialize_task(
         _configure_worker_environment,
         workspace_dir,
         node_corpus,
+        child_task_id,
         parent_task_id,
         parent_node_id,
         document_column,
@@ -319,6 +323,7 @@ def quotation_materialize_task(
     workspace_id: str,
     workspace_dir: str,
     node_corpus: list[str],
+    child_task_id: str,
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
@@ -333,6 +338,7 @@ def quotation_materialize_task(
         _configure_worker_environment,
         workspace_dir,
         node_corpus,
+        child_task_id,
         parent_task_id,
         parent_node_id,
         document_column,
@@ -395,7 +401,6 @@ def token_frequencies_task(
     stop_words: list[str] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
-    node_tokens: dict[str, list[list[str]]] | None = None,
     node_token_streams: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
@@ -410,7 +415,6 @@ def token_frequencies_task(
         token_limit=token_limit,
         stop_words=stop_words,
         progress_callback=cb,
-        node_tokens=node_tokens,
         node_token_streams=node_token_streams,
     )
 

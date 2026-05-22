@@ -4,24 +4,26 @@ Background workers write per-task cache parquets to speed up subsequent
 operations on the same hits/quotes (e.g. dispersion bin endpoints, fast-path
 detach, fast-path re-materialise). The files live at:
 
-    <workspace_dir>/data/artifacts/.materialized_<feature>_<task_id>_<node_id>.parquet
+    <workspace_dir>/data/artifacts/materialized_<feature>_<task_id>_<node_id>.parquet
 
-They are owned by their **parent analysis task**, not by any workspace node.
+For ``concordance_materialize`` and ``quotation_materialize`` tasks the
+embedded ``task_id`` is the **child worker task ID** (the materialize task
+itself). Side-effect materializations follow the same rule: the embedded id
+is the worker task that produced the file.
 
 **Why ``data/artifacts/`` and not ``data/``**: the docworkspace garbage
 collector at ``workspace.save()`` time iterates the top of ``data/`` with
 ``iterdir()`` (non-recursive) and deletes any ``.parquet`` not referenced by
 a registered node plan. Files inside ``data/artifacts/`` are a directory
-entry, so the GC skips them entirely. The dotfile prefix is an additional
-defence in depth in case a future docworkspace patch starts walking
-subdirectories.
+entry, so the GC skips them entirely.
 
-This module is the single source of truth for:
+This module is the single source of truth for cache naming and cache-file
+matching:
 
   * the canonical cache filename (``materialized_cache_path``) — workers MUST
     use this helper so cleanup globs find their files.
-  * task-lifecycle cleanup (``cleanup_task_caches``,
-    ``cleanup_workspace_caches``, ``cleanup_orphan_caches``).
+    * task-lifecycle cleanup (``cleanup_task_caches``,
+        ``cleanup_workspace_caches``).
 
 Multi-user safety: every cleanup is scoped by ``(user_id, workspace_id)``.
 The workspace path is resolved through the trusted
@@ -33,17 +35,16 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-# Canonical filename: .materialized_<feature>_<task_id>_<node_id>.parquet
+# Canonical filename: materialized_<feature>_<task_id>_<node_id>.parquet
 # - feature: lowercase tool key (concordance, quotation, ...)
 # - task_id: UUID4 string with dashes (no underscores)
 # - node_id: opaque identifier; may contain dashes or letters but is not
 #   constrained to UUID4. The regex is correspondingly permissive on the tail.
 _CACHE_FILENAME_RE = re.compile(
-    r"^\.materialized_"
+    r"^materialized_"
     r"(?P<feature>[a-z][a-z_]*)_"
     r"(?P<task_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_"
     r"(?P<node_id>.+)"
@@ -62,7 +63,7 @@ def materialized_cache_path(
         Path(workspace_dir)
         / "data"
         / "artifacts"
-        / f".materialized_{feature}_{task_id}_{node_id}.parquet"
+        / f"materialized_{feature}_{task_id}_{node_id}.parquet"
     )
 
 
@@ -106,7 +107,7 @@ def cleanup_task_caches(user_id: str, workspace_id: str, task_id: str) -> int:
         return 0
 
     count = 0
-    for path in cache_dir.glob(".materialized_*.parquet"):
+    for path in cache_dir.glob("materialized_*.parquet"):
         m = _CACHE_FILENAME_RE.match(path.name)
         if m is None:
             continue
@@ -127,34 +128,9 @@ def cleanup_workspace_caches(user_id: str, workspace_id: str) -> int:
         return 0
 
     count = 0
-    for path in cache_dir.glob(".materialized_*.parquet"):
+    for path in cache_dir.glob("materialized_*.parquet"):
         if _CACHE_FILENAME_RE.match(path.name) is None:
-            continue  # ignore unrelated dotfiles humans may have dropped here
-        if _unlink_quiet(path):
-            count += 1
-    return count
-
-
-def cleanup_orphan_caches(
-    user_id: str, workspace_id: str, live_task_ids: Iterable[str]
-) -> int:
-    """Delete caches whose embedded task_id isn't in ``live_task_ids``.
-
-    Used on startup or after task-manager rehydration to discard files left
-    behind by a previous process.
-    """
-    cache_dir = _cache_dir(user_id, workspace_id)
-    if cache_dir is None:
-        return 0
-
-    live: set[str] = set(live_task_ids)
-    count = 0
-    for path in cache_dir.glob(".materialized_*.parquet"):
-        m = _CACHE_FILENAME_RE.match(path.name)
-        if m is None:
-            continue
-        if m.group("task_id") in live:
-            continue
+            continue  # ignore unrelated files humans may have dropped here
         if _unlink_quiet(path):
             count += 1
     return count
@@ -164,5 +140,4 @@ __all__ = [
     "materialized_cache_path",
     "cleanup_task_caches",
     "cleanup_workspace_caches",
-    "cleanup_orphan_caches",
 ]

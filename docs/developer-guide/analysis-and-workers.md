@@ -6,7 +6,8 @@ The backend has two related but separate task concepts.
 
 `analysis/manager.py` stores user-visible analysis tasks. These records track
 which feature ran, what request produced the result, the current task for a
-tab, and the terminal result or error.
+tab, the terminal result or error, and parent/child relationships for follow-up
+tasks such as materialization.
 
 `core/worker_task_manager.py` manages process-pool futures. It starts workers,
 captures progress, tracks worker pids, cancels running work, emits SSE events,
@@ -14,6 +15,12 @@ and applies side effects when a worker returns.
 
 This split lets the UI show one coherent task center while the backend keeps
 worker execution details out of analysis result models.
+
+Task lifecycle ownership is backend-authoritative. Clearing a parent analysis
+task must recursively clear registered child analysis tasks and worker tasks,
+remove any related analysis caches, and emit `task_removed` for every removed
+record. Frontend task lists should reconcile from `/api/tasks/clear`,
+`tasks_snapshot`, and stream events rather than guessing related task ids.
 
 ## Worker Registry
 
@@ -53,6 +60,11 @@ Detach tasks generally create new workspace nodes from worker-produced
 artifacts. Materialize tasks update an existing analysis task request/result so
 future paging can read from a persisted artifact.
 
+When a worker is a child of an existing analysis task, pass or register the
+parent task id and call the analysis task manager's child-link helper after
+submission. This keeps later clear operations recursive even when the child is a
+worker-only task.
+
 ## SSE Task Stream
 
 `api/tasks.py` exposes `/api/tasks/stream`. The stream sends:
@@ -90,7 +102,20 @@ Shared helpers in `cleanup.py`, `current_tasks.py`, `generated_columns.py`,
 
 ## Cache Ownership
 
-Analysis caches are user and workspace scoped. Workspace save garbage
-collection deliberately skips dotfile parquet artifacts because analysis
-materialization and cache cleanup own those lifecycles. Clearing a task should
-also clear its analysis cache files when they are no longer referenced.
+Analysis artifacts are user, workspace, and task scoped. Transient files belong
+under `<workspace>/data/artifacts`, and the task that produces an artifact owns
+its cleanup. Materialized cache filenames include the producing task id, and
+task request/result payloads should record any additional artifact paths under
+path-like keys such as `*_path`, `*_parquet_path`, or `*_paths`.
+
+Task cleanup is centralized in `core/task_artifacts.py` and is invoked by the
+analysis and worker task managers. Feature routes should clear task records,
+not manually unlink artifact files. Cleanup only deletes files inside
+`data/artifacts`; Add to Workspace copies or writes durable node data into the
+top-level `data` directory, where ownership transfers from the task to the
+workspace node.
+
+Workspace unload and workspace switching must clear analysis and worker task
+records for the unloaded workspace. The unload lifecycle also removes the whole
+`data/artifacts` directory so no transient analysis output survives the active
+workspace session.

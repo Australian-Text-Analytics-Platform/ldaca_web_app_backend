@@ -44,26 +44,51 @@ class TaskManagerStore:
         return [task_id] if task_id else []
 
     def clear_task(self, task_id: str) -> None:
-        if task_id in self.tasks:
-            del self.tasks[task_id]
+        task = self.tasks.pop(task_id, None)
+        if task is not None and task.parent_task_id:
+            parent = self.tasks.get(task.parent_task_id)
+            if parent is not None and task_id in parent.child_task_ids:
+                parent.child_task_ids = [
+                    child_id
+                    for child_id in parent.child_task_ids
+                    if child_id != task_id
+                ]
         for tab, current_id in list(self.current_task_ids.items()):
             if current_id == task_id:
                 del self.current_task_ids[tab]
 
-    def clear_all(self) -> list[str]:
-        ids = list(self.tasks.keys())
-        self.tasks.clear()
-        self.current_task_ids.clear()
-        return ids
+    def link_child_task(self, parent_task_id: str, child_task_id: str) -> None:
+        parent = self.tasks.get(parent_task_id)
+        if parent is None:
+            return
+        child = self.tasks.get(child_task_id)
+        if child is not None:
+            child.parent_task_id = parent_task_id
+        if child_task_id not in parent.child_task_ids:
+            parent.child_task_ids.append(child_task_id)
 
-    def clear_workspace(self, workspace_id: str) -> list[str]:
-        """Remove all tasks belonging to *workspace_id* and return their IDs."""
-        to_remove = [
-            tid for tid, task in self.tasks.items() if task.workspace_id == workspace_id
-        ]
-        for tid in to_remove:
-            self.clear_task(tid)
-        return to_remove
+    def get_descendant_task_ids(self, task_id: str) -> list[str]:
+        descendants: list[str] = []
+        visited: set[str] = set()
+
+        def visit(parent_id: str) -> None:
+            parent = self.tasks.get(parent_id)
+            child_ids = parent.child_task_ids if parent is not None else []
+            if not child_ids:
+                child_ids = [
+                    child_id
+                    for child_id, child in self.tasks.items()
+                    if child.parent_task_id == parent_id
+                ]
+            for child_id in child_ids:
+                if child_id in visited:
+                    continue
+                visited.add(child_id)
+                visit(child_id)
+                descendants.append(child_id)
+
+        visit(task_id)
+        return descendants
 
 
 class TaskManager:
@@ -119,21 +144,7 @@ class TaskManager:
         previous_ids = self.store.get_current_task_ids(tab)
         previous_id = previous_ids[0] if previous_ids else None
         if previous_id and previous_id != task_id:
-            displaced = self.store.get_task(previous_id)
-            if displaced is not None:
-                from ..core.analysis_cache import cleanup_task_caches
-
-                try:
-                    cleanup_task_caches(
-                        self.user_id, displaced.workspace_id, previous_id
-                    )
-                except Exception as exc:  # pragma: no cover — defensive
-                    logger.warning(
-                        "Failed to clean caches for displaced task %s: %s",
-                        previous_id,
-                        exc,
-                    )
-            self.store.clear_task(previous_id)
+            self.clear_task(previous_id)
         self.store.set_current_task(tab, task_id)
 
     def get_current_task_ids(self, tab: str) -> list[str]:
@@ -151,14 +162,42 @@ class TaskManager:
         logger.info("Analysis task %s completed", task_id)
 
     def clear_task(self, task_id: str) -> None:
+        task = self.store.get_task(task_id)
+        if task is not None:
+            from ..core.task_artifacts import cleanup_analysis_task_artifacts
+
+            try:
+                cleanup_analysis_task_artifacts(self.user_id, task)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "Failed to clean artifacts for analysis task %s: %s",
+                    task_id,
+                    exc,
+                )
         self.store.clear_task(task_id)
 
+    def link_child_task(self, parent_task_id: str, child_task_id: str) -> None:
+        self.store.link_child_task(parent_task_id, child_task_id)
+
+    def get_descendant_task_ids(self, task_id: str) -> list[str]:
+        return self.store.get_descendant_task_ids(task_id)
+
     def clear_all(self) -> list[str]:
-        return self.store.clear_all()
+        to_remove = [task.task_id for task in self.store.get_all_tasks()]
+        for task_id in to_remove:
+            self.clear_task(task_id)
+        return to_remove
 
     def clear_workspace(self, workspace_id: str) -> list[str]:
         """Clear all tasks belonging to *workspace_id*."""
-        return self.store.clear_workspace(workspace_id)
+        to_remove = [
+            task.task_id
+            for task in self.store.get_all_tasks()
+            if task.workspace_id == workspace_id
+        ]
+        for task_id in to_remove:
+            self.clear_task(task_id)
+        return to_remove
 
     def get_all_tasks(self) -> list[AnalysisTask]:
         return self.store.get_all_tasks()

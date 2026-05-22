@@ -59,8 +59,7 @@ def test_aggregate_hits_per_document_groups_and_renders_extract():
     assert agg.schema["CONC_l1_freq"] == pl.List(pl.Int64)
 
     extracted = {
-        row["document"]: row["CONC_extraction"]
-        for row in agg.iter_rows(named=True)
+        row["document"]: row["CONC_extraction"] for row in agg.iter_rows(named=True)
     }
     # Each line is `- <left_context> <matched> <right_context>` — the full
     # KWIC window read directly from the source document so spacing matches
@@ -110,8 +109,7 @@ def test_aggregate_hits_per_document_filters_by_selected_matched_texts():
         selected_matched_texts=["Hello", "doc"],
     )
     matched_per_doc = {
-        row["document"]: row["CONC_matched_text"]
-        for row in agg.iter_rows(named=True)
+        row["document"]: row["CONC_matched_text"] for row in agg.iter_rows(named=True)
     }
     # The "Hello world this is a test document" row had two hits ("Hello"
     # and "world"); only "Hello" survives.
@@ -212,6 +210,7 @@ def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
         whole_word=False,
         case_sensitive=False,
         new_node_name="alpha_conc_aggregated",
+        child_task_id="11111111-1111-4111-8111-111111111111",
         parent_task_id="concordance-task-42",
     )
 
@@ -233,7 +232,7 @@ def test_dispersion_detach_slow_path_writes_materialised_parquet(tmp_path):
     assert materialised_path.exists()
     assert materialised_path.parent == tmp_path / "data" / "artifacts"
     assert materialised_path.name == (
-        ".materialized_concordance_concordance-task-42_source-node-1.parquet"
+        "materialized_concordance_11111111-1111-4111-8111-111111111111_source-node-1.parquet"
     )
 
     # Schema must carry the document column + concordance start_idx so the

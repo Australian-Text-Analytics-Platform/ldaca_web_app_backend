@@ -54,6 +54,8 @@ class AnalysisTask(BaseModel, Generic[TRequest, TResult]):
     request: TRequest
     result: TResult | None = None
     error: str | None = None
+    parent_task_id: str | None = None
+    child_task_ids: list[str] = Field(default_factory=list)
 
     def complete(self, result: TResult) -> None:
         """Mark task completed and attach result payload.

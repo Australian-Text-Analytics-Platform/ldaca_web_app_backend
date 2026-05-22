@@ -47,7 +47,7 @@ def test_sanitize_request_excludes_pagination_keys(raw_request):
         assert excluded not in sanitized
 
 
-def test_normalize_saved_request_coerces_legacy_shape():
+def test_normalize_saved_request_rejects_legacy_shape():
     # We no longer support legacy request formats. Requests must include
     # `node_ids` and `node_columns`.
     raw_request = {
@@ -243,9 +243,9 @@ def test_serialize_materialized_rows_groups_by_document_for_dispersion():
     assert [len(g) for g in grouped] == [3, 1, 2]
     assert all(hit["__source_node"] == "jp_corpus" for g in grouped for hit in g)
     # Every hit in a group must share the same document value.
-    assert all(
-        len({hit["context"] for hit in g}) == 1 for g in grouped
-    ), "consecutive same-document rows must end up in one group"
+    assert all(len({hit["context"] for hit in g}) == 1 for g in grouped), (
+        "consecutive same-document rows must end up in one group"
+    )
 
 
 def test_serialize_materialized_rows_falls_back_to_singleton_groups_without_document_column():

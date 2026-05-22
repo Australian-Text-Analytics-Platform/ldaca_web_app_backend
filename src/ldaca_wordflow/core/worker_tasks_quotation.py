@@ -240,6 +240,7 @@ def run_quotation_materialize_task(
     configure_worker_environment,
     workspace_dir: str,
     node_corpus: list[str],
+    child_task_id: str,
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
@@ -276,7 +277,7 @@ def run_quotation_materialize_task(
         cache_path = materialized_cache_path(
             workspace_dir,
             feature="quotation",
-            task_id=parent_task_id,
+            task_id=child_task_id,
             node_id=parent_node_id,
         )
         cache_path.parent.mkdir(parents=True, exist_ok=True)

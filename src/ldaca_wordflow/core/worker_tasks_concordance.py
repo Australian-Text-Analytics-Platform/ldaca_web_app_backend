@@ -603,6 +603,7 @@ def run_concordance_dispersion_detach_task(
     whole_word: bool,
     case_sensitive: bool,
     new_node_name: str,
+    child_task_id: str | None = None,
     parent_task_id: str | None = None,
     include_document_column: bool = True,
     extra_columns_data: dict[str, list] | None = None,
@@ -700,12 +701,13 @@ def run_concordance_dispersion_detach_task(
             # subsequent bin-filtered detaches reuse the parquet via the fast
             # path. Only do this when we know the parent task id (otherwise
             # the dispatcher can't route the materialised event back to a
-            # specific analysis task).
-            if parent_task_id:
+            # specific analysis task). The file itself is owned by the worker
+            # task that produced it.
+            if parent_task_id and child_task_id:
                 cache_path = materialized_cache_path(
                     workspace_dir,
                     feature="concordance",
-                    task_id=parent_task_id,
+                    task_id=child_task_id,
                     node_id=parent_node_id,
                 )
                 cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -795,6 +797,7 @@ def run_concordance_materialize_task(
     configure_worker_environment,
     workspace_dir: str,
     node_corpus: list[str],
+    child_task_id: str,
     parent_task_id: str,
     parent_node_id: str,
     document_column: str,
@@ -881,7 +884,7 @@ def run_concordance_materialize_task(
         cache_path = materialized_cache_path(
             workspace_dir,
             feature="concordance",
-            task_id=parent_task_id,
+            task_id=child_task_id,
             node_id=parent_node_id,
         )
         cache_path.parent.mkdir(parents=True, exist_ok=True)

@@ -12,18 +12,15 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-
 from ldaca_wordflow.core import utils as core_utils
 from ldaca_wordflow.core import workspace as workspace_module
 from ldaca_wordflow.core.analysis_cache import (
-    cleanup_orphan_caches,
     cleanup_task_caches,
     cleanup_workspace_caches,
     materialized_cache_path,
 )
 from ldaca_wordflow.core.utils import generate_workspace_id
 from ldaca_wordflow.core.workspace import WorkspaceManager
-
 
 TASK_A = "11111111-1111-1111-1111-111111111111"
 TASK_B = "22222222-2222-2222-2222-222222222222"
@@ -64,9 +61,7 @@ def _write_cache(workspace_dir: Path, feature: str, task_id: str, node_id: str) 
 def isolated_manager(tmp_path, monkeypatch):
     """Fresh WorkspaceManager rooted under tmp_path, multi-user mode on."""
     monkeypatch.setattr(core_utils.settings, "multi_user", True, raising=False)
-    monkeypatch.setattr(
-        core_utils.settings, "user_data_folder", "users", raising=False
-    )
+    monkeypatch.setattr(core_utils.settings, "user_data_folder", "users", raising=False)
     monkeypatch.setattr(core_utils.settings, "data_root", tmp_path, raising=False)
 
     manager = WorkspaceManager()
@@ -77,7 +72,7 @@ def isolated_manager(tmp_path, monkeypatch):
 def test_materialized_cache_path_is_canonical(tmp_path):
     p = materialized_cache_path(tmp_path / "ws", "concordance", TASK_A, "node-9")
     assert p == tmp_path / "ws" / "data" / "artifacts" / (
-        f".materialized_concordance_{TASK_A}_node-9.parquet"
+        f"materialized_concordance_{TASK_A}_node-9.parquet"
     )
 
 
@@ -110,9 +105,7 @@ def test_cleanup_task_caches_is_multi_user_isolated(isolated_manager):
     ws_alpha, dir_a = _bootstrap_workspace(
         isolated_manager, "user_alpha", "shared_name"
     )
-    _ws_beta, dir_b = _bootstrap_workspace(
-        isolated_manager, "user_beta", "shared_name"
-    )
+    _ws_beta, dir_b = _bootstrap_workspace(isolated_manager, "user_beta", "shared_name")
 
     file_a = _write_cache(dir_a, "concordance", TASK_A, "n")
     file_b = _write_cache(dir_b, "concordance", TASK_A, "n")
@@ -132,33 +125,21 @@ def test_cleanup_task_caches_returns_zero_for_missing_workspace(isolated_manager
     assert cleanup_task_caches("ghost_user", "missing_ws", "") == 0
 
 
-def test_cleanup_workspace_caches_clears_all_cache_dotfiles(isolated_manager):
+def test_cleanup_workspace_caches_clears_all_cache_parquets(isolated_manager):
     workspace_id, user_dir = _bootstrap_workspace(isolated_manager, "user_one", "ws1")
 
     a = _write_cache(user_dir, "concordance", TASK_A, "n1")
     b = _write_cache(user_dir, "concordance", TASK_B, "n2")
     c = _write_cache(user_dir, "quotation", TASK_C, "n3")
 
-    # Unrelated dotfile (e.g. left by another tool) must survive.
-    unrelated_dotfile = user_dir / "data" / ".cache_other.parquet"
-    pl.DataFrame({"x": [0]}).write_parquet(unrelated_dotfile)
+    # Unrelated parquet (e.g. left by another tool) must survive.
+    unrelated_parquet = user_dir / "data" / ".cache_other.parquet"
+    pl.DataFrame({"x": [0]}).write_parquet(unrelated_parquet)
 
     removed = cleanup_workspace_caches("user_one", workspace_id)
     assert removed == 3
     assert not a.exists() and not b.exists() and not c.exists()
-    assert unrelated_dotfile.exists()
-
-
-def test_cleanup_orphan_caches_keeps_live_tasks(isolated_manager):
-    workspace_id, user_dir = _bootstrap_workspace(isolated_manager, "user_one", "ws1")
-
-    live = _write_cache(user_dir, "concordance", TASK_A, "n1")
-    dead = _write_cache(user_dir, "concordance", TASK_B, "n2")
-
-    removed = cleanup_orphan_caches("user_one", workspace_id, live_task_ids={TASK_A})
-    assert removed == 1
-    assert live.exists()
-    assert not dead.exists()
+    assert unrelated_parquet.exists()
 
 
 def test_cache_survives_workspace_save_gc(isolated_manager):

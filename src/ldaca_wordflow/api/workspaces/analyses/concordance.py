@@ -585,15 +585,18 @@ async def detach_concordance_dispersion(
         )
 
     try:
+        child_task_id = str(uuid4())
         task_info = await tm.submit_task(
             user_id=user_id,
             workspace_id=workspace_id,
             task_type="concordance_dispersion_detach",
+            task_id=child_task_id,
             task_name=request.new_node_name or None,
             task_args={
                 "workspace_dir": str(workspace_dir),
                 "node_corpus": node_corpus,
                 "parent_node_id": node_id,
+                "child_task_id": child_task_id,
                 "parent_task_id": request.parent_task_id,
                 "document_column": request.column,
                 "search_word": request.search_word,
@@ -616,6 +619,10 @@ async def detach_concordance_dispersion(
                 ),
             },
         )
+        if request.parent_task_id:
+            get_task_manager(user_id).link_child_task(
+                request.parent_task_id, task_info.id
+            )
 
         return {
             "state": "running",
@@ -729,13 +736,16 @@ async def materialize_concordance(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     try:
+        child_task_id = str(uuid4())
         task_info = await tm.submit_task(
             user_id=user_id,
             workspace_id=workspace_id,
             task_type="concordance_materialize",
+            task_id=child_task_id,
             task_args={
                 "workspace_dir": str(workspace_dir),
                 "node_corpus": node_corpus,
+                "child_task_id": child_task_id,
                 "parent_task_id": request.parent_task_id,
                 "parent_node_id": node_id,
                 "document_column": request.column,
@@ -754,6 +764,7 @@ async def materialize_concordance(
                 ),
             },
         )
+        get_task_manager(user_id).link_child_task(request.parent_task_id, task_info.id)
         return {
             "state": "running",
             "message": "Concordance materialize started",

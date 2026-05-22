@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from functools import partial
 from typing import Any, Optional, cast
+from uuid import uuid4
 
 import polars as pl
 from fastapi import APIRouter, Depends, HTTPException
@@ -715,13 +716,16 @@ async def materialize_quotation(
         raise HTTPException(status_code=404, detail="Workspace not found")
 
     try:
+        child_task_id = str(uuid4())
         task_info = await tm.submit_task(
             user_id=user_id,
             workspace_id=workspace_id,
             task_type="quotation_materialize",
+            task_id=child_task_id,
             task_args={
                 "workspace_dir": str(workspace_dir),
                 "node_corpus": node_corpus,
+                "child_task_id": child_task_id,
                 "parent_task_id": request.parent_task_id,
                 "parent_node_id": node_id,
                 "document_column": request.column,
@@ -731,6 +735,7 @@ async def materialize_quotation(
             },
             task_name="Materialize Quotation",
         )
+        get_task_manager(user_id).link_child_task(request.parent_task_id, task_info.id)
         return {
             "state": "running",
             "message": "Quotation materialize started",
