@@ -403,6 +403,14 @@ async def add_node_to_workspace(
         None,
         description="Optional Excel sheet name to load when the source file is a workbook.",
     ),
+    node_name: Optional[str] = Query(
+        None,
+        description=(
+            "Optional user-supplied name for the new data block. When omitted or "
+            "blank, the server derives the name from the file path (last folder + "
+            "stem, extension stripped)."
+        ),
+    ),
     mode: str = Query(
         "LazyFrame",
         description=(
@@ -461,28 +469,36 @@ async def add_node_to_workspace(
             detail=f"Workspace folder not found for workspace {workspace_id}",
         )
 
-    node_name = filename
-    for ext in [
-        ".csv",
-        ".tsv",
-        ".xlsx",
-        ".json",
-        ".jsonl",
-        ".parquet",
-    ]:
-        if node_name.endswith(ext):
-            node_name = node_name[: -len(ext)]
-            break
+    # When the user supplied a non-blank ``node_name``, honour it verbatim
+    # (after stripping surrounding whitespace). Otherwise derive a default
+    # from the file path: strip a known extension and keep only the last
+    # one or two path components.
+    user_supplied_name = (node_name or "").strip()
+    if user_supplied_name:
+        node_name = user_supplied_name
+    else:
+        node_name = filename
+        for ext in [
+            ".csv",
+            ".tsv",
+            ".xlsx",
+            ".json",
+            ".jsonl",
+            ".parquet",
+        ]:
+            if node_name.endswith(ext):
+                node_name = node_name[: -len(ext)]
+                break
 
-    # Use only the immediate parent folder + file stem as the data block name.
-    # Example: "sample_data/Hansard/housing_agenda" -> "Hansard/housing_agenda".
-    # Files at the root of the data folder keep just the stem.
-    normalized = node_name.replace("\\", "/")
-    parts = [part for part in normalized.split("/") if part]
-    if len(parts) >= 2:
-        node_name = "/".join(parts[-2:])
-    elif parts:
-        node_name = parts[-1]
+        # Use only the immediate parent folder + file stem as the data block name.
+        # Example: "sample_data/Hansard/housing_agenda" -> "Hansard/housing_agenda".
+        # Files at the root of the data folder keep just the stem.
+        normalized = node_name.replace("\\", "/")
+        parts = [part for part in normalized.split("/") if part]
+        if len(parts) >= 2:
+            node_name = "/".join(parts[-2:])
+        elif parts:
+            node_name = parts[-1]
 
     lazy_data = stage_dataframe_as_lazy(
         eager_data,
