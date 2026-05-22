@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import shutil
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -402,7 +403,12 @@ async def move_file(
     request: MoveFileRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Move a file into another directory inside the user's data folder."""
+    """Move a file or folder into another directory inside the user's data folder.
+
+    Both regular files and directories are supported as the source. Moving a
+    directory into itself or one of its descendants is rejected so the rename
+    cannot strand the source tree.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
 
@@ -413,9 +419,18 @@ async def move_file(
         else _resolve_user_file_path(request.target_directory_path, data_folder)
     )
 
-    if not source_path.exists() or not source_path.is_file():
+    if not source_path.exists():
         raise HTTPException(
-            status_code=404, detail=f"File {request.source_path} not found"
+            status_code=404, detail=f"{request.source_path} not found"
+        )
+    if source_path == data_folder:
+        raise HTTPException(
+            status_code=400, detail="Cannot move the user data root"
+        )
+    source_is_directory = source_path.is_dir()
+    if not source_is_directory and not source_path.is_file():
+        raise HTTPException(
+            status_code=400, detail=f"{request.source_path} is not a file or folder"
         )
     if not target_directory.exists() or not target_directory.is_dir():
         raise HTTPException(
@@ -423,13 +438,31 @@ async def move_file(
             detail=f"Folder {request.target_directory_path} not found",
         )
 
+    if source_is_directory:
+        # Block moving a folder into itself or one of its descendants —
+        # `Path.rename` would otherwise strand the source tree.
+        try:
+            target_directory.resolve().relative_to(source_path.resolve())
+        except ValueError:
+            pass
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot move a folder into itself or one of its descendants",
+            )
+
     destination_path = target_directory / source_path.name
     if not validate_file_path(destination_path, data_folder):
         raise HTTPException(status_code=400, detail="Invalid file path")
+    if destination_path == source_path:
+        raise HTTPException(
+            status_code=400,
+            detail="Source and destination are the same",
+        )
     if destination_path.exists():
         raise HTTPException(
             status_code=400,
-            detail=f"File {destination_path.name} already exists in destination",
+            detail=f"{destination_path.name} already exists in destination",
         )
 
     original_source_path = source_path
@@ -438,13 +471,65 @@ async def move_file(
         _delete_parent_folder_if_redundant(original_source_path, data_folder)
     except OSError as exc:
         raise HTTPException(
-            status_code=500, detail=f"Failed to move file: {str(exc)}"
+            status_code=500, detail=f"Failed to move: {str(exc)}"
         ) from exc
 
     return {
-        "message": "File moved",
+        "message": "Folder moved" if source_is_directory else "File moved",
         "path": _relative_path_for_api(destination_path.relative_to(data_folder)),
     }
+
+
+@router.delete("/folders/{folder_path:path}", response_model=MessageResponse)
+async def delete_folder(
+    folder_path: str,
+    recursive: bool = Query(False),
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete a folder inside the user's data directory.
+
+    When ``recursive`` is false (default) the folder must be empty; otherwise
+    its entire contents are removed. The user data root itself is never
+    removable through this endpoint.
+    """
+    user_id = current_user["id"]
+    data_folder = get_user_data_folder(user_id)
+
+    resolved_path = _resolve_user_file_path(folder_path, data_folder)
+    if resolved_path == data_folder:
+        raise HTTPException(
+            status_code=400, detail="Cannot delete the user data root"
+        )
+    if not resolved_path.exists() or not resolved_path.is_dir():
+        raise HTTPException(
+            status_code=404, detail=f"Folder {folder_path} not found"
+        )
+
+    # "Empty" mirrors the file tree's view: hidden entries (e.g. macOS
+    # ``.DS_Store``) are invisible to the user, so a folder containing only
+    # hidden cruft should still be deletable without ``recursive=true``.
+    visible_entries = [
+        entry for entry in resolved_path.iterdir() if not entry.name.startswith(".")
+    ]
+    if visible_entries and not recursive:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Folder {folder_path} is not empty. "
+                "Pass recursive=true to delete it and its contents."
+            ),
+        )
+
+    try:
+        # Always rmtree so hidden entries that wouldn't block the user's
+        # mental model of "empty" don't block the actual delete either.
+        shutil.rmtree(resolved_path)
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete folder: {str(exc)}"
+        ) from exc
+
+    return {"message": f"Folder {folder_path} deleted successfully"}
 
 
 @router.post("/upload", response_model=FileUploadResponse)
