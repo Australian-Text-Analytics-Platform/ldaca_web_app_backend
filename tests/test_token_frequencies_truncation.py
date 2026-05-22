@@ -8,6 +8,7 @@ from ldaca_wordflow.api.workspaces.analyses.token_frequencies import (
     DEFAULT_TOKEN_LIMIT,
     MAX_SERVER_TOKEN_LIMIT,
     SERVER_LIMIT_MULTIPLIER,
+    _coerce_limit_value,
     _safe_float,
 )
 from ldaca_wordflow.core.utils import get_user_data_folder
@@ -70,7 +71,7 @@ async def _get_current_task_id(client, workspace_id: str, analysis: str):
     return task_ids[0] if task_ids else None
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _stub_task_manager(monkeypatch):
     class ImmediateTaskManager:
         async def any_running(self, **_kwargs):  # pragma: no cover
@@ -107,11 +108,18 @@ def test_safe_float_preserves_missing_and_distinguishes_infinities():
     assert _safe_float(float("nan")) is None
 
 
+def test_token_frequency_limit_defaults_to_25_when_missing_or_zero():
+    assert DEFAULT_TOKEN_LIMIT == 25
+    assert _coerce_limit_value(None) == DEFAULT_TOKEN_LIMIT
+    assert _coerce_limit_value(0) == DEFAULT_TOKEN_LIMIT
+
+
 @pytest.mark.anyio
 async def test_token_frequencies_full_table_and_metadata(
     authenticated_client,
     workspace_id,
     test_user,
+    _stub_task_manager,
 ):
     user_folder = get_user_data_folder(test_user["id"])
     user_folder.mkdir(parents=True, exist_ok=True)

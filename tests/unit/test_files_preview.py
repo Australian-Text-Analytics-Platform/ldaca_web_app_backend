@@ -11,57 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture()
-def client(tmp_path):
-    """Create test client with mocked settings and user authentication"""
-    # Patch settings and DB init to keep app lightweight
-    with (
-        patch("ldaca_wordflow.main.settings") as mock_settings,
-        patch("ldaca_wordflow.main.init_db"),
-        patch("ldaca_wordflow.main.cleanup_expired_sessions"),
-        patch("ldaca_wordflow.core.utils.settings") as mock_utils_settings,
-    ):
-        # Configure main settings
-        mock_settings.debug = False
-        mock_settings.cors_allow_origin_regex = r"http://localhost(:\d+)?"
-        mock_settings.cors_allow_credentials = True
-        mock_settings.multi_user = True
-        mock_settings.get_data_root.return_value = tmp_path
-        mock_settings.get_user_data_folder.return_value = tmp_path / "users"
-        mock_settings.get_sample_data_folder.return_value = tmp_path / "sample_data"
-        mock_settings.get_database_backup_folder.return_value = tmp_path / "backups"
-        mock_settings.user_data_folder = "users"
-
-        # Configure utils settings (same instance)
-        mock_utils_settings.get_data_root.return_value = tmp_path
-        mock_utils_settings.user_data_folder = "users"
-        mock_utils_settings.multi_user = True
-
-        # Ensure required folders exist
-        tmp_path.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "users").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
-
-        # Import app after settings are patched
-        app = __import__("ldaca_wordflow.main", fromlist=["app"]).app
-
-        # Mock auth dependency to return a fixed user
-        def fake_user():
-            return {"id": "test_user"}
-
-        from ldaca_wordflow.api import files as files_api
-
-        app.dependency_overrides[files_api.get_current_user] = fake_user
-
-        # Ensure user data folder exists
-        user_root = tmp_path / "users" / "user_test_user" / "user_data"
-        user_root.mkdir(parents=True, exist_ok=True)
-
-        yield TestClient(app)
-
-        # Cleanup
-        app.dependency_overrides.clear()
+@pytest.fixture(name="client")
+def files_client_alias(files_test_client: TestClient):
+    return files_test_client
 
 
 def test_csv_preview_supported_types_and_preview(client, tmp_path):
@@ -147,9 +99,7 @@ def test_excel_preview_handles_dataframe_return_for_sheet_listing(client, tmp_pa
             return pl.DataFrame({"col_a": [1, 2], "col_b": ["x", "y"]})
         raise AssertionError("Unexpected read_excel call signature")
 
-    with patch(
-        "ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel
-    ):
+    with patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel):
         resp = client.post(
             "/api/files/preview",
             json={"filename": "single_sheet.xlsx", "page": 0, "page_size": 1},
@@ -184,9 +134,7 @@ def test_excel_preview_handles_dict_return_for_sheet_id_zero(client, tmp_path):
             return sheet_df
         raise AssertionError("Unexpected read_excel call signature")
 
-    with patch(
-        "ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel
-    ):
+    with patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel):
         resp = client.post(
             "/api/files/preview",
             json={
@@ -233,9 +181,7 @@ def test_excel_preview_returns_sheet_names_for_selector(client, tmp_path):
 
     with (
         patch("ldaca_wordflow.api.files.fastexcel", FakeFastExcel),
-        patch(
-            "ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel
-        ),
+        patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel),
     ):
         resp = client.post(
             "/api/files/preview",
@@ -281,9 +227,7 @@ def test_excel_preview_sheet_names_xml_fallback_without_fastexcel(client, tmp_pa
 
     with (
         patch("ldaca_wordflow.api.files.fastexcel", None),
-        patch(
-            "ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel
-        ),
+        patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel),
     ):
         resp = client.post(
             "/api/files/preview",

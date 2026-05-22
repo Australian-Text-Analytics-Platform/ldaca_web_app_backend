@@ -1,6 +1,5 @@
 from types import SimpleNamespace
-from typing import Any, Dict, List
-from unittest.mock import MagicMock
+from typing import Any
 
 import polars as pl
 import pytest
@@ -53,7 +52,7 @@ def _cleanup_workspace_state():
     task_manager.clear_all()
 
 
-def _seed_paginated_analysis(rows: List[Dict[str, Any]], context_length: int = 15):
+def _seed_paginated_analysis(rows: list[dict[str, Any]], context_length: int = 15):
     _prime_workspace_state()
     task_manager = get_task_manager(USER_ID)
     request = QuotationRequest(node_id="node-1", column="text")
@@ -87,6 +86,41 @@ def _seed_paginated_analysis(rows: List[Dict[str, Any]], context_length: int = 1
     task_manager.save_task(task)
     task_manager.set_current_task("quotation", task_id)
     return task_id
+
+
+def _fake_compute_for_quotes(quote_rows_by_marker: dict[str, list[dict[str, Any]]]):
+    async def fake_compute(
+        node,
+        base_df,
+        column,
+        engine,
+        *,
+        use_base_only=False,
+        **_kwargs,
+    ):
+        grouped_quotes = []
+        for text in base_df.get_column(column).to_list():
+            grouped_quotes.append(
+                next(
+                    (
+                        quote_rows
+                        for marker, quote_rows in quote_rows_by_marker.items()
+                        if marker in text
+                    ),
+                    [],
+                )
+            )
+        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
+
+    return fake_compute
+
+
+def _assert_quotation_page_payload(payload: dict[str, Any], page: int, quote: str):
+    assert payload["pagination"]["page"] == page
+    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
+    assert payload["metadata"]["metadata_columns"] == ["text"]
+    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
+    assert payload["data"][0][0]["QUOTE_quote"] == quote
 
 
 @pytest.fixture
@@ -150,139 +184,61 @@ async def test_update_context_length_persists_preference(
 
 
 @pytest.mark.asyncio
-async def test_update_context_length_clamps_bounds(authenticated_client):
-    _prime_workspace_state()
+async def test_update_context_length_clamps_bounds(
+    authenticated_client, seeded_quotation_analysis
+):
+    task_id = seeded_quotation_analysis
 
-    task_manager = get_task_manager(USER_ID)
-    request = QuotationRequest(node_id="node-1", column="text")
-    task_id = task_manager.create_task(request)
-    task = task_manager.get_task(task_id)
+    high_response = await authenticated_client.post(
+        f"/api/workspaces/quotation/tasks/{task_id}/result",
+        json={"context_length": 99999},
+    )
+    assert high_response.status_code == 200
+    assert high_response.json()["data"]["context_length"] == 2000
+
+    low_response = await authenticated_client.post(
+        f"/api/workspaces/quotation/tasks/{task_id}/result",
+        json={"context_length": -5},
+    )
+    assert low_response.status_code == 200
+    assert low_response.json()["data"]["context_length"] == 0
+
+    task = get_task_manager(USER_ID).get_task(task_id)
     assert task is not None
-
-    result = GenericAnalysisResult(
-        {
-            "data": [],
-            "columns": [],
-            "metadata": {
-                "quotation_columns": [],
-                "metadata_columns": [],
-                "all_columns": [],
-            },
-        }
-    )
-    task.complete(result)
-    task_manager.save_task(task)
-    task_manager.set_current_task("quotation", task_id)
-
-    try:
-        high_response = await authenticated_client.post(
-            f"/api/workspaces/quotation/tasks/{task_id}/result",
-            json={"context_length": 99999},
-        )
-        assert high_response.status_code == 200
-        assert high_response.json()["data"]["context_length"] == 2000
-
-        low_response = await authenticated_client.post(
-            f"/api/workspaces/quotation/tasks/{task_id}/result",
-            json={"context_length": -5},
-        )
-        assert low_response.status_code == 200
-        assert low_response.json()["data"]["context_length"] == 0
-
-        task = task_manager.get_task(task_id)
-        assert task is not None
-        assert task.result is not None
-        result = task.result.to_json()
-        assert isinstance(result, dict)
-        assert result["preferences"]["context_length"] == 0
-    finally:
-        _cleanup_workspace_state()
+    assert task.result is not None
+    result = task.result.to_json()
+    assert isinstance(result, dict)
+    assert result["preferences"]["context_length"] == 0
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "request_kwargs"),
+    [
+        ("get", {"params": {"page": 2, "page_size": 1}}),
+        ("post", {"json": {"page": 2, "page_size": 1}}),
+    ],
+)
 async def test_quotation_current_result_respects_page_params(
-    authenticated_client, seeded_paginated_quotation, monkeypatch
+    authenticated_client,
+    seeded_paginated_quotation,
+    monkeypatch,
+    method,
+    request_kwargs,
 ):
     task_id = seeded_paginated_quotation
-
-    async def fake_compute(
-        node,
-        base_df,
-        column,
-        engine,
-        *,
-        use_base_only=False,
-        **_kwargs,
-    ):
-        doc_texts = base_df.get_column(column).to_list()
-        grouped_quotes = []
-        for text in doc_texts:
-            if "alpha" in text:
-                grouped_quotes.append([{"quote": "alpha"}])
-            elif "beta" in text:
-                grouped_quotes.append([{"quote": "beta"}])
-            else:
-                grouped_quotes.append([])
-        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
-
     monkeypatch.setattr(
         "ldaca_wordflow.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
-        fake_compute,
+        _fake_compute_for_quotes(
+            {"alpha": [{"quote": "alpha"}], "beta": [{"quote": "beta"}]}
+        ),
     )
-    response = await authenticated_client.get(
+    response = await getattr(authenticated_client, method)(
         f"/api/workspaces/quotation/tasks/{task_id}/result",
-        params={"page": 2, "page_size": 1},
+        **request_kwargs,
     )
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["pagination"]["page"] == 2
-    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
-    assert payload["metadata"]["metadata_columns"] == ["text"]
-    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
-    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
-
-
-@pytest.mark.asyncio
-async def test_update_quotation_current_result_returns_page_payload(
-    authenticated_client, seeded_paginated_quotation, monkeypatch
-):
-    task_id = seeded_paginated_quotation
-
-    async def fake_compute(
-        node,
-        base_df,
-        column,
-        engine,
-        *,
-        use_base_only=False,
-        **_kwargs,
-    ):
-        doc_texts = base_df.get_column(column).to_list()
-        grouped_quotes = []
-        for text in doc_texts:
-            if "alpha" in text:
-                grouped_quotes.append([{"quote": "alpha"}])
-            elif "beta" in text:
-                grouped_quotes.append([{"quote": "beta"}])
-            else:
-                grouped_quotes.append([])
-        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
-
-    monkeypatch.setattr(
-        "ldaca_wordflow.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
-        fake_compute,
-    )
-    response = await authenticated_client.post(
-        f"/api/workspaces/quotation/tasks/{task_id}/result",
-        json={"page": 2, "page_size": 1},
-    )
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["pagination"]["page"] == 2
-    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
-    assert payload["metadata"]["metadata_columns"] == ["text"]
-    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
-    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
+    _assert_quotation_page_payload(response.json(), page=2, quote="beta")
 
 
 @pytest.mark.asyncio
@@ -290,36 +246,19 @@ async def test_quotation_current_result_returns_all_quotes_for_document_page(
     authenticated_client, seeded_paginated_quotation, monkeypatch
 ):
     task_id = seeded_paginated_quotation
-    """Page size is in documents; all quotes within the selected docs should be returned."""
-
-    async def fake_compute(
-        node,
-        base_df,
-        column,
-        engine,
-        *,
-        use_base_only=False,
-        **_kwargs,
-    ):
-        doc_texts = base_df.get_column(column).to_list()
-        grouped_quotes = []
-        for text in doc_texts:
-            if "alpha" in text:
-                grouped_quotes.append(
-                    [
-                        {"quote": "alpha-1", "quote_row_idx": 0},
-                        {"quote": "alpha-2", "quote_row_idx": 1},
-                    ]
-                )
-            elif "beta" in text:
-                grouped_quotes.append([{"quote": "beta-1", "quote_row_idx": 0}])
-            else:
-                grouped_quotes.append([])
-        return base_df.with_columns(pl.Series("quotation", grouped_quotes))
+    # Page size is in documents; all quotes within the selected docs should be returned.
 
     monkeypatch.setattr(
         "ldaca_wordflow.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
-        fake_compute,
+        _fake_compute_for_quotes(
+            {
+                "alpha": [
+                    {"quote": "alpha-1", "quote_row_idx": 0},
+                    {"quote": "alpha-2", "quote_row_idx": 1},
+                ],
+                "beta": [{"quote": "beta-1", "quote_row_idx": 0}],
+            }
+        ),
     )
 
     response = await authenticated_client.get(
@@ -340,27 +279,6 @@ async def test_quotation_current_result_returns_all_quotes_for_document_page(
 async def test_quotation_endpoint_recomputes_on_demand(
     authenticated_client, monkeypatch, seeded_paginated_quotation
 ):
-    class DummyWorkspace:
-        def __init__(self, df):
-            self._df = df
-            self.nodes = {
-                "node-1": SimpleNamespace(id="node-1", name="node-1", data=self._df)
-            }
-
-        def get_node(self, node_id):
-            return self.nodes.get(
-                node_id,
-                SimpleNamespace(id=node_id, data=self._df, name=node_id),
-            )
-
-    base_df = pl.DataFrame({"text": ["alpha doc", "beta doc"]}).lazy()
-    workspace_manager._current[USER_ID] = {
-        "wid": WORKSPACE_ID,
-        "workspace": DummyWorkspace(base_df),
-        "path": None,
-    }
-    # No workspace-level analysis bucket; TaskManager holds in-memory state.
-
     recompute_called = False
 
     async def fake_compute(
@@ -374,16 +292,9 @@ async def test_quotation_endpoint_recomputes_on_demand(
     ):
         nonlocal recompute_called
         recompute_called = True
-        doc_texts = base_df_slice.get_column(column).to_list()
-        grouped_quotes = []
-        for text in doc_texts:
-            if "alpha" in text:
-                grouped_quotes.append([{"quote": "alpha"}])
-            elif "beta" in text:
-                grouped_quotes.append([{"quote": "beta"}])
-            else:
-                grouped_quotes.append([])
-        return base_df_slice.with_columns(pl.Series("quotation", grouped_quotes))
+        return await _fake_compute_for_quotes(
+            {"alpha": [{"quote": "alpha"}], "beta": [{"quote": "beta"}]}
+        )(node, base_df_slice, column, engine, use_base_only=use_base_only, **_kwargs)
 
     monkeypatch.setattr(
         "ldaca_wordflow.api.workspaces.analyses.quotation_core.compute_quote_dataframe",
@@ -397,11 +308,5 @@ async def test_quotation_endpoint_recomputes_on_demand(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["pagination"]["page"] == 2
-    assert payload["metadata"]["quotation_columns"] == list(QUOTE_COLUMN_NAMES)
-    assert payload["metadata"]["metadata_columns"] == ["text"]
-    assert payload["metadata"]["all_columns"] == ["text", *QUOTE_COLUMN_NAMES]
-    assert payload["data"][0][0]["QUOTE_quote"] == "beta"
-    assert recompute_called is True
-    assert recompute_called is True
+    _assert_quotation_page_payload(payload, page=2, quote="beta")
     assert recompute_called is True

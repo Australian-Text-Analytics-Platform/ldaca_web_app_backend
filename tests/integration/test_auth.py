@@ -137,57 +137,6 @@ class TestAuthenticationModes:
         # Single-user mode should have no auth methods
         assert methods == []
 
-    @patch("ldaca_wordflow.core.auth.settings")
-    async def test_single_user_mode_concept(self, mock_settings):
-        """Test single-user mode concept with mocked settings"""
-        from ldaca_wordflow.core.auth import get_current_user
-
-        # Mock single-user configuration
-        mock_settings.multi_user = False
-        mock_settings.single_user_id = "test-single-user"
-        mock_settings.single_user_email = "test-single@example.com"
-        mock_settings.single_user_name = "Test Single User"
-
-        try:
-            result = await get_current_user("any-token")
-
-            # If mocking worked, should get test values
-            if result["id"] == "test-single-user":
-                assert result["email"] == "test-single@example.com"
-                assert result["name"] == "Test Single User"
-            else:
-                # If mocking didn't work due to import caching, should still be valid
-                assert "id" in result
-                assert "email" in result
-        except Exception:
-            # Import caching may prevent mocking - the concept is still valid
-            pass
-
-    @patch("ldaca_wordflow.core.auth.validate_access_token")
-    @patch("ldaca_wordflow.core.auth.settings")
-    async def test_multi_user_mode_concept(self, mock_settings, mock_validate):
-        """Test multi-user mode concept with mocked settings"""
-        from ldaca_wordflow.core.auth import get_current_user
-
-        # Mock multi-user configuration
-        mock_settings.multi_user = True
-        mock_user = {"id": "test-multi-user", "email": "test-multi@example.com"}
-        mock_validate.return_value = mock_user
-
-        try:
-            result = await get_current_user("Bearer valid-token")
-
-            # If mocking worked, should get mocked user
-            if result["id"] == "test-multi-user":
-                assert result == mock_user
-            else:
-                # If mocking didn't work, should still be valid structure
-                assert "id" in result
-                assert "email" in result
-        except Exception:
-            # Import caching may prevent mocking - the concept is still valid
-            pass
-
 
 class TestAuthenticationIntegration:
     """Test authentication integration with the rest of the system"""

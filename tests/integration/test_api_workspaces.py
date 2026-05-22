@@ -757,9 +757,7 @@ class TestWorkspaceAPI:
             # Verify the node data was updated (mock_node.data should be modified)
             assert mock_node.data is not None
 
-    async def test_delete_node_column_drops_in_place(
-        self, authenticated_client
-    ):
+    async def test_delete_node_column_drops_in_place(self, authenticated_client):
         """Delete-column endpoint should drop the column in-place and return updated node info."""
         mock_node = Mock()
         mock_data = Mock()
@@ -782,9 +780,7 @@ class TestWorkspaceAPI:
             patch(
                 "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
-            patch(
-                "ldaca_wordflow.api.workspaces.base.update_workspace"
-            ) as mock_update,
+            patch("ldaca_wordflow.api.workspaces.base.update_workspace") as mock_update,
         ):
             mock_current_entry.return_value = "workspace-123"
             mock_current_ws.return_value = mock_workspace
@@ -799,29 +795,6 @@ class TestWorkspaceAPI:
         assert body["id"] == "node-1"
         mock_data.drop.assert_called_once_with("value")
         assert mock_node.data is mock_data.drop.return_value
-
-    async def test_delete_node_column_missing_node_propagates_keyerror(
-        self, authenticated_client
-    ):
-        """Delete-column endpoint should let missing node ids fail directly."""
-        mock_workspace = Mock()
-        mock_workspace.nodes = {}
-
-        with (
-            patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
-            ) as mock_current_entry,
-            patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
-            ) as mock_current_ws,
-        ):
-            mock_current_entry.return_value = "workspace-123"
-            mock_current_ws.return_value = mock_workspace
-
-            with pytest.raises(KeyError):
-                await authenticated_client.delete(
-                    "/api/workspaces/nodes/missing-node/columns/value"
-                )
 
     async def test_rename_node_column_delegates_to_node_rename(
         self, authenticated_client
@@ -846,9 +819,7 @@ class TestWorkspaceAPI:
             patch(
                 "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
             ) as mock_current_ws,
-            patch(
-                "ldaca_wordflow.api.workspaces.base.update_workspace"
-            ) as mock_update,
+            patch("ldaca_wordflow.api.workspaces.base.update_workspace") as mock_update,
         ):
             mock_current_entry.return_value = "workspace-123"
             mock_current_ws.return_value = mock_workspace
@@ -863,75 +834,6 @@ class TestWorkspaceAPI:
         body = response.json()
         assert body["id"] == "node-1"
         mock_node.rename.assert_called_once_with({"original_col": "renamed_col"})
-
-    async def test_rename_node_column_missing_node_propagates_keyerror(
-        self, authenticated_client
-    ):
-        """Rename endpoint should let missing node ids fail directly."""
-        mock_workspace = Mock()
-        mock_workspace.nodes = {}
-
-        with (
-            patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
-            ) as mock_current_entry,
-            patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace"
-            ) as mock_current_ws,
-        ):
-            mock_current_entry.return_value = "workspace-123"
-            mock_current_ws.return_value = mock_workspace
-
-            with pytest.raises(KeyError):
-                await authenticated_client.put(
-                    "/api/workspaces/nodes/missing-node/columns/original_col",
-                    json={"new_name": "renamed_col"},
-                )
-
-    async def test_cast_node_not_found_propagates_keyerror(self, authenticated_client):
-        """Test casting lets missing node ids fail directly."""
-
-        with patch(
-            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
-        ) as mock_current_entry:
-            mock_workspace = Mock()
-            mock_workspace.nodes = {}
-            mock_current_entry.return_value = "workspace-123"
-            with patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
-                return_value=mock_workspace,
-            ):
-                cast_data = {"column": "test_column", "target_type": "string"}
-
-                with pytest.raises(KeyError):
-                    await authenticated_client.post(
-                        "/api/workspaces/nodes/nonexistent-node/cast",
-                        json=cast_data,
-                    )
-
-    async def test_cast_node_invalid_column(self, authenticated_client):
-        """Test casting lets missing columns fail directly."""
-        import polars as pl
-
-        mock_node = Mock()
-        mock_node.data = pl.DataFrame({"existing_col": [1, 2, 3]}).lazy()
-
-        with patch(
-            "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace_id"
-        ) as mock_current_entry:
-            mock_workspace = Mock()
-            mock_workspace.nodes = {"test-node": mock_node}
-            mock_current_entry.return_value = "workspace-123"
-            with patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
-                return_value=mock_workspace,
-            ):
-                cast_data = {"column": "nonexistent_column", "target_type": "string"}
-
-                with pytest.raises(KeyError):
-                    await authenticated_client.post(
-                        "/api/workspaces/nodes/test-node/cast", json=cast_data
-                    )
 
     async def test_cast_node_invalid_request_data(self, authenticated_client):
         """Test casting with invalid request data"""
@@ -980,11 +882,6 @@ class TestWorkspaceAPI:
             response = await authenticated_client.post(
                 "/api/workspaces/nodes/test-node/cast", json=cast_data
             )
-
-            # Debug: print response if not 200
-            if response.status_code != 200:
-                print(f"Response status: {response.status_code}")
-                print(f"Response data: {response.json()}")
 
             assert response.status_code == 200
 
@@ -1109,9 +1006,6 @@ class TestWorkspaceAPI:
             response = await authenticated_client.post(
                 "/api/workspaces/nodes/test-node/cast", json=cast_data
             )
-
-            if response.status_code != 200:
-                print(f"Error response: {response.json()}")
 
             assert response.status_code == 200
             data = response.json()

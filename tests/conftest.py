@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from ldaca_wordflow import db
 
 
@@ -217,6 +216,53 @@ async def test_client(settings_override):
 
 
 @pytest.fixture
+def files_test_client(tmp_path: Path):
+    """Sync TestClient for files-root routes with isolated settings and auth."""
+    from fastapi.testclient import TestClient
+
+    with (
+        patch("ldaca_wordflow.main.settings") as mock_settings,
+        patch("ldaca_wordflow.main.init_db"),
+        patch("ldaca_wordflow.main.cleanup_expired_sessions"),
+        patch("ldaca_wordflow.core.utils.settings") as mock_utils_settings,
+    ):
+        mock_settings.debug = False
+        mock_settings.cors_allow_origin_regex = r"http://localhost(:\d+)?"
+        mock_settings.cors_allow_credentials = True
+        mock_settings.multi_user = True
+        mock_settings.get_data_root.return_value = tmp_path
+        mock_settings.get_user_data_folder.return_value = tmp_path / "users"
+        mock_settings.get_sample_data_folder.return_value = tmp_path / "sample_data"
+        mock_settings.get_database_backup_folder.return_value = tmp_path / "backups"
+        mock_settings.user_data_folder = "users"
+
+        mock_utils_settings.get_data_root.return_value = tmp_path
+        mock_utils_settings.user_data_folder = "users"
+        mock_utils_settings.multi_user = True
+
+        (tmp_path / "users").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "users" / "user_test_user" / "user_data").mkdir(
+            parents=True, exist_ok=True
+        )
+
+        app = __import__("ldaca_wordflow.main", fromlist=["app"]).app
+
+        def fake_user():
+            return {"id": "test_user"}
+
+        from ldaca_wordflow.api import files as files_api
+
+        app.dependency_overrides[files_api.get_current_user] = fake_user
+
+        try:
+            yield TestClient(app)
+        finally:
+            app.dependency_overrides.clear()
+
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files"""
     temp_path = tempfile.mkdtemp()
@@ -264,47 +310,6 @@ def mock_settings():
 
 
 @pytest.fixture
-def mock_workspace_manager():
-    """Mock workspace manager for testing"""
-    with patch(
-        "ldaca_wordflow.core.workspace.workspace_manager"
-    ) as mock_manager:
-        mock_manager.get_user_workspaces.return_value = {}
-        mock_manager.create_workspace.return_value = {
-            "id": "test-workspace-123",
-            "name": "Test Workspace",
-            "description": "Test description",
-            "created_at": "2024-01-01T00:00:00Z",
-            "modified_at": "2024-01-01T00:00:00Z",
-            "nodes": {},
-        }
-        yield mock_manager
-
-
-@pytest.fixture
-def sample_dataframe_data():
-    """Sample data for DataFrame testing"""
-    return [
-        {"name": "Alice", "age": 25, "city": "New York"},
-        {"name": "Bob", "age": 30, "city": "London"},
-        {"name": "Charlie", "age": 35, "city": "Tokyo"},
-    ]
-
-
-@pytest.fixture
-def sample_user_data():
-    """Sample user data for testing"""
-    return {
-        "id": "test",
-        "email": "test@example.com",
-        "name": "Test User",
-        "picture": "https://example.com/avatar.jpg",
-        "created_at": "2024-01-01T00:00:00Z",
-        "last_login": "2024-01-01T12:00:00Z",
-    }
-
-
-@pytest.fixture
 def sample_csv_file(temp_dir):
     """Create a sample CSV file for testing"""
     csv_content = """name,age,city
@@ -329,61 +334,6 @@ def sample_json_file(temp_dir):
     json_file = temp_dir / "sample.json"
     json_file.write_text(json_content)
     return json_file
-
-
-@pytest.fixture
-def sample_plain_text_file(temp_dir):
-    """Create a sample plain-text file for testing"""
-
-    text_file = temp_dir / "sample.txt"
-    text_file.write_text("Plain text upload support", encoding="utf-8")
-    return text_file
-
-
-@pytest.fixture
-def mock_user():
-    """Mock user data for testing"""
-    return {
-        "id": "test",
-        "email": "test@example.com",
-        "name": "Test User",
-        "picture": "https://example.com/avatar.jpg",
-        "created_at": "2024-01-01T00:00:00Z",
-        "last_login": "2024-01-01T12:00:00Z",
-    }
-
-
-@pytest.fixture
-def mock_google_token():
-    """Mock Google OAuth token data"""
-    return {
-        "iss": "accounts.google.com",
-        "sub": "test-google-id-123",
-        "email": "test@example.com",
-        "email_verified": True,
-        "name": "Test User",
-        "picture": "https://example.com/avatar.jpg",
-    }
-
-
-# Test data constants
-SAMPLE_DATAFRAME_DATA = [
-    {"name": "Alice", "age": 25, "city": "New York"},
-    {"name": "Bob", "age": 30, "city": "London"},
-    {"name": "Charlie", "age": 35, "city": "Tokyo"},
-]
-
-SAMPLE_TEXT_DATA = [
-    {"document_id": 1, "text": "This is a sample document about machine learning."},
-    {
-        "document_id": 2,
-        "text": "Another document discussing natural language processing.",
-    },
-    {"document_id": 3, "text": "A third document on artificial intelligence topics."},
-]
-
-
-# Analysis persistence test fixtures
 
 
 @pytest.fixture
@@ -522,9 +472,6 @@ async def timeline_node_id(authenticated_client, workspace_id, timeline_csv_file
         "/api/workspaces/nodes",
         params={"filename": timeline_csv_file.name},
     )
-    assert response.status_code == 200
-    result = response.json()
-    return result["id"]
     assert response.status_code == 200
     result = response.json()
     return result["id"]

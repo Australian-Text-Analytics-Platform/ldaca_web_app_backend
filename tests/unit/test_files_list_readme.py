@@ -7,47 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture()
-def client(tmp_path: Path):
-    with (
-        patch("ldaca_wordflow.main.settings") as mock_settings,
-        patch("ldaca_wordflow.main.init_db"),
-        patch("ldaca_wordflow.main.cleanup_expired_sessions"),
-        patch("ldaca_wordflow.core.utils.settings") as mock_utils_settings,
-    ):
-        mock_settings.debug = False
-        mock_settings.cors_allow_origin_regex = r"http://localhost(:\\d+)?"
-        mock_settings.cors_allow_credentials = True
-        mock_settings.multi_user = True
-        mock_settings.get_data_root.return_value = tmp_path
-        mock_settings.get_user_data_folder.return_value = tmp_path / "users"
-        mock_settings.get_sample_data_folder.return_value = tmp_path / "sample_data"
-        mock_settings.get_database_backup_folder.return_value = tmp_path / "backups"
-        mock_settings.user_data_folder = "users"
-
-        mock_utils_settings.get_data_root.return_value = tmp_path
-        mock_utils_settings.user_data_folder = "users"
-        mock_utils_settings.multi_user = True
-
-        (tmp_path / "users").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "backups").mkdir(parents=True, exist_ok=True)
-
-        app = __import__("ldaca_wordflow.main", fromlist=["app"]).app
-
-        def fake_user():
-            return {"id": "test_user"}
-
-        from ldaca_wordflow.api import files as files_api
-
-        app.dependency_overrides[files_api.get_current_user] = fake_user
-
-        user_root = tmp_path / "users" / "user_test_user" / "user_data"
-        user_root.mkdir(parents=True, exist_ok=True)
-
-        yield TestClient(app)
-
-        app.dependency_overrides.clear()
+@pytest.fixture(name="client")
+def files_client_alias(files_test_client: TestClient):
+    return files_test_client
 
 
 def test_list_files_returns_tree_with_readme_entries(

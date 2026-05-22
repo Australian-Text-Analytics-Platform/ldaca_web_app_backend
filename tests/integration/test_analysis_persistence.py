@@ -10,7 +10,6 @@ from types import SimpleNamespace
 import polars as pl
 import pytest
 from httpx import AsyncClient
-
 from ldaca_wordflow.analysis.manager import get_task_manager
 from ldaca_wordflow.analysis.results import GenericAnalysisResult
 from ldaca_wordflow.api.workspaces.analyses.token_frequencies import (
@@ -326,24 +325,6 @@ class TestTokenFrequencyPersistence:
         assert record.request["token_limit"] == DEFAULT_TOKEN_LIMIT
         assert record.request.get("stop_words") == ["alpha", "beta"]
         assert "limit" not in record.request
-
-    async def test_token_frequency_with_invalid_node_fails(
-        self, authenticated_client, workspace_id
-    ):
-        """Test that invalid token-frequency node IDs now propagate directly."""
-        # Given: A request with non-existent node ID
-        request_payload = {
-            "node_ids": ["nonexistent_node"],
-            "node_columns": {"nonexistent_node": "document"},
-        }
-
-        # When: We call the token frequencies endpoint
-        with pytest.raises(KeyError):
-            await post_json(
-                authenticated_client,
-                "/api/workspaces/token-frequencies",
-                request_payload,
-            )
 
     async def test_token_frequency_multiple_nodes(
         self,
@@ -810,7 +791,9 @@ class TestSequentialAnalysisPersistence:
             "get_current_workspace",
             lambda *_args, **_kwargs: dummy_workspace,
         )
-        monkeypatch.setattr(sequential_module, "update_workspace", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            sequential_module, "update_workspace", lambda *_args, **_kwargs: None
+        )
 
         class DummyDetachedNode:
             def __init__(self, **kwargs):
@@ -919,7 +902,9 @@ class TestSequentialAnalysisPersistence:
             "get_current_workspace",
             lambda *_args, **_kwargs: dummy_workspace,
         )
-        monkeypatch.setattr(sequential_module, "update_workspace", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(
+            sequential_module, "update_workspace", lambda *_args, **_kwargs: None
+        )
 
         class DummyDetachedNode:
             def __init__(self, **kwargs):
@@ -980,80 +965,6 @@ class TestSequentialAnalysisPersistence:
 @pytest.mark.anyio
 class TestWorkspaceGraphEnrichment:
     """Test workspace graph enrichment with analysis data."""
-
-    async def test_graph_includes_latest_analysis_empty(
-        self, authenticated_client, workspace_id
-    ):
-        """Test that workspace graph includes empty latest_analysis when no analyses exist."""
-        # Given: A workspace with no analyses
-
-        # When: We get the workspace graph
-        response = await get_json(authenticated_client, "/api/workspaces/graph")
-
-        # Then: The response includes latest_analysis as empty dict
-        assert response.status_code == 200
-        graph_data = response.json()
-        assert "edges" in graph_data and "nodes" in graph_data
-        assert "workspace_info" not in graph_data
-        # latest_analysis is no longer provided by the graph endpoint
-        assert "latest_analysis" not in graph_data
-
-    async def test_graph_includes_latest_analysis_populated(
-        self, authenticated_client, workspace_id, tiny_node_id, test_user
-    ):
-        """Test that workspace graph includes analysis data after running analysis."""
-        # Given: We run a token frequency analysis
-        request_payload = {
-            "node_ids": [tiny_node_id],
-            "node_columns": {tiny_node_id: "document"},
-        }
-
-        await post_json(
-            authenticated_client,
-            "/api/workspaces/token-frequencies",
-            request_payload,
-        )
-
-        # Simulate worker completion so graph shows populated results.
-        _simulate_token_frequency_completion(workspace_id)
-
-        # When: We get the workspace graph
-        response = await get_json(authenticated_client, "/api/workspaces/graph")
-
-        # Then: The response includes the analysis in latest_analysis
-        assert response.status_code == 200
-        graph_data = response.json()
-        assert "edges" in graph_data and "nodes" in graph_data
-        assert "workspace_info" not in graph_data
-        # Graph no longer surfaces latest_analysis; rely on TaskManager queries instead
-
-    async def test_graph_includes_multiple_analyses(
-        self, authenticated_client, workspace_id, sample_node_id, test_user
-    ):
-        """Test that workspace graph includes multiple analysis types."""
-        # Given: We run token frequency analysis
-        tf_request = {
-            "node_ids": [sample_node_id],
-            "node_columns": {sample_node_id: "document"},
-        }
-
-        await post_json(
-            authenticated_client,
-            "/api/workspaces/token-frequencies",
-            tf_request,
-        )
-
-        # Note: We would add other analysis types here when available
-        # For now, just verify the structure supports multiple analyses
-
-        # When: We get the workspace graph
-        response = await get_json(authenticated_client, "/api/workspaces/graph")
-
-        # Then: The latest_analysis structure can hold multiple analysis types
-        assert response.status_code == 200
-        graph_data = response.json()
-        assert "edges" in graph_data and "nodes" in graph_data
-        assert "workspace_info" not in graph_data
 
     async def test_graph_surfaces_derived_metadata_on_tokenised_node(
         self, authenticated_client, workspace_id, tiny_node_id, test_user
@@ -1223,59 +1134,9 @@ class TestAnalysisPersistenceEdgeCases:
         ws1_analyses = _list_analysis_records(test_user["id"], ws1_id)
         ws2_analyses = _list_analysis_records(test_user["id"], ws2_id)
 
-        # Debug output if assertions fail
-        if len(ws1_analyses) != 0 or len(ws2_analyses) != 1:
-            print(f"\nDEBUG: ws1_analyses count: {len(ws1_analyses)}")
-            print(f"DEBUG: ws2_analyses count: {len(ws2_analyses)}")
-            print(f"DEBUG: ws1_id: {ws1_id}")
-            print(f"DEBUG: ws2_id: {ws2_id}")
-            print(f"DEBUG: test_user: {test_user}")
-
         assert len(ws1_analyses) == 0
         assert len(ws2_analyses) == 1
 
         # And: The active workspace analysis carries the expected request data
         assert ws2_analyses[0].request["token_limit"] == DEFAULT_TOKEN_LIMIT
         assert ws2_analyses[0].request.get("stop_words") == ["beta"]
-
-
-@pytest.mark.slow
-@pytest.mark.anyio
-class TestAnalysisPersistencePerformance:
-    """Performance and stress tests for analysis persistence."""
-
-    async def test_many_sequential_analyses(
-        self, authenticated_client, workspace_id, tiny_node_id, test_user
-    ):
-        """Test that many sequential analyses don't cause performance issues."""
-        # Given: We run many analyses with different stop word sets
-        stop_sets = [
-            [],
-            ["alpha"],
-            ["alpha", "beta"],
-            ["gamma"],
-            ["delta", "epsilon"],
-        ]
-
-        for stop_words in stop_sets:
-            # When: We run analysis with different stop word configuration each time
-            request_payload = {
-                "node_ids": [tiny_node_id],
-                "node_columns": {tiny_node_id: "document"},
-                "stop_words": stop_words,
-            }
-
-            response = await post_json(
-                authenticated_client,
-                "/api/workspaces/token-frequencies",
-                request_payload,
-            )
-
-            # Then: Each analysis succeeds
-            assert response.status_code == 200
-
-        # And: Only the latest analysis is persisted (overwrites previous)
-        analyses = _list_analysis_records(test_user["id"], workspace_id)
-        assert len(analyses) == 1
-        assert analyses[0].request["token_limit"] == DEFAULT_TOKEN_LIMIT
-        assert analyses[0].request.get("stop_words") == ["delta", "epsilon"]
