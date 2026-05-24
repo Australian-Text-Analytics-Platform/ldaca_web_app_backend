@@ -1,0 +1,2 @@
+import{t as e}from"./jsx-runtime-BjieVXav.js";import{T as t,t as n}from"./utils-BnMqHDaE.js";var r=t(),i=e();function a(e){let t=(0,r.c)(8),a,o;t[0]===e?(a=t[1],o=t[2]):({className:a,...o}=e,t[0]=e,t[1]=a,t[2]=o);let s;t[3]===a?s=t[4]:(s=n(`bg-accent animate-pulse rounded-md`,a),t[3]=a,t[4]=s);let c;return t[5]!==o||t[6]!==s?(c=(0,i.jsx)(`div`,{"data-slot":`skeleton`,className:s,...o}),t[5]=o,t[6]=s,t[7]=c):c=t[7],c}export{a as t};
+//# sourceMappingURL=skeleton-CQm2EaqX.js.map
