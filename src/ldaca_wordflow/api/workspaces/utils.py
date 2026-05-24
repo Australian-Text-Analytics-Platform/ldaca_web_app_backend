@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 import polars as pl
+from docworkspace import Workspace
+from docworkspace.workspace.io import rebase_workspace_sources
 from fastapi import HTTPException
 
 from ...analysis.models import AnalysisStatus
@@ -73,12 +75,42 @@ def update_workspace(
             return None
 
         workspace.modified_at = datetime.now().isoformat()
+        # Capture the prior on-disk folder before resolve — _resolve_workspace_dir
+        # physically renames the folder when workspace.name has changed, and the
+        # in-memory LazyFrames carry absolute scan paths under that prior folder.
+        previous_dir = workspace_manager._get_indexed_path(user_id, workspace_id)
         target_dir = workspace_manager._resolve_workspace_dir(
             user_id=user_id,
             workspace_id=workspace_id,
             workspace_name=workspace.name,
         )
         workspace_manager._attach_workspace_dir(workspace, target_dir)
+
+        if previous_dir is not None and previous_dir != target_dir:
+            # The folder has been physically renamed: parquet + plbin files
+            # moved with it, but the plbins (and in-memory plans) still encode
+            # the prior absolute paths. Rebase the on-disk plbins first, then
+            # reload the workspace so its plans match the new filesystem
+            # *before* save runs — write_workspace's GC otherwise deletes the
+            # renamed parquets as "unreferenced" relative to the stale paths.
+            from ...core.derived_columns import align_tokens_for_current_user
+
+            rebase_workspace_sources(target_dir)
+            reloaded = Workspace.load(target_dir)
+            align_tokens_for_current_user(reloaded, user_id)
+            workspace_manager._attach_workspace_dir(reloaded, target_dir)
+            # The on-disk metadata.json hasn't been re-saved yet, so the
+            # freshly loaded workspace still carries the pre-rename name and
+            # any other unsaved mutations from the caller. Propagate them.
+            reloaded.name = workspace.name
+            reloaded.description = workspace.description
+            reloaded.modified_at = workspace.modified_at
+            workspace = reloaded
+            entry = workspace_manager._current.get(user_id)
+            if entry is not None:
+                entry["workspace"] = reloaded
+                entry["path"] = target_dir
+
         workspace.save(target_dir)
         workspace_manager._set_cached_path(user_id, workspace_id, target_dir)
         return target_dir
