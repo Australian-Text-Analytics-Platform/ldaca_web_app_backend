@@ -43,8 +43,13 @@ async def test_rename_workspace_keeps_lazy_plans_collectable(
     assert plbin.exists()
     sources = list_source_paths(plbin)
     assert sources, "expected at least one scan source"
+    # polars stores scan paths POSIX-style; normalise both sides so the
+    # substring check works on Windows (where str(Path) uses backslashes).
+    folder_after_posix = folder_after.as_posix()
     for src in sources:
-        assert str(folder_after) in src, f"stale source path in plbin: {src}"
+        assert folder_after_posix in src.replace("\\", "/"), (
+            f"stale source path in plbin: {src}"
+        )
 
     # in-memory plan must collect without resolving stale paths
     df = node_after.data.collect()
