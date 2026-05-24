@@ -122,6 +122,9 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch, sample_nodes):
         def _set_cached_path(self, user_id: str, workspace_id: str, target_dir):
             return None
 
+        def _get_indexed_path(self, user_id: str, workspace_id: str):
+            return None
+
         def set_current_workspace(self, user_id: str, workspace_id: str):
             self.workspace_id = workspace_id
             return True
