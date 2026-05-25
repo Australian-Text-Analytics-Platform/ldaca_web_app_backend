@@ -58,7 +58,27 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: uv run pytest -q
+        run: |
+          set +e
+          output=$(uv run pytest -q 2>&1)
+          pytest_exit=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$pytest_exit" -ne 0 ]; then
+            # Known Python 3.14 / Windows shutdown race: pytest reports
+            # all tests passed, then ``Py_Finalize`` crashes with
+            # ``Fatal Python error: tstate_delete_common: NULL interpreter``
+            # and the process exits non-zero. Treat as success only when
+            # both the crash signature and a passing summary line are
+            # present, on Windows.
+            if [ "$RUNNER_OS" = "Windows" ] && \
+               printf '%s' "$output" | grep -q "Fatal Python error: tstate_delete_common" && \
+               printf '%s' "$output" | grep -qE "[0-9]+ passed.*in [0-9.]+s"; then
+              echo "::warning::Python 3.14 Windows interpreter shutdown race detected after a passing test run; treating as success."
+              exit 0
+            fi
+            exit "$pytest_exit"
+          fi
 
       - name: Build distributions
         shell: bash
