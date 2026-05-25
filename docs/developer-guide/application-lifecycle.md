@@ -9,8 +9,7 @@ Startup does the operational setup that must exist before any API call:
 - create data, user, sample-data, and backup folders,
 - initialize the async SQLite database,
 - clean expired user sessions,
-- start tokenizer/model prefetching,
-- sweep stale token-cache files.
+- start tokenizer/model prefetching.
 
 Shutdown closes logging resources, shuts down the shared worker pool, and cleans
 expired sessions again.

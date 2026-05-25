@@ -5,14 +5,15 @@ that ``_apply_result_query_overrides`` translates it to the server-side
 hard cap before downstream code reads ``page_size`` as an ``int``.
 """
 
-import pytest
-from pydantic import ValidationError
+from typing import Any, cast
 
+import pytest
 from ldaca_wordflow.api.workspaces.analyses.concordance import (
     SNAPSHOT_ALL_PAGE_SIZE_CAP,
     ConcordanceResultQuery,
     _apply_result_query_overrides,
 )
+from pydantic import ValidationError
 
 
 def test_page_size_accepts_literal_all() -> None:
@@ -27,7 +28,7 @@ def test_page_size_still_accepts_int() -> None:
 
 def test_page_size_rejects_other_strings() -> None:
     with pytest.raises(ValidationError):
-        ConcordanceResultQuery(page_size="huge")
+        ConcordanceResultQuery(page_size=cast(Any, "huge"))
 
 
 def test_apply_result_query_overrides_translates_all_to_cap() -> None:

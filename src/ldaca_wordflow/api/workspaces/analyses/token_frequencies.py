@@ -26,6 +26,7 @@ from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....core.analysis_helpers import sanitize_stop_words
 from ....core.auth import get_current_user
+from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
 from ..utils import ensure_task_synced, update_workspace
@@ -491,6 +492,13 @@ async def calculate_token_frequencies(
             column_name, form=TOKENS_FORM, model=request.model
         )
         if derived_tokens_col is not None:
+            node_data = hydrate_derived_tokens_lazyframe(
+                node_data,
+                node=node,
+                source_column=column_name,
+                user_id=user_id,
+                derived_name=derived_tokens_col,
+            )
             # Phase 5 perf fix: spill the explode-flattened tokens to a
             # parquet via streaming sink instead of materialising a
             # ``list[list[str]]`` of Python str objects (which for 10 k

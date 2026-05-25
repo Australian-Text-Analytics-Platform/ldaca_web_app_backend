@@ -88,10 +88,11 @@ allows only the supported transformation contexts.
 ## Schema Filtering
 
 `api/workspaces/schema_filter.py` is the frontend-facing schema filter.
-Derived analytical columns are stored in the same LazyFrame as user columns but
-are named under `__derived__.*` and tracked in `Node.derived`. The filter hides
-those columns from normal table/schema responses while exposing structured
-derived metadata where the UI needs it.
+Derived analytical specs are tracked in `Node.derived` under `__derived__.*`
+names. Cache-backed token specs are hydrated only inside analysis paths; legacy
+workspaces may still carry physical `__derived__.*` columns. The filter hides
+physical derived columns from normal table/schema responses while exposing
+structured derived metadata where the UI needs it.
 
 Use this shared projection instead of filtering derived columns in individual
 routers.

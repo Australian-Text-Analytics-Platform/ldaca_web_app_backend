@@ -10,19 +10,18 @@ from typing import cast
 
 import polars as pl
 import pytest
-from docworkspace import Node
-
 from ldaca_wordflow.api.workspaces.schema_filter import (
     frontend_node_info,
     project_visible,
     visible_column_names,
 )
 
+from docworkspace import DerivedColumnMeta, Node
 
 _DERIVED_NAME = "__derived__.tokens.text.jieba"
 
 
-def _meta(source: str = "text", model: str = "jieba") -> dict:
+def _meta(source: str = "text", model: str = "jieba") -> DerivedColumnMeta:
     return {
         "source_column": source,
         "form": "tokens",
@@ -44,7 +43,7 @@ def _make_node_with_derived() -> Node:
         }
     ).lazy()
     node = Node(data=df, name="root")
-    node.register_derived_column(_DERIVED_NAME, _meta())  # type: ignore[arg-type]
+    node.register_derived_column(_DERIVED_NAME, _meta())
     return node
 
 

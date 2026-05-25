@@ -90,12 +90,13 @@ The analysis routes live under `api/workspaces/analyses/`.
   detaches, or materializes quote results.
 - Sequential analysis runs synchronously over lazy Polars expressions for time
   and group buckets, with selected-period detach.
-- Topic modeling submits BERTopic/embedding work to workers and uses embedding
-  caches.
+- Topic modeling submits BERTopic/embedding work to workers and uses the
+  per-user DuckDB embedding cache.
 - AI annotation calls OpenAI structured-output classification and can detach
   saved labels into workspace data.
-- Derived columns create and remove hidden token columns used by downstream
-  analyses.
+- Derived-column routes register and remove tokenisation metadata. Downstream
+  analyses hydrate those token specs from the per-user DuckDB token cache when
+  needed.
 
 Shared helpers in `cleanup.py`, `current_tasks.py`, `generated_columns.py`,
 `page_size_estimation.py`, and core cache modules keep route code smaller.
@@ -119,3 +120,11 @@ Workspace unload and workspace switching must clear analysis and worker task
 records for the unloaded workspace. The unload lifecycle also removes the whole
 `data/artifacts` directory so no transient analysis output survives the active
 workspace session.
+
+Tokenisation and embeddings are performance caches rather than workspace
+artifacts. Token specs live in `Node.derived`; token rows are stored in a
+per-user `tokens.duckdb` file and joined into temporary LazyFrames by token-mode
+concordance, token frequencies, and topic-modeling label preparation. Embedding
+vectors are stored in a per-user `embeddings.duckdb` file keyed by model,
+provider, and content hash. Missing cache files are recreated from schema on
+first use.

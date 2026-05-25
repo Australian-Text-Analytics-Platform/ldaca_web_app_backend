@@ -17,8 +17,9 @@ the comparison fails with::
 
 from __future__ import annotations
 
-import polars as pl
+from typing import cast
 
+import polars as pl
 from ldaca_wordflow.api.workspaces.nodes import _build_filter_expression
 from ldaca_wordflow.models import FilterCondition, FilterRequest
 
@@ -26,7 +27,7 @@ from ldaca_wordflow.models import FilterCondition, FilterRequest
 def _filter(df: pl.DataFrame, request: FilterRequest) -> pl.DataFrame:
     schema_map = dict(df.schema)
     expr = _build_filter_expression(request, column_dtypes=schema_map)
-    return df.lazy().filter(expr).collect()
+    return cast(pl.DataFrame, df.lazy().filter(expr).collect())
 
 
 def test_lt_naive_ns_column_against_utc_literal() -> None:

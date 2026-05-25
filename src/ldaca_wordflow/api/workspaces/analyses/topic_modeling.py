@@ -26,6 +26,7 @@ from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
     TopicModelingData,
+    TopicModelingDetachNodeOption,
     TopicModelingDetachOptionsResponse,
     TopicModelingDetachRequest,
     TopicModelingDetachResponse,
@@ -248,11 +249,11 @@ def _embedding_cache_dirs(user_id: str) -> list[Path]:
 
 
 def _measure_embedding_cache(user_id: str) -> dict:
-    """Compute total size and file count across all embedding-cache parquets."""
+    """Compute total size and file count across embedding-cache files."""
     bytes_total = 0
     file_count = 0
     for cache_dir in _embedding_cache_dirs(user_id):
-        for entry in cache_dir.glob("*.parquet"):
+        for entry in cache_dir.glob("*.duckdb"):
             try:
                 bytes_total += entry.stat().st_size
                 file_count += 1
@@ -280,7 +281,7 @@ async def get_topic_modeling_embedding_cache_size(
 async def clear_topic_modeling_embedding_cache(
     current_user: dict = Depends(get_current_user),
 ):
-    """Delete every parquet entry in the user's embedding cache.
+    """Delete every DuckDB entry in the user's embedding cache.
 
     Sweeps the canonical `user_cache/embeddings/` directory.
     Returns total bytes and file count freed so the UI can confirm the
@@ -292,7 +293,7 @@ async def clear_topic_modeling_embedding_cache(
     bytes_freed = 0
     files_removed = 0
     for cache_dir in _embedding_cache_dirs(user_id):
-        for entry in cache_dir.glob("*.parquet"):
+        for entry in cache_dir.glob("*.duckdb"):
             try:
                 size = entry.stat().st_size
                 entry.unlink()
@@ -748,7 +749,7 @@ async def topic_modeling_detach_options(
     artifacts = _topic_artifacts_from_task(task)
     node_artifacts = artifacts.get("nodes") or []
 
-    nodes = []
+    nodes: list[TopicModelingDetachNodeOption] = []
     for payload in node_artifacts:
         if not isinstance(payload, dict):
             continue
@@ -768,13 +769,13 @@ async def topic_modeling_detach_options(
             TOPIC_COLUMN, set(original_columns)
         )
         nodes.append(
-            {
-                "node_id": source_node.id,
-                "node_name": payload.get("node_name") or node_id,
-                "text_column": payload.get("text_column"),
-                "available_columns": [topic_column_name, *original_columns],
-                "disabled_columns": [topic_column_name],
-            }
+            TopicModelingDetachNodeOption(
+                node_id=source_node.id,
+                node_name=str(payload.get("node_name") or node_id),
+                text_column=str(payload.get("text_column") or ""),
+                available_columns=[topic_column_name, *original_columns],
+                disabled_columns=[topic_column_name],
+            )
         )
 
     return TopicModelingDetachOptionsResponse(

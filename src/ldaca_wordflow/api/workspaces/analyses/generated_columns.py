@@ -168,17 +168,15 @@ QUOTE_COLUMN_NAMES = (
 # ----------------------------------------------------------------------------
 # Derived analytic columns (Phase 2, decision 7)
 # ----------------------------------------------------------------------------
-# Tokens (and future POS / NER) outputs live as hidden columns on the source
-# Node's LazyFrame. Each column is named
+# Tokens (and future POS / NER) outputs are addressed by stable derived names:
 # ``__derived__.<form>.<source_column>.<model>`` — e.g.
-# ``__derived__.tokens.text.jieba``. Per-column metadata (source, form,
-# model, language, generated_at) lives in ``Node.derived``; the column name
-# is just a label.
+# ``__derived__.tokens.text.jieba``. Per-column metadata (source, form, model,
+# language, generated_at, cache backend, params) lives in ``Node.derived``; the
+# physical column may be hydrated only temporarily inside an analysis path.
 #
 # Token-consuming tools (concordance tokens-mode, token-frequency, future
-# POS) look up the right derived column via ``Node.find_derived_column``
-# rather than relying on a single fixed name. See
-# docs/pluggable-tokeniser/PLAN.md decision 7 for the rationale.
+# POS) look up the right derived name via ``Node.find_derived_column`` rather
+# than relying on a single fixed name.
 
 DERIVED_PREFIX = "__derived__"
 DERIVED_SEPARATOR = "."
@@ -194,7 +192,7 @@ def derived_column_name(form: str, source_column: str, model: str) -> str:
 
     Example: ``derived_column_name("tokens", "text", "jieba")`` →
     ``"__derived__.tokens.text.jieba"``. Used by the tokenise operation and
-    every consumer that wants to add a derived column on a node.
+    every consumer that wants to register or hydrate a derived column on a node.
     """
     return DERIVED_SEPARATOR.join((DERIVED_PREFIX, form, source_column, model))
 
@@ -272,9 +270,7 @@ def tokens_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
         pl.col(struct_column)
         .struct.field(TOKENS_START_FIELD)
         .alias(TOKENS_START_FIELD),
-        pl.col(struct_column)
-        .struct.field(TOKENS_END_FIELD)
-        .alias(TOKENS_END_FIELD),
+        pl.col(struct_column).struct.field(TOKENS_END_FIELD).alias(TOKENS_END_FIELD),
     )
 
 

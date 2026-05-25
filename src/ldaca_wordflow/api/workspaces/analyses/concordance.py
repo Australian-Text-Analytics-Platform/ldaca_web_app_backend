@@ -10,7 +10,7 @@ Includes:
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional, Union, cast
 from uuid import uuid4
 
 import polars as pl
@@ -22,6 +22,7 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.i18n import effective_language
+from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
 from ....core.workspace import workspace_manager
 from ....models import (
     ConcordanceAnalysisRequest,
@@ -683,6 +684,13 @@ async def materialize_concordance(
                     + "; re-run Tokenise first."
                 ),
             )
+        node_data = hydrate_derived_tokens_lazyframe(
+            node_data,
+            node=node,
+            source_column=request.column,
+            user_id=user_id,
+            derived_name=derived_tokens_column,
+        )
 
     # Collect all source columns so the materialized parquet includes metadata.
     # This allows the detach fast path to select only user-chosen columns later.
@@ -701,17 +709,20 @@ async def materialize_concordance(
     if derived_tokens_column is not None:
         select_exprs.append(pl.col(derived_tokens_column))
 
-    corpus_df = (
-        node_data.select(select_exprs)
-        .filter(
-            pl.col(request.column)
-            .cast(pl.Utf8, strict=False)
-            .str.strip_chars()
-            .str.len_chars()
-            .fill_null(0)
-            > 0
-        )
-        .collect()
+    corpus_df = cast(
+        pl.DataFrame,
+        (
+            node_data.select(select_exprs)
+            .filter(
+                pl.col(request.column)
+                .cast(pl.Utf8, strict=False)
+                .str.strip_chars()
+                .str.len_chars()
+                .fill_null(0)
+                > 0
+            )
+            .collect()
+        ),
     )
     node_corpus = [
         str(value) if value is not None else ""

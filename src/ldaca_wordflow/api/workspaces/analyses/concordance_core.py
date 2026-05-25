@@ -12,6 +12,7 @@ import polars as pl
 from fastapi import HTTPException
 
 from ....core.i18n import effective_language
+from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
 
@@ -372,6 +373,17 @@ def resolve_node_sources(
                 column,
                 form=TOKENS_FORM,
                 model=str(requested_model) if requested_model else None,
+            )
+        if (
+            str(request.get("search_mode") or "regex") == "tokens"
+            and derived_tokens_column
+        ):
+            node_data = hydrate_derived_tokens_lazyframe(
+                node_data,
+                node=node,
+                source_column=column,
+                user_id=user_id,
+                derived_name=derived_tokens_column,
             )
         # Per-node effective language drives Bug-4 ``whole_word`` suppression
         # downstream — at the per-node iteration we know which language each

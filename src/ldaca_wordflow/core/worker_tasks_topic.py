@@ -143,12 +143,14 @@ class _TopicPipelineRun:
 
 
 def _load_corpora_from_workspace(
-    target_workspace_dir: str, node_payloads: list[dict[str, Any]]
+    target_workspace_dir: str, node_payloads: list[dict[str, Any]], user_id: str
 ) -> tuple[list[list[str]], list[list[str] | None], list[str | None]]:
     """Return raw docs, optional tokenized docs, and token columns per node."""
     import polars as pl
 
     from docworkspace import Workspace
+
+    from .tokens_cache import hydrate_derived_tokens_lazyframe
 
     workspace = Workspace.load(Path(target_workspace_dir))
     raw_corpora: list[list[str]] = []
@@ -187,9 +189,17 @@ def _load_corpora_from_workspace(
             tokens_columns.append(None)
             continue
 
+        node_data = hydrate_derived_tokens_lazyframe(
+            node.data,
+            node=node,
+            source_column=text_column,
+            user_id=user_id,
+            derived_name=tokens_column,
+        )
+
         tokens_selected = cast(
             pl.DataFrame,
-            node.data.select(
+            node_data.select(
                 pl.col(tokens_column)
                 .list.eval(pl.element().struct.field("token"))
                 .alias("__tokens_col__")
@@ -213,6 +223,7 @@ def _load_corpora_from_workspace(
 
 def _prepare_payload(
     *,
+    user_id: str,
     node_infos: list[dict[str, Any]],
     artifact_dir: str,
     corpora: list[list[str]] | None,
@@ -230,7 +241,7 @@ def _prepare_payload(
         if progress_callback:
             progress_callback(0.03, "Loading source documents from workspace...")
         corpora, vectorizer_corpora, tokens_columns_per_node = (
-            _load_corpora_from_workspace(workspace_dir, node_infos)
+            _load_corpora_from_workspace(workspace_dir, node_infos, user_id)
         )
     else:
         vectorizer_corpora = [None] * len(corpora)
@@ -1460,6 +1471,7 @@ def run_topic_modeling_task(
         )
 
         prepared_payload = _prepare_payload(
+            user_id=user_id,
             node_infos=node_infos,
             artifact_dir=artifact_dir,
             corpora=corpora,

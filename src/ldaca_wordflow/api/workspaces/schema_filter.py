@@ -1,13 +1,14 @@
 """Frontend-facing schema projection (Phase 2.10 of multilingual).
 
-Decision 7 keeps derived analytic columns on the source node's LazyFrame
-(``__derived__.<form>.<source>.<model>``), but the user shouldn't see them
-in the data view, node info panel, or export schema. This module owns the
+Decision 7 keeps derived analytic specs in ``Node.derived`` under stable names
+(``__derived__.<form>.<source>.<model>``). Some legacy workspaces may still
+carry physical ``__derived__.*`` columns on the source LazyFrame, but cache-
+backed specs are hydrated only inside analysis paths. This module owns the
 single source of truth for "what does the frontend see".
 
 Analytics tools that consume tokens look up the column via
-``Node.find_derived_column(...)`` against the FULL ``node.data`` schema, so
-they are unaffected by this filter — only user-facing surfaces are.
+``Node.find_derived_column(...)`` and hydrate as needed, so they are unaffected
+by this filter — only user-facing surfaces are.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 from typing import Any, Iterable, Sequence
 
 import polars as pl
+
 from docworkspace import Node
 
 from .analyses.generated_columns import is_derived_column_name
@@ -28,9 +30,9 @@ def visible_column_names(columns: Iterable[str]) -> list[str]:
 def project_visible(lf: pl.LazyFrame) -> pl.LazyFrame:
     """Return a LazyFrame projected onto the user-facing columns only.
 
-    Useful for endpoints that materialise rows for display (data view,
-    export). Analytics paths that need the derived columns should consume
-    ``node.data`` directly.
+    Useful for endpoints that materialise rows for display (data view, export).
+    Analytics paths that need token specs should resolve ``Node.derived`` and
+    hydrate through the cache helper.
     """
     visible = visible_column_names(lf.collect_schema().names())
     return lf.select(visible)
@@ -65,9 +67,7 @@ def frontend_node_info(node: Node) -> dict[str, Any]:
         # generated_at} — to drive the quotation gate, inspector panel,
         # and concordance tokens-mode auto-pick. Same shape the backend
         # stores in Node.derived; ordered by column name for stable JSON.
-        info["derived"] = {
-            name: dict(derived[name]) for name in sorted(derived.keys())
-        }
+        info["derived"] = {name: dict(derived[name]) for name in sorted(derived.keys())}
     else:
         info["derived_columns"] = []
         info["derived"] = {}

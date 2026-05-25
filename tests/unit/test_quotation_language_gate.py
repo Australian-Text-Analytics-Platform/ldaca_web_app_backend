@@ -7,17 +7,19 @@ work is attempted — which is what makes the gate cheap to enforce.
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import polars as pl
 import pytest
-from docworkspace import Node
 from fastapi import HTTPException
-
 from ldaca_wordflow.api.workspaces.analyses import quotation as quotation_api
 from ldaca_wordflow.models import (
     QuotationDetachRequest,
     QuotationMaterializeRequest,
     QuotationRequest,
 )
+
+from docworkspace import Node
 
 
 def _zh_node() -> Node:
@@ -78,7 +80,7 @@ async def test_get_quotation_rejects_explicit_chinese(fake_workspace_manager):
         )
 
     assert exc_info.value.status_code == 400
-    detail = exc_info.value.detail
+    detail = cast(dict[str, Any], exc_info.value.detail)
     assert detail["error"] == "unsupported_language"
     assert detail["tool"] == "Quotation extractor"
     assert detail["language"] == "zh"
@@ -100,15 +102,13 @@ async def test_get_quotation_rejects_implicit_chinese_via_derived(
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["language"] == "zh"
+    assert cast(dict[str, Any], exc_info.value.detail)["language"] == "zh"
 
 
 @pytest.mark.asyncio
 async def test_detach_quotation_rejects_non_english(fake_workspace_manager):
     _ws, node = fake_workspace_manager
-    request = QuotationDetachRequest(
-        node_id=node.id, column="text", language="ja"
-    )
+    request = QuotationDetachRequest(node_id=node.id, column="text", language="ja")
 
     with pytest.raises(HTTPException) as exc_info:
         await quotation_api.detach_quotation(
@@ -116,7 +116,7 @@ async def test_detach_quotation_rejects_non_english(fake_workspace_manager):
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["language"] == "ja"
+    assert cast(dict[str, Any], exc_info.value.detail)["language"] == "ja"
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_materialize_quotation_rejects_non_english(fake_workspace_manager)
         )
 
     assert exc_info.value.status_code == 400
-    assert exc_info.value.detail["language"] == "zh"
+    assert cast(dict[str, Any], exc_info.value.detail)["language"] == "zh"
 
 
 def test_quotation_gate_helper_returns_resolved_language() -> None:

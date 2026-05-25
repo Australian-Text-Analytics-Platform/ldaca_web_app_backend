@@ -17,15 +17,14 @@ whole-word behaviour.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
-
 from ldaca_wordflow.api.workspaces.analyses.concordance_core import (
     _whole_word_active_for_language,
     build_concordance_lazyframe,
     build_concordance_search_pattern,
 )
-
 
 # ---------------------------------------------------------------------------
 # Pure-function tests for the language-aware pattern builder
@@ -91,9 +90,9 @@ class TestBuildSearchPattern:
 class TestWholeWordActiveForLanguage:
     def test_false_when_request_off_regardless_of_language(self):
         for lang in (None, "en", "ja", "zh", "ko"):
-            assert (
-                _whole_word_active_for_language(False, lang) is False
-            ), f"expected False for language={lang!r}"
+            assert _whole_word_active_for_language(False, lang) is False, (
+                f"expected False for language={lang!r}"
+            )
 
     def test_false_for_cjk_when_request_on(self):
         for lang in ("ja", "zh", "ko"):
@@ -119,7 +118,6 @@ class TestLazyframeReadsNodeLanguage:
         ``.explain()`` doesn't surface plugin kwargs.
         """
         import polars as pl
-
         from ldaca_wordflow.api.workspaces.analyses import concordance_core
 
         captured: list[dict[str, object]] = []
@@ -167,7 +165,6 @@ class TestLazyframeReadsNodeLanguage:
         ``language`` (the request-wide hint). EN globally + JA per-node →
         the pattern builder sees ``language="ja"``."""
         import polars as pl
-
         from ldaca_wordflow.api.workspaces.analyses import concordance_core
 
         seen: dict[str, object] = {}
@@ -219,7 +216,7 @@ class TestWorkerDataframeRespectsLanguage:
         path that produces the raw pattern (no \\b)."""
         from ldaca_wordflow.core import worker_tasks_concordance as wtc
 
-        captured: dict[str, tuple[str, bool]] = {}
+        captured: dict[str, Any] = {}
 
         def fake_build_pattern(search_word, *, regex, whole_word, language=None):
             pattern, use_regex = build_concordance_search_pattern(
@@ -232,9 +229,7 @@ class TestWorkerDataframeRespectsLanguage:
             captured["language_seen"] = language
             return pattern, use_regex
 
-        monkeypatch.setattr(
-            wtc, "build_concordance_search_pattern", fake_build_pattern
-        )
+        monkeypatch.setattr(wtc, "build_concordance_search_pattern", fake_build_pattern)
 
         wtc._build_concordance_occurrence_dataframe(
             node_corpus=["今日は良い天気です"],
@@ -271,9 +266,7 @@ class TestWorkerDataframeRespectsLanguage:
             captured["pattern"] = pattern
             return pattern, use_regex
 
-        monkeypatch.setattr(
-            wtc, "build_concordance_search_pattern", fake_build_pattern
-        )
+        monkeypatch.setattr(wtc, "build_concordance_search_pattern", fake_build_pattern)
 
         wtc._build_concordance_occurrence_dataframe(
             node_corpus=["alpha beta gamma"],

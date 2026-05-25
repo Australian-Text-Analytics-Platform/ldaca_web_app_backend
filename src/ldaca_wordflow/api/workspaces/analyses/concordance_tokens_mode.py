@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections.abc import Sequence
 from typing import Any, Optional, cast
 
 import polars as pl
@@ -67,7 +68,7 @@ def parse_tokens_mode_alternatives(
 
 
 def find_token_matches(
-    tokens: list[dict[str, Any] | None],
+    tokens: Sequence[dict[str, Any] | None],
     search_word: str,
     *,
     case_sensitive: bool,

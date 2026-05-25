@@ -10,21 +10,21 @@ The endpoint logic itself is thin (auth + lookup + delegate to
 - 200 with ``is_new=False`` and ``replaced_column`` on repeat call,
 - 400 on missing source column,
 - 404 on unknown node / no active workspace / unregistered column,
-- DELETE removes both the LazyFrame column AND the metadata entry.
+- DELETE removes the metadata entry and any legacy physical column if present.
 """
 
 from __future__ import annotations
 
 import polars as pl
 import pytest
-from docworkspace import Node
 from fastapi import HTTPException
-
-from ldaca_wordflow.api.workspaces.analyses import derived_columns as derived_api
 from ldaca_wordflow.api.workspaces import utils as workspace_utils
+from ldaca_wordflow.api.workspaces.analyses import derived_columns as derived_api
 from ldaca_wordflow.api.workspaces.analyses.derived_columns import (
     TokeniseColumnRequest,
 )
+
+from docworkspace import Node
 
 
 @pytest.fixture
@@ -96,7 +96,8 @@ async def test_post_tokens_creates_new_column(fake_workspace_manager):
     assert result.replaced_column is None
     assert result.column == "__derived__.tokens.text.bert-base-uncased"
     assert result.column in node.derived
-    assert result.column in node.data.collect_schema().names()
+    assert result.column not in node.data.collect_schema().names()
+    assert node.derived[result.column]["cache_backend"] == "duckdb"
 
 
 @pytest.mark.asyncio

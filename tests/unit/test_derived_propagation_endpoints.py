@@ -10,13 +10,11 @@ with "re-run Tokenise first".
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import polars as pl
 import pytest
-from docworkspace import Node
 from docworkspace.workspace.core import Workspace
-
 from ldaca_wordflow.api.workspaces import nodes as nodes_api
 from ldaca_wordflow.api.workspaces import utils as workspace_utils
 from ldaca_wordflow.models import (
@@ -29,6 +27,7 @@ from ldaca_wordflow.models import (
     SliceRequest,
 )
 
+from docworkspace import DerivedColumnMeta, Node
 
 DERIVED_TOKENS_COLUMN = "__derived__.tokens.text.lindera-ja-ipadic"
 DERIVED_META: dict[str, Any] = {
@@ -59,7 +58,11 @@ def _make_node_with_tokens(name: str = "root") -> Node:
         .implode()
         .alias(DERIVED_TOKENS_COLUMN)
     )
-    node = Node(data=fake_tokens, name=name, derived={DERIVED_TOKENS_COLUMN: dict(DERIVED_META)})
+    node = Node(
+        data=fake_tokens,
+        name=name,
+        derived={DERIVED_TOKENS_COLUMN: cast(DerivedColumnMeta, dict(DERIVED_META))},
+    )
     return node
 
 

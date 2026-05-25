@@ -1,21 +1,4 @@
-"""Disk-backed embedding cache keyed by SHA-256 content hash.
-
-Embeddings are deterministic for a given (model, provider, text) tuple, so
-the result of encoding a document never changes.  This cache stores those
-results in a per-(model, provider) Parquet file so that re-running topic
-modelling on the same corpus skips the embedding step entirely.
-
-Storage layout (one file per (model_id, provider_id) pair):
-    {cache_dir}/{sanitized_model_id}__{sanitized_provider_id}.parquet
-
-Schema:
-    hash       Binary       -- SHA-256 of the UTF-8 encoded document (32 bytes)
-    embedding  List[Float16] -- 384-dimensional embedding, float16 for compactness
-
-On lookup the file is read fully into memory.  For corpora up to a few million
-documents this is fast enough (~0.5 s for 1 M rows).  If the cache grows
-beyond _WARN_SIZE_BYTES a warning is logged; eviction is not yet implemented.
-"""
+"""DuckDB-backed embedding cache keyed by stable document hashes."""
 
 from __future__ import annotations
 
@@ -25,17 +8,18 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import polars as pl
+
 if TYPE_CHECKING:
     import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_WARN_SIZE_BYTES = 500 * 1024 * 1024   # log a warning above 500 MB
-_MAX_SIZE_BYTES  = 2 * 1024 * 1024 * 1024  # refuse to write above 2 GB
+EMBEDDINGS_CACHE_FILENAME = "embeddings.duckdb"
 
 
 def _safe_name(value: str) -> str:
-    """Turn an arbitrary string into a safe filename component."""
+    """Turn an arbitrary string into a safe cache key component."""
     return re.sub(r"[^a-zA-Z0-9_-]", "_", value)
 
 
@@ -44,135 +28,145 @@ def _hash_doc(doc: str) -> bytes:
 
 
 class EmbeddingCache:
-    """Read/write embedding cache backed by a Parquet file.
-
-    Parameters
-    ----------
-    cache_dir:
-        Directory where the Parquet file will be stored.  Created on demand.
-    model_id:
-        HuggingFace model repo ID (used in the filename).
-    provider_id:
-        ONNX Runtime execution provider name (used in the filename).
-        Different providers can produce slightly different floating-point
-        results, so they get separate cache files.
-    """
+    """Read/write embedding cache backed by one DuckDB file per user cache dir."""
 
     def __init__(self, cache_dir: Path, model_id: str, provider_id: str) -> None:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"{_safe_name(model_id)}__{_safe_name(provider_id)}.parquet"
-        self._path = cache_dir / filename
+        self._path = cache_dir / EMBEDDINGS_CACHE_FILENAME
+        self._model_id = _safe_name(model_id)
+        self._provider_id = _safe_name(provider_id)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def _connect(self):
+        import duckdb
 
-    def lookup(
-        self, docs: list[str]
-    ) -> tuple["np.ndarray", list[int]]:
-        """Return (embeddings, missing_indices).
+        conn = duckdb.connect(str(self._path))
+        self._ensure_schema(conn)
+        return conn
 
-        ``embeddings`` is a float32 ndarray of shape ``(len(docs), D)`` where
-        cached rows are filled in and rows for missing docs are zero.
-        ``missing_indices`` lists the positions in ``docs`` that were not found
-        in the cache and must still be encoded.
-        """
+    @staticmethod
+    def _ensure_schema(conn) -> None:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS embedding_cache (
+                model_id VARCHAR NOT NULL,
+                provider_id VARCHAR NOT NULL,
+                content_hash VARCHAR NOT NULL,
+                dimension INTEGER NOT NULL,
+                dtype VARCHAR NOT NULL,
+                embedding BLOB NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+                last_accessed_at TIMESTAMP NOT NULL DEFAULT current_timestamp,
+                PRIMARY KEY (model_id, provider_id, content_hash)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS embedding_cache_lookup_idx
+            ON embedding_cache (model_id, provider_id, content_hash)
+            """
+        )
+
+    def lookup(self, docs: list[str]) -> tuple["np.ndarray", list[int]]:
+        """Return cached embeddings and indices that still need encoding."""
         import numpy as np
 
-        n = len(docs)
-        hashes = [_hash_doc(doc) for doc in docs]
-
-        if not self._path.exists():
-            return np.zeros((n, 0), dtype=np.float32), list(range(n))
-
-        import polars as pl
-
+        hashes = [_hash_doc(doc).hex() for doc in docs]
+        n_docs = len(docs)
+        conn = self._connect()
         try:
-            stored = pl.read_parquet(self._path)
+            requested = pl.DataFrame({"content_hash": list(dict.fromkeys(hashes))})
+            conn.register("requested_embedding_hashes", requested)
+            rows = conn.execute(
+                """
+                SELECT c.content_hash, c.dimension, c.dtype, c.embedding
+                FROM embedding_cache c
+                JOIN requested_embedding_hashes r
+                  ON c.content_hash = r.content_hash
+                WHERE c.model_id = ? AND c.provider_id = ?
+                """,
+                [self._model_id, self._provider_id],
+            ).fetchall()
+            conn.unregister("requested_embedding_hashes")
         except Exception as exc:
-            logger.warning("[EmbeddingCache] failed to read cache %s: %s", self._path, exc)
-            return np.zeros((n, 0), dtype=np.float32), list(range(n))
+            logger.warning(
+                "[EmbeddingCache] failed to read cache %s: %s", self._path, exc
+            )
+            return np.zeros((n_docs, 0), dtype=np.float32), list(range(n_docs))
+        finally:
+            conn.close()
 
-        if stored.is_empty():
-            return np.zeros((n, 0), dtype=np.float32), list(range(n))
+        if not rows:
+            return np.zeros((n_docs, 0), dtype=np.float32), list(range(n_docs))
 
-        # Build a mapping: hash_bytes → row index in stored
-        stored_hashes: list[bytes] = stored["hash"].to_list()
-        hash_to_row: dict[bytes, int] = {h: i for i, h in enumerate(stored_hashes)}
+        by_hash: dict[str, np.ndarray] = {}
+        dim = 0
+        for content_hash, dimension, dtype, blob in rows:
+            if dtype != "float16":
+                continue
+            dim = int(dimension)
+            by_hash[str(content_hash)] = np.frombuffer(blob, dtype=np.float16).astype(
+                np.float32
+            )
 
-        # Determine embedding dimensionality from first stored row
-        first_emb = stored["embedding"][0].to_list()
-        dim = len(first_emb)
+        if dim == 0:
+            return np.zeros((n_docs, 0), dtype=np.float32), list(range(n_docs))
 
-        result = np.zeros((n, dim), dtype=np.float32)
+        result = np.zeros((n_docs, dim), dtype=np.float32)
         missing: list[int] = []
-
-        stored_embs = stored["embedding"].to_list()
-        for i, h in enumerate(hashes):
-            row = hash_to_row.get(h)
-            if row is not None:
-                result[i] = np.array(stored_embs[row], dtype=np.float32)
-            else:
-                missing.append(i)
-
+        for index, content_hash in enumerate(hashes):
+            embedding = by_hash.get(content_hash)
+            if embedding is None:
+                missing.append(index)
+                continue
+            result[index] = embedding
         return result, missing
 
     def store(self, docs: list[str], embeddings: "np.ndarray") -> None:
-        """Append (hash, embedding) rows to the cache, deduplicating by hash."""
+        """Store embeddings, replacing existing rows for the same cache key."""
         import numpy as np
-        import polars as pl
 
         if len(docs) == 0:
             return
+        if len(docs) != int(embeddings.shape[0]):
+            raise ValueError("docs and embeddings must have the same length")
 
-        # Check disk budget before writing
-        if self._path.exists():
-            size = self._path.stat().st_size
-            if size >= _MAX_SIZE_BYTES:
-                logger.warning(
-                    "[EmbeddingCache] cache %s exceeds %d GB limit; skipping write",
-                    self._path.name,
-                    _MAX_SIZE_BYTES // (1024 ** 3),
-                )
-                return
-            if size >= _WARN_SIZE_BYTES:
-                logger.warning(
-                    "[EmbeddingCache] cache %s is %.0f MB; consider clearing it",
-                    self._path.name,
-                    size / (1024 ** 2),
-                )
-
-        hashes = [_hash_doc(doc) for doc in docs]
-        embs_f16 = embeddings.astype(np.float16)
-
-        new_frame = pl.DataFrame(
+        embeddings_f16 = embeddings.astype(np.float16)
+        dim = int(embeddings_f16.shape[1]) if embeddings_f16.ndim == 2 else 0
+        frame = pl.DataFrame(
             {
-                "hash": pl.Series(hashes, dtype=pl.Binary),
-                "embedding": embs_f16.tolist(),
+                "model_id": [self._model_id] * len(docs),
+                "provider_id": [self._provider_id] * len(docs),
+                "content_hash": [_hash_doc(doc).hex() for doc in docs],
+                "dimension": [dim] * len(docs),
+                "dtype": ["float16"] * len(docs),
+                "embedding": pl.Series(
+                    [row.tobytes() for row in embeddings_f16], dtype=pl.Binary
+                ),
             }
         )
 
-        if self._path.exists():
-            try:
-                existing = pl.read_parquet(self._path)
-                combined = pl.concat([existing, new_frame])
-            except Exception as exc:
-                logger.warning(
-                    "[EmbeddingCache] failed to read cache for merge: %s; overwriting",
-                    exc,
-                )
-                combined = new_frame
-        else:
-            combined = new_frame
-
-        # Keep the last occurrence per hash (newest wins)
-        combined = combined.unique(subset=["hash"], keep="last", maintain_order=False)
-        combined.write_parquet(self._path)
-        logger.debug(
-            "[EmbeddingCache] stored %d rows; cache now %d rows",
-            len(docs),
-            len(combined),
-        )
+        conn = self._connect()
+        try:
+            conn.register("incoming_embeddings", frame)
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO embedding_cache
+                SELECT
+                    model_id,
+                    provider_id,
+                    content_hash,
+                    dimension,
+                    dtype,
+                    embedding,
+                    current_timestamp,
+                    current_timestamp
+                FROM incoming_embeddings
+                """
+            )
+            conn.unregister("incoming_embeddings")
+        finally:
+            conn.close()
 
     def clear(self) -> None:
         """Delete the cache file if it exists."""

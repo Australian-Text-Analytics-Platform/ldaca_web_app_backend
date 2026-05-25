@@ -21,14 +21,14 @@ def anyio_backend():
 def _tokens_cache_in_tmpdir(tmp_path_factory):
     """Redirect the tokens cache to a tmpdir for the whole test session.
 
-    The cache is per-user (lives at ``{user_root}/user_cache/tokens/``
+    The cache is per-user (lives under ``{user_root}/user_cache/``
     in production). When ``LDACA_TOKENS_CACHE_DIR`` is set, the module
     treats it as the BASE and still applies the per-user subdir layout
-    (``{base}/{user_id}/tokens/``) — so tests exercise the same path
+    (``{base}/{user_id}/tokens.duckdb``) — so tests exercise the same path
     structure as production while staying isolated under a tmpdir.
 
-    Without this fixture, ``tokenise_column`` would write parquets
-    into the developer's real ``{user_root}/user_cache/tokens/``.
+    Without this fixture, analyses that hydrate tokens would write DuckDB files
+    into the developer's real user cache directory.
     """
     import os
 

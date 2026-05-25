@@ -27,7 +27,6 @@ from ...core.polars_expr_validator import (
     validate_polars_expr_code,
 )
 from ...core.polars_operations import get_operations_for_dtype
-from ...core.tokens_cache import drop_node_references
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
@@ -900,11 +899,6 @@ async def delete_node(node_id: str, current_user: dict = Depends(get_current_use
     workspace_id = workspace.id
     success = workspace.remove_node(node_id)
     if success:
-        # Release any tokens-cache references this node held so the sweep
-        # can reclaim the underlying parquets once no other node still
-        # uses them. Safe to call even if the node had no derived tokens
-        # columns — drop_node_references is idempotent.
-        drop_node_references(user_id, workspace_id, node_id)
         update_workspace(user_id, workspace_id)
     if not success:
         raise HTTPException(status_code=404, detail="Node not found")

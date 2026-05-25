@@ -11,13 +11,12 @@ import platform
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-
 from ldaca_wordflow.core import onnx_embedder as oem
-
 
 # ---------------------------------------------------------------------------
 # Pure helpers — no mocking needed
@@ -26,10 +25,14 @@ from ldaca_wordflow.core import onnx_embedder as oem
 
 def test_mean_pool_single_doc():
     # (1, 4, 3) — one doc, 4 tokens, dim 3
-    token_embs = np.array([[[1, 2, 3], [4, 5, 6], [7, 8, 9], [0, 0, 0]]], dtype=np.float32)
+    token_embs = np.array(
+        [[[1, 2, 3], [4, 5, 6], [7, 8, 9], [0, 0, 0]]], dtype=np.float32
+    )
     mask = np.array([[1, 1, 1, 0]], dtype=np.int64)
     result = oem._mean_pool(token_embs, mask)
-    expected = np.array([[(1 + 4 + 7) / 3, (2 + 5 + 8) / 3, (3 + 6 + 9) / 3]], dtype=np.float32)
+    expected = np.array(
+        [[(1 + 4 + 7) / 3, (2 + 5 + 8) / 3, (3 + 6 + 9) / 3]], dtype=np.float32
+    )
     np.testing.assert_allclose(result, expected, rtol=1e-5)
 
 
@@ -74,6 +77,7 @@ def test_select_providers_skips_coreml_even_when_available(monkeypatch):
         lambda: ["CoreMLExecutionProvider", "CPUExecutionProvider"],
     )
     import onnxruntime  # noqa: F401 — ensure monkeypatch target exists
+
     providers = oem._select_providers()
     assert providers == ["CPUExecutionProvider"]
 
@@ -100,7 +104,11 @@ def test_select_providers_prefers_directml_when_coreml_also_available(monkeypatc
     # DirectML is preferred when both are available; CoreML is always skipped.
     monkeypatch.setattr(
         "onnxruntime.get_available_providers",
-        lambda: ["DmlExecutionProvider", "CoreMLExecutionProvider", "CPUExecutionProvider"],
+        lambda: [
+            "DmlExecutionProvider",
+            "CoreMLExecutionProvider",
+            "CPUExecutionProvider",
+        ],
     )
     providers = oem._select_providers()
     assert providers[0] == "DmlExecutionProvider"
@@ -147,7 +155,9 @@ def _make_embedder_with_mock_session(
         if output_name == "sentence_embedding":
             return [np.random.default_rng(0).random((b, hidden_dim)).astype(np.float32)]
         # last_hidden_state: (B, L, D)
-        return [np.random.default_rng(0).random((b, seq_len, hidden_dim)).astype(np.float32)]
+        return [
+            np.random.default_rng(0).random((b, seq_len, hidden_dim)).astype(np.float32)
+        ]
 
     mock_session.run.side_effect = fake_run
 
@@ -178,14 +188,18 @@ def test_encode_returns_correct_shape():
 
 
 def test_encode_normalizes_output_for_last_hidden_state():
-    embedder = _make_embedder_with_mock_session(output_name="last_hidden_state", hidden_dim=4)
+    embedder = _make_embedder_with_mock_session(
+        output_name="last_hidden_state", hidden_dim=4
+    )
     result = embedder.encode(["a", "b"])
     norms = np.linalg.norm(result, axis=1)
     np.testing.assert_allclose(norms, [1.0, 1.0], atol=1e-5)
 
 
 def test_encode_passes_sentence_embedding_through_without_renormalizing():
-    embedder = _make_embedder_with_mock_session(output_name="sentence_embedding", hidden_dim=4)
+    embedder = _make_embedder_with_mock_session(
+        output_name="sentence_embedding", hidden_dim=4
+    )
     result = embedder.encode(["a"])
     assert result.shape == (1, 4)
 
@@ -218,7 +232,8 @@ def test_encode_skips_token_type_ids_when_not_in_inputs():
     embedder = _make_embedder_with_mock_session()
     embedder._input_names = {"input_ids", "attention_mask"}  # no token_type_ids
     result = embedder.encode(["a"])
-    call_feeds = embedder._session.run.call_args[0][1]
+    session_run = cast(Any, embedder._session.run)
+    call_feeds = session_run.call_args[0][1]
     assert "token_type_ids" not in call_feeds
 
 
@@ -231,21 +246,33 @@ def test_select_onnx_filename_arm64_when_coreml_provider_passed(monkeypatch):
     # _select_providers() never produces a CoreML provider list anymore, but
     # _select_onnx_filename() should still behave sensibly if called with one.
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
-    assert oem._select_onnx_filename(["CoreMLExecutionProvider", "CPUExecutionProvider"]) == "onnx/model_qint8_arm64.onnx"
+    assert (
+        oem._select_onnx_filename(["CoreMLExecutionProvider", "CPUExecutionProvider"])
+        == "onnx/model_qint8_arm64.onnx"
+    )
 
 
 def test_select_onnx_filename_fp32_for_directml():
-    assert oem._select_onnx_filename(["DmlExecutionProvider", "CPUExecutionProvider"]) == "onnx/model.onnx"
+    assert (
+        oem._select_onnx_filename(["DmlExecutionProvider", "CPUExecutionProvider"])
+        == "onnx/model.onnx"
+    )
 
 
 def test_select_onnx_filename_arm64_for_cpu_arm(monkeypatch):
     monkeypatch.setattr(platform, "machine", lambda: "arm64")
-    assert oem._select_onnx_filename(["CPUExecutionProvider"]) == "onnx/model_qint8_arm64.onnx"
+    assert (
+        oem._select_onnx_filename(["CPUExecutionProvider"])
+        == "onnx/model_qint8_arm64.onnx"
+    )
 
 
 def test_select_onnx_filename_avx2_for_cpu_x86(monkeypatch):
     monkeypatch.setattr(platform, "machine", lambda: "x86_64")
-    assert oem._select_onnx_filename(["CPUExecutionProvider"]) == "onnx/model_quint8_avx2.onnx"
+    assert (
+        oem._select_onnx_filename(["CPUExecutionProvider"])
+        == "onnx/model_quint8_avx2.onnx"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -274,14 +301,18 @@ def _patched_from_pretrained(tmp_path, monkeypatch, *, platform_machine="x86_64"
 
 
 def test_from_pretrained_downloads_platform_quantized_model(tmp_path, monkeypatch):
-    downloaded = _patched_from_pretrained(tmp_path, monkeypatch, platform_machine="x86_64")
+    downloaded = _patched_from_pretrained(
+        tmp_path, monkeypatch, platform_machine="x86_64"
+    )
     with patch.object(oem.OnnxEmbedder, "__init__", return_value=None):
         oem.OnnxEmbedder.from_pretrained("some/model")
     assert "onnx/model_quint8_avx2.onnx" in downloaded
 
 
 def test_from_pretrained_downloads_arm64_model_on_arm(tmp_path, monkeypatch):
-    downloaded = _patched_from_pretrained(tmp_path, monkeypatch, platform_machine="arm64")
+    downloaded = _patched_from_pretrained(
+        tmp_path, monkeypatch, platform_machine="arm64"
+    )
     with patch.object(oem.OnnxEmbedder, "__init__", return_value=None):
         oem.OnnxEmbedder.from_pretrained("some/model")
     assert "onnx/model_qint8_arm64.onnx" in downloaded
@@ -316,7 +347,9 @@ def test_from_pretrained_downloads_tokenizer(tmp_path, monkeypatch):
     assert "tokenizer.json" in downloaded
 
 
-def test_from_pretrained_uses_arm64_quantized_even_when_coreml_available(tmp_path, monkeypatch):
+def test_from_pretrained_uses_arm64_quantized_even_when_coreml_available(
+    tmp_path, monkeypatch
+):
     # CoreML is excluded from provider selection; the ARM64 quantized model
     # should be chosen on ARM64 regardless of CoreML availability.
     downloaded: list[str] = []
