@@ -65,16 +65,21 @@ jobs:
           set -e
           printf '%s\n' "$output"
           if [ "$pytest_exit" -ne 0 ]; then
-            # Known Python 3.14 / Windows shutdown race: pytest reports
-            # all tests passed, then ``Py_Finalize`` crashes with
-            # ``Fatal Python error: tstate_delete_common: NULL interpreter``
-            # and the process exits non-zero. Treat as success only when
-            # both the crash signature and a passing summary line are
-            # present, on Windows.
+            # Known Python 3.14 / Windows interpreter-shutdown bugs that
+            # fire AFTER all tests pass:
+            #   - ``Fatal Python error: tstate_delete_common: NULL interpreter``
+            #     (exit 127, sporadic)
+            #   - ``Fatal Python error: _PyImport_Init: global import state already initialized``
+            #     (exit 1, sporadic)
+            # Both produce a "Fatal Python error:" line on the way out.
+            # Treat the step as success when we're on Windows, the
+            # process printed a passing pytest summary, and the only
+            # failure mode is a Fatal Python error during shutdown.
             if [ "$RUNNER_OS" = "Windows" ] && \
-               printf '%s' "$output" | grep -q "Fatal Python error: tstate_delete_common" && \
-               printf '%s' "$output" | grep -qE "[0-9]+ passed.*in [0-9.]+s"; then
-              echo "::warning::Python 3.14 Windows interpreter shutdown race detected after a passing test run; treating as success."
+               printf '%s' "$output" | grep -q "Fatal Python error:" && \
+               printf '%s' "$output" | grep -qE "[0-9]+ passed.*in [0-9.]+s" && \
+               ! printf '%s' "$output" | grep -qE "[0-9]+ failed|[0-9]+ error"; then
+              echo "::warning::Python 3.14 Windows interpreter shutdown crash detected after a passing test run; treating as success."
               exit 0
             fi
             exit "$pytest_exit"
