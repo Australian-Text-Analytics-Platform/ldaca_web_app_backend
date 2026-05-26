@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import duckdb
 import polars as pl
+import polars_text  # noqa: F401
 import polars_text.token_cache as pt_cache
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
@@ -29,12 +30,11 @@ def isolated_cache_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_cache_schema_has_six_columns(isolated_cache_db: Path) -> None:
     base = pl.DataFrame({"text": ["hello world"]}).lazy()
-    expr = tc.cached_tokens_expr(
-        pl.col("text"),
-        user_id=TEST_USER,
+    expr = cast(Any, pl.col("text")).text.tokenize(
         model="bert-base-uncased",
         lowercase=True,
         remove_punct=True,
+        cache=tc.tokens_cache_path(TEST_USER),
     )
     base.with_columns(expr.alias("tokens")).collect()
 
@@ -107,12 +107,11 @@ def test_hydrate_tokenization_adds_tokens_column() -> None:
 
 def test_warm_cache_does_not_retokenize(monkeypatch: pytest.MonkeyPatch) -> None:
     base = pl.DataFrame({"text": ["hello world", "hello world"]}).lazy()
-    expr = tc.cached_tokens_expr(
-        pl.col("text"),
-        user_id=TEST_USER,
+    expr = cast(Any, pl.col("text")).text.tokenize(
         model="bert-base-uncased",
         lowercase=True,
         remove_punct=True,
+        cache=tc.tokens_cache_path(TEST_USER),
     )
     base.with_columns(expr.alias("tokens")).collect()
 
@@ -148,12 +147,11 @@ def test_filter_pushdown_only_tokenizes_surviving_rows(
 
     monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
-    expr = tc.cached_tokens_expr(
-        pl.col("text"),
-        user_id=TEST_USER,
+    expr = cast(Any, pl.col("text")).text.tokenize(
         model="bert-base-uncased",
         lowercase=True,
         remove_punct=True,
+        cache=tc.tokens_cache_path(TEST_USER),
     )
     filtered = (
         base.with_columns(expr.alias("tokens")).filter(pl.col("id") == 3).collect()
@@ -178,12 +176,11 @@ def test_repeated_texts_in_chunk_are_deduplicated(
 
     monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
-    expr = tc.cached_tokens_expr(
-        pl.col("text"),
-        user_id=TEST_USER,
+    expr = cast(Any, pl.col("text")).text.tokenize(
         model="bert-base-uncased",
         lowercase=True,
         remove_punct=True,
+        cache=tc.tokens_cache_path(TEST_USER),
     )
     out = cast(pl.DataFrame, base.with_columns(expr.alias("tokens")).collect())
 

@@ -2,7 +2,7 @@
 
 Nodes store per-column versioned tokenisation specs in ``Node.tokenization``. Analyses
 attach those specs to a LazyFrame with ``hydrate_tokenization_lazyframe``.
-The generic DuckDB cache mechanics live in ``polars_text.tokenize(...,
+The generic DuckDB cache mechanics live in ``pl.col(...).text.tokenize(...,
 cache=...)``; this module owns only Wordflow's per-user cache path and node
 metadata hydration.
 """
@@ -10,10 +10,10 @@ metadata hydration.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import polars as pl
-import polars_text as pt
+import polars_text  # noqa: F401
 
 from .utils import get_user_cache_folder
 
@@ -23,29 +23,6 @@ TOKENS_CACHE_FILENAME = "tokens.duckdb"
 def tokens_cache_path(user_id: str) -> Path:
     """Return the per-user DuckDB token cache path."""
     return get_user_cache_folder(user_id) / TOKENS_CACHE_FILENAME
-
-
-def cached_tokens_expr(
-    source_expr: pl.Expr,
-    *,
-    user_id: str,
-    model: str,
-    lowercase: bool = True,
-    remove_punct: bool = True,
-) -> pl.Expr:
-    """Elementwise expression producing a per-row tokens list, cache-backed.
-
-    The cache path is resolved from ``user_id``. ``polars_text`` owns the
-    DuckDB hit/miss logic and exposes it as an elementwise expression, so
-    filters and slices on base columns can still push below tokenization.
-    """
-    return pt.tokenize(
-        source_expr,
-        lowercase=lowercase,
-        remove_punct=remove_punct,
-        model=model,
-        cache=tokens_cache_path(user_id),
-    )
 
 
 def hydrate_tokenization_lazyframe(
@@ -83,19 +60,19 @@ def hydrate_tokenization_lazyframe(
         return base_lf
 
     return base_lf.with_columns(
-        cached_tokens_expr(
-            pl.col(source_column),
-            user_id=user_id,
-            model=model,
+        cast(Any, pl.col(source_column))
+        .text.tokenize(
             lowercase=bool(params.get("lowercase", True)),
             remove_punct=bool(params.get("remove_punct", True)),
-        ).alias(tokenization_column)
+            model=model,
+            cache=tokens_cache_path(user_id),
+        )
+        .alias(tokenization_column)
     )
 
 
 __all__ = [
     "TOKENS_CACHE_FILENAME",
-    "cached_tokens_expr",
     "hydrate_tokenization_lazyframe",
     "tokens_cache_path",
 ]

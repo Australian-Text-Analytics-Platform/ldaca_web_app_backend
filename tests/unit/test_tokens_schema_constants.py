@@ -15,8 +15,10 @@ Rust and Python schemas — or between the naming helper and its consumers
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import polars as pl
-import polars_text as pt
+import polars_text  # noqa: F401
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     TOKENS_END_FIELD,
     TOKENS_START_FIELD,
@@ -64,7 +66,7 @@ def test_struct_field_names_match_rust_output() -> None:
 
 def test_tokens_struct_dtype_matches_polars_text_output() -> None:
     df = pl.DataFrame({"text": ["Hello world"]})
-    out = df.select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME))
+    out = df.select(cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME))
     assert out.schema[_TOKENS_NAME] == tokens_struct_dtype(), (
         f"polars-text emits {out.schema[_TOKENS_NAME]!r}, "
         f"but generated_columns declares {tokens_struct_dtype()!r}"
@@ -75,7 +77,7 @@ def test_is_tokenization_column_reads_from_node_metadata() -> None:
     # Build a node with a token column registered in Node.tokenization.
     df = pl.DataFrame({"text": ["hi"]})
     with_tokens = df.lazy().select(
-        pl.col("text"), pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)
+        pl.col("text"), cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
     )
     node = Node(data=with_tokens, name="tokens_root")
     node.register_tokenization(
@@ -93,7 +95,9 @@ def test_is_tokenization_column_reads_from_node_metadata() -> None:
 
 def test_is_tokenization_column_rejects_unregistered_column() -> None:
     df = pl.DataFrame({"text": ["hi"]})
-    out = df.lazy().select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME))
+    out = df.lazy().select(
+        cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
+    )
     node = Node(data=out, name="unregistered")
     # Column exists in schema but isn't in Node.tokenization → not a tokens column.
     assert not is_tokenization_column(node, _TOKENS_NAME)
@@ -108,9 +112,9 @@ def test_is_tokenization_column_rejects_non_token_column() -> None:
 
 def test_tokens_struct_projection_unpacks_fields() -> None:
     df = pl.DataFrame({"text": ["hello world"]})
-    tokens_df = df.select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)).explode(
-        _TOKENS_NAME
-    )
+    tokens_df = df.select(
+        cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
+    ).explode(_TOKENS_NAME)
     unpacked = tokens_df.select(*tokens_struct_projection(_TOKENS_NAME))
     assert set(unpacked.columns) == {
         TOKENS_TOKEN_FIELD,

@@ -92,7 +92,8 @@ Tokenisation specs are tracked in `Node.tokenization` keyed by source column,
 with hydrated column names such as `tokenization.text.jieba`. The node stores
 the source column, selected model, language, and cache metadata. Analysis paths
 resolve the per-user DuckDB cache path and call
-`polars_text.tokenize(..., cache=path)` to hydrate temporary token structs.
+`pl.col(...).text.tokenize(..., cache=path)` to hydrate temporary token
+structs.
 Normal table/schema responses preserve the physical node schema and expose
 structured `tokenization` metadata where the UI needs it.
 

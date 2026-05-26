@@ -601,6 +601,7 @@ class ConcordanceMaterializeRequest(BaseModel):
     # engine the user actually searched with. Defaults to ``"regex"`` so
     # existing English flows are byte-identical.
     search_mode: Literal["regex", "tokens"] = "regex"
+    language: Optional[str] = None
     parent_task_id: str
 
 

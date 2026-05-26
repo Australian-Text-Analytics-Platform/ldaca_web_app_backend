@@ -7,6 +7,7 @@ work is attempted — which is what makes the gate cheap to enforce.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import polars as pl
@@ -146,3 +147,69 @@ def test_quotation_gate_helper_returns_resolved_language() -> None:
 
     resolved = quotation_api._enforce_quotation_language_gate("EN", node)
     assert resolved == "en"
+
+
+@pytest.mark.asyncio
+async def test_materialize_quotation_excludes_tokenization_columns_from_metadata(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokenization_column = "tokenization.text.bert-base-uncased"
+    node = Node(
+        data=pl.DataFrame(
+            {
+                "text": ["hello world", "hello again"],
+                "speaker": ["A", "B"],
+                tokenization_column: [
+                    [
+                        {"token": "hello", "start": 0, "end": 5},
+                        {"token": "world", "start": 6, "end": 11},
+                    ],
+                    [
+                        {"token": "hello", "start": 0, "end": 5},
+                        {"token": "again", "start": 6, "end": 11},
+                    ],
+                ],
+            }
+        ).lazy(),
+        name="en_root",
+    )
+    captured_task_args: dict[str, Any] = {}
+
+    class TaskManager:
+        async def submit_task(self, **kwargs: Any):
+            captured_task_args.update(cast(dict[str, Any], kwargs["task_args"]))
+            return SimpleNamespace(id=kwargs["task_id"])
+
+    class LinkManager:
+        def link_child_task(self, _parent_task_id: str, _child_task_id: str) -> None:
+            return None
+
+    class Workspace:
+        nodes = {node.id: node}
+
+    class WorkspaceManager:
+        def get_current_workspace_id(self, _user_id: str) -> str:
+            return "workspace-1"
+
+        def get_current_workspace(self, _user_id: str) -> Workspace:
+            return Workspace()
+
+        def get_task_manager(self, _user_id: str) -> TaskManager:
+            return TaskManager()
+
+        def get_workspace_dir(self, _user_id: str, _workspace_id: str):
+            return tmp_path
+
+    monkeypatch.setattr(quotation_api, "workspace_manager", WorkspaceManager())
+    monkeypatch.setattr(
+        quotation_api, "get_task_manager", lambda _user_id: LinkManager()
+    )
+
+    response = await quotation_api.materialize_quotation(
+        node.id,
+        QuotationMaterializeRequest(column="text", parent_task_id="parent-task"),
+        current_user={"id": "user"},
+    )
+
+    assert response["state"] == "running"
+    assert captured_task_args["extra_columns_data"] == {"speaker": ["A", "B"]}

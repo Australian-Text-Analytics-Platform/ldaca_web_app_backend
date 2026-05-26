@@ -124,7 +124,7 @@ workspace session.
 Tokenisation and embeddings are performance caches rather than workspace
 artifacts. Token specs live in `Node.tokenization`; Wordflow resolves a per-user
 `tokens.duckdb` path, then delegates cache population and reuse to
-`polars_text.tokenize(..., cache=path)`. The resulting token structs are
+`pl.col(...).text.tokenize(..., cache=path)`. The resulting token structs are
 attached to temporary LazyFrames by token-mode concordance, token frequencies,
 and topic-modeling label preparation. Embedding vectors are stored in a
 per-user `embeddings.duckdb` file keyed by model, provider, and content hash.

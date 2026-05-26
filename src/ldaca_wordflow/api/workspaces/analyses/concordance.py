@@ -686,7 +686,11 @@ async def materialize_concordance(
     # Collect all source columns so the materialized parquet includes metadata.
     # This allows the detach fast path to select only user-chosen columns later.
     all_schema_columns = list(node_data.collect_schema().names())
-    extra_source_columns = [c for c in all_schema_columns if c != request.column]
+    extra_source_columns = [
+        c
+        for c in all_schema_columns
+        if c != request.column and c != tokenization_column
+    ]
     select_exprs: list[pl.Expr] = [pl.col(request.column)] + [
         pl.col(c) for c in extra_source_columns
     ]

@@ -18,7 +18,12 @@ don't have to branch on the parquet's origin.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import Any, cast
+
 import polars as pl
+import pytest
+from ldaca_wordflow.api.workspaces.analyses import concordance as concordance_api
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
@@ -34,6 +39,9 @@ from ldaca_wordflow.core.worker_tasks_concordance import (
     _build_concordance_occurrence_dataframe,
     _build_tokens_concordance_occurrence_dataframe,
 )
+from ldaca_wordflow.models import ConcordanceMaterializeRequest
+
+from docworkspace import Node
 
 _ZH_TOKENS_DOC_A = [
     {"token": "今天", "start": 0, "end": 2},
@@ -189,3 +197,112 @@ def test_regex_and_tokens_builders_agree_on_english_word_boundary_case() -> None
     # must agree on this for English where tokenisation = whitespace
     # splitting.
     assert regex_df.height == tokens_df.height == 4
+
+
+def test_concordance_materialize_request_accepts_language_hint() -> None:
+    request = ConcordanceMaterializeRequest(
+        column="text",
+        parent_task_id="parent-task",
+        search_word="hello",
+        language="en",
+    )
+
+    assert request.language == "en"
+
+
+@pytest.mark.asyncio
+async def test_tokens_materialize_route_selects_tokenization_column_once(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tokenization_column = "tokenization.text.bert-base-uncased"
+    node = Node(
+        data=pl.DataFrame(
+            {
+                "text": ["hello world", "hello again"],
+                "speaker": ["A", "B"],
+            }
+        ).lazy(),
+        name="tokens_probe",
+    )
+    node.register_tokenization(
+        "text",
+        {  # type: ignore[arg-type]
+            "source_column": "text",
+            "column_name": tokenization_column,
+            "model": "bert-base-uncased",
+            "language": "en",
+            "generated_at": "2026-05-26T00:00:00+00:00",
+        },
+    )
+
+    def hydrate_probe(
+        lf: pl.LazyFrame,
+        *,
+        node: Node,
+        source_column: str,
+        tokenization_column: str,
+        user_id: str,
+    ) -> pl.LazyFrame:
+        tokens = [
+            [
+                {"token": "hello", "start": 0, "end": 5},
+                {"token": "world", "start": 6, "end": 11},
+            ],
+            [
+                {"token": "hello", "start": 0, "end": 5},
+                {"token": "again", "start": 6, "end": 11},
+            ],
+        ]
+        return lf.with_columns(pl.Series(tokenization_column, tokens))
+
+    captured_task_args: dict[str, Any] = {}
+
+    class TaskManager:
+        async def submit_task(self, **kwargs: Any):
+            captured_task_args.update(cast(dict[str, Any], kwargs["task_args"]))
+            return SimpleNamespace(id=kwargs["task_id"])
+
+    class LinkManager:
+        def link_child_task(self, _parent_task_id: str, _child_task_id: str) -> None:
+            return None
+
+    class Workspace:
+        nodes = {node.id: node}
+
+    class WorkspaceManager:
+        def get_current_workspace_id(self, _user_id: str) -> str:
+            return "workspace-1"
+
+        def get_current_workspace(self, _user_id: str) -> Workspace:
+            return Workspace()
+
+        def get_task_manager(self, _user_id: str) -> TaskManager:
+            return TaskManager()
+
+        def get_workspace_dir(self, _user_id: str, _workspace_id: str):
+            return tmp_path
+
+    monkeypatch.setattr(concordance_api, "workspace_manager", WorkspaceManager())
+    monkeypatch.setattr(
+        concordance_api, "get_task_manager", lambda _user_id: LinkManager()
+    )
+    monkeypatch.setattr(
+        concordance_api, "hydrate_tokenization_lazyframe", hydrate_probe
+    )
+
+    response = await concordance_api.materialize_concordance(
+        node.id,
+        ConcordanceMaterializeRequest(
+            column="text",
+            parent_task_id="parent-task",
+            search_word="hello",
+            num_left_tokens=1,
+            num_right_tokens=1,
+            search_mode="tokens",
+        ),
+        current_user={"id": "user"},
+    )
+
+    assert response["state"] == "running"
+    assert captured_task_args["node_tokens"] is not None
+    assert tokenization_column not in (captured_task_args["extra_columns_data"] or {})
