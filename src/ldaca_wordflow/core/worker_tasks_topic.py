@@ -193,8 +193,8 @@ def _load_corpora_from_workspace(
             node.data,
             node=node,
             source_column=text_column,
-            user_id=user_id,
             derived_name=tokens_column,
+            user_id=user_id,
         )
 
         tokens_selected = cast(
@@ -372,8 +372,8 @@ def _build_label_vectorizer(language: str | None, *, online: bool = False) -> An
     from the legacy behavior.
 
     Non-English: callers feed BERTopic pre-tokenised, space-joined docs
-    (built from the node's derived ``__derived__.<form>.<src>.<model>``
-    column), so the vectorizer just needs to split on Unicode word
+    (built from the node's registered token spec), so the vectorizer just
+    needs to split on Unicode word
     characters. ``\\b\\w+\\b`` with the Unicode flag matches CJK runs that
     sit between non-word characters (the inserted spaces), which gives us
     meaningful per-token c-TF-IDF without bringing jieba into this stage.

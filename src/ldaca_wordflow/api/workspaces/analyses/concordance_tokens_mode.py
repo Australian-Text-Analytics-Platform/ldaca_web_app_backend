@@ -157,6 +157,8 @@ def compute_tokens_concordance_page(
     sort_by: Optional[str],
     descending: bool,
     node_label: Optional[str] = None,
+    token_node: Any | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Page payload for the tokens-mode concordance path.
 
@@ -187,6 +189,20 @@ def compute_tokens_concordance_page(
 
     start = max(page - 1, 0) * page_size
     page_lf = base_lf.slice(start, page_size)
+    if (
+        derived_column not in page_lf.collect_schema().names()
+        and token_node is not None
+        and user_id
+    ):
+        from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+
+        page_lf = hydrate_derived_tokens_lazyframe(
+            page_lf,
+            node=token_node,
+            source_column=column,
+            derived_name=derived_column,
+            user_id=user_id,
+        )
     page_df = cast(pl.DataFrame, page_lf.collect())
 
     metadata_columns = [c for c in page_df.columns if c != derived_column]
@@ -203,8 +219,7 @@ def compute_tokens_concordance_page(
         if not isinstance(tokens, list) or not tokens:
             continue
         raw_text = str(row.get(column) or "") if has_text_column else ""
-        # Drop the derived column from the metadata copy so the user never
-        # sees ``__derived__.*`` in their concordance row.
+        # Drop the temporary hydrated token column from the metadata copy.
         base_row = {key: value for key, value in row.items() if key != derived_column}
 
         match_indices = find_token_matches(

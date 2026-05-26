@@ -482,22 +482,14 @@ async def calculate_token_frequencies(
                 exc,
             )
 
-        # Decision 7 routing: if a derived tokens column exists on this node
-        # for the user-selected source column, count from it directly — the
-        # tokens are already segmented with the right language backend, so
-        # we don't re-tokenise and risk diverging from concordance / POS.
-        # ``request.model`` lets the user pick when N>1 tokens columns
-        # coexist for the same source; ``None`` keeps the first-match path.
-        derived_tokens_col = node.find_derived_column(
-            column_name, form=TOKENS_FORM, model=request.model
-        )
+        derived_tokens_col = node.find_derived_column(column_name, form=TOKENS_FORM)
         if derived_tokens_col is not None:
             node_data = hydrate_derived_tokens_lazyframe(
                 node_data,
                 node=node,
                 source_column=column_name,
-                user_id=user_id,
                 derived_name=derived_tokens_col,
+                user_id=user_id,
             )
             # Phase 5 perf fix: spill the explode-flattened tokens to a
             # parquet via streaming sink instead of materialising a

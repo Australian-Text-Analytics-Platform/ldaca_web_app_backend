@@ -17,7 +17,6 @@ from ..api.workspaces.analyses.generated_columns import (
     TOKENS_FORM,
     derived_column_name,
 )
-from .tokens_cache import TOKENS_CACHE_SCHEMA_VERSION
 
 _CASE_FREE_MODELS: frozenset[str] = frozenset(
     {
@@ -32,6 +31,14 @@ _REMOVE_PUNCT_DEFAULT = True
 
 def _model_is_case_free(model: str) -> bool:
     return model in _CASE_FREE_MODELS
+
+
+def _registered_token_specs(node: Node) -> list[str]:
+    return [
+        name
+        for name, meta in node.derived.items()
+        if isinstance(meta, dict) and meta.get("form") == TOKENS_FORM
+    ]
 
 
 def tokenise_column(
@@ -57,8 +64,7 @@ def tokenise_column(
         )
 
     derived_name = derived_column_name(TOKENS_FORM, source_column, model)
-    existing = node.find_derived_column(source_column, form=TOKENS_FORM, model=model)
-    if existing is not None:
+    for existing in _registered_token_specs(node):
         node.unregister_derived_column(existing)
 
     params: dict[str, bool] = {
@@ -74,7 +80,6 @@ def tokenise_column(
             "language": language,
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "cache_backend": "duckdb",
-            "cache_schema_version": TOKENS_CACHE_SCHEMA_VERSION,
             "params": params,
         },
     )

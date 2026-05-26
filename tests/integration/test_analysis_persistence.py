@@ -973,7 +973,7 @@ class TestWorkspaceGraphEnrichment:
         frontend tokens-mode auto-pick can read it.
 
         Regression test: the endpoint previously returned ``node.info()``
-        directly (no ``derived``/``derived_columns``), which left the
+        directly (no ``derived`` metadata), which left the
         concordance tokens-mode radio permanently disabled for CJK corpora.
         """
         # Given: a tokenised node. Register the derived column directly on
@@ -1011,7 +1011,7 @@ class TestWorkspaceGraphEnrichment:
         )
         assert node_entry is not None
         assert "derived" in node_entry
-        assert "derived_columns" in node_entry
+        assert "derived_columns" not in node_entry
         derived = node_entry["derived"]
         assert len(derived) == 1
         only_meta = next(iter(derived.values()))

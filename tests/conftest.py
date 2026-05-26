@@ -19,29 +19,26 @@ def anyio_backend():
 
 @pytest.fixture(scope="session", autouse=True)
 def _tokens_cache_in_tmpdir(tmp_path_factory):
-    """Redirect the tokens cache to a tmpdir for the whole test session.
-
-    The cache is per-user (lives under ``{user_root}/user_cache/``
-    in production). When ``LDACA_TOKENS_CACHE_DIR`` is set, the module
-    treats it as the BASE and still applies the per-user subdir layout
-    (``{base}/{user_id}/tokens.duckdb``) — so tests exercise the same path
-    structure as production while staying isolated under a tmpdir.
+    """Redirect the per-user tokens cache DB into a tmpdir for the test session.
 
     Without this fixture, analyses that hydrate tokens would write DuckDB files
-    into the developer's real user cache directory.
+    into the developer's real ``~/.../user_cache/tokens.duckdb``.
     """
-    import os
+    from ldaca_wordflow.core import tokens_cache as _tc
 
-    tmp_dir = tmp_path_factory.mktemp("tokens-cache")
-    prev = os.environ.get("LDACA_TOKENS_CACHE_DIR")
-    os.environ["LDACA_TOKENS_CACHE_DIR"] = str(tmp_dir)
+    tmp_root = tmp_path_factory.mktemp("tokens-cache")
+    original = _tc.tokens_cache_path
+
+    def _redirect(user_id: str) -> Path:
+        path = tmp_root / user_id / _tc.TOKENS_CACHE_FILENAME
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    setattr(_tc, "tokens_cache_path", _redirect)
     try:
-        yield tmp_dir
+        yield tmp_root
     finally:
-        if prev is None:
-            os.environ.pop("LDACA_TOKENS_CACHE_DIR", None)
-        else:
-            os.environ["LDACA_TOKENS_CACHE_DIR"] = prev
+        setattr(_tc, "tokens_cache_path", original)
 
 
 @pytest.fixture(scope="session", autouse=True)

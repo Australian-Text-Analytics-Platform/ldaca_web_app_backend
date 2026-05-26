@@ -1,7 +1,8 @@
 import polars as pl
 import pytest
-from docworkspace import Node
 from ldaca_wordflow.core.workspace import workspace_manager
+
+from docworkspace import Node
 
 
 @pytest.mark.anyio
@@ -46,10 +47,12 @@ async def test_concordance_detach_starts_task(authenticated_client, workspace_id
 async def test_concordance_detach_options_include_mandatory_and_optional_columns(
     authenticated_client, workspace_id
 ):
-    df = pl.DataFrame({
-        "text": ["alpha beta", "beta gamma", "alpha gamma"],
-        "speaker": ["a", "b", "c"],
-    })
+    df = pl.DataFrame(
+        {
+            "text": ["alpha beta", "beta gamma", "alpha gamma"],
+            "speaker": ["a", "b", "c"],
+        }
+    )
     workspace = workspace_manager.get_current_workspace("test")
     assert workspace is not None
 
@@ -99,17 +102,14 @@ async def test_concordance_detach_options_include_mandatory_and_optional_columns
 
 
 @pytest.mark.anyio
-async def test_concordance_detach_options_hide_derived_columns(
+async def test_concordance_detach_options_ignore_token_metadata(
     authenticated_client, workspace_id
 ):
-    """``__derived__.*`` columns (tokens, future analytic derivations) must
-    not appear in the detach picker. They live on the source node's
-    LazyFrame for analytics consumption (decision 7) but have no
-    user-facing role in a detach payload.
+    """Token metadata must not create extra detach-picker columns.
 
-    Regression: before the fix, ``list(node.data.collect_schema().names())``
-    on a tokenised node leaked ``__derived__.tokens.<source>.<model>`` into
-    ``available_columns``.
+    Token specs live in ``Node.derived`` and are hydrated only inside analysis
+    paths. Registering a token spec should leave detach options scoped to the
+    node's physical columns.
     """
     from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
         TOKENS_FORM,
@@ -150,11 +150,6 @@ async def test_concordance_detach_options_hide_derived_columns(
 
     assert resp.status_code == 200, resp.text
     node_option = resp.json()["data"]["nodes"][0]
-    assert all(
-        not isinstance(c, str) or not c.startswith("__derived__.")
-        for c in node_option["available_columns"]
-    )
-    assert all(
-        not isinstance(c, str) or not c.startswith("__derived__.")
-        for c in node_option["disabled_columns"]
-    )
+    assert derived_name not in node_option["available_columns"]
+    assert derived_name not in node_option["disabled_columns"]
+    assert "text" in node_option["available_columns"]

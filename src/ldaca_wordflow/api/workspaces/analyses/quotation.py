@@ -545,9 +545,8 @@ async def quotation_detach_options(
     node = ws.nodes[node_id]
     node_data = node.data
 
-    # Phase 2 / decision 7: hidden derived analytic columns
-    # (``__derived__.*``) must not appear in the detach picker — the
-    # worker can't carry them through, and they have no user-facing role.
+    # Temporary dynamic token columns have no user-facing role in detach
+    # payloads, so filter them if a caller supplied a hydrated plan.
     available_schema_columns = [
         c for c in node_data.collect_schema().names() if not is_derived_column_name(c)
     ]

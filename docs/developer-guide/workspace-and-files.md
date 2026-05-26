@@ -88,14 +88,15 @@ allows only the supported transformation contexts.
 ## Schema Filtering
 
 `api/workspaces/schema_filter.py` is the frontend-facing schema filter.
-Derived analytical specs are tracked in `Node.derived` under `__derived__.*`
-names. Cache-backed token specs are hydrated only inside analysis paths; legacy
-workspaces may still carry physical `__derived__.*` columns. The filter hides
-physical derived columns from normal table/schema responses while exposing
-structured derived metadata where the UI needs it.
+Tokenisation specs are tracked in `Node.derived` under dynamic names such as
+`text.tokenization.jieba`. The node stores only the source column, selected
+model, language, and cache metadata; token arrays are hydrated from the
+per-user DuckDB cache only inside analysis paths. Normal table/schema responses
+preserve the physical node schema and expose structured `derived` metadata
+where the UI needs it.
 
-Use this shared projection instead of filtering derived columns in individual
-routers.
+Use this shared projection for frontend node metadata instead of filtering or
+fabricating token columns in individual routers.
 
 ## Export
 

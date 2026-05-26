@@ -1,17 +1,12 @@
 """Derived-column lifecycle endpoints (Phase 2.5 of multilingual).
 
 POST  /workspaces/nodes/{node_id}/derived/tokens
-    Tokenise a string column on the active workspace's node. Idempotent on
-    ``(source_column, model)``: re-calling with the same pair replaces the
-    existing derived column; a different model adds a second one.
+    Register the node's single tokenisation spec. A new source/model replaces
+    any previous tokens spec for the node; token arrays are hydrated from the
+    per-user DuckDB cache only inside analysis paths.
 
-DELETE /workspaces/nodes/{node_id}/derived/{column_name}
-    Drop a previously-registered derived column from both the LazyFrame
-    plan and ``Node.derived``. Returns 404 if the column wasn't registered
-    on this node.
-
-Both endpoints persist the workspace via :func:`update_workspace` so the
-derived metadata round-trips through plbin.
+The endpoint persists the workspace via :func:`update_workspace` so the derived
+metadata round-trips through plbin.
 """
 
 from __future__ import annotations
@@ -70,10 +65,15 @@ async def create_derived_tokens(
     user_id = current_user["id"]
     workspace_id, node = _get_active_workspace_node(user_id, node_id)
 
-    # Snapshot whether a matching derived column already exists so we can
-    # tell the caller whether their request created or replaced.
-    existing = node.find_derived_column(
-        request.source_column, form=TOKENS_FORM, model=request.model
+    # A node carries at most one tokens spec. Snapshot any existing tokens entry
+    # so the caller knows whether this request switched column/model.
+    existing = next(
+        (
+            name
+            for name, meta in node.derived.items()
+            if isinstance(meta, dict) and meta.get("form") == TOKENS_FORM
+        ),
+        None,
     )
 
     try:
@@ -94,30 +94,6 @@ async def create_derived_tokens(
         is_new=existing is None,
         replaced_column=existing,
     )
-
-
-@router.delete("/nodes/{node_id}/derived/{column_name:path}")
-async def delete_derived_column(
-    node_id: str,
-    column_name: str,
-    current_user: dict = Depends(get_current_user),
-) -> dict[str, str]:
-    user_id = current_user["id"]
-    workspace_id, node = _get_active_workspace_node(user_id, node_id)
-
-    if column_name not in node.derived:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Derived column {column_name!r} not registered on this node",
-        )
-
-    schema_names = node.data.collect_schema().names()
-    if column_name in schema_names:
-        node.data = node.data.drop(column_name, strict=False)
-    node.unregister_derived_column(column_name)
-
-    update_workspace(user_id, workspace_id, best_effort=True)
-    return {"state": "successful", "deleted_column": column_name}
 
 
 __all__ = [

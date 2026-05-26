@@ -1,0 +1,2 @@
+function e(e){return typeof e==`string`&&e.trim().toLowerCase()||null}function t(t){if(!t||typeof t!=`object`)return null;for(let n of Object.values(t)){if(!n||typeof n!=`object`)continue;let t=e(n.language);if(t)return t}return null}function n(n){return e(n.explicit)||t(n.node?.derived)||e(n.defaultLanguage)||`en`}function r(t){return e(t)===`en`}export{r as n,n as t};
+//# sourceMappingURL=effectiveNodeLanguage-DVqs2IV6.js.map

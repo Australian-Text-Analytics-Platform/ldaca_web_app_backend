@@ -138,9 +138,9 @@ def _build_tokens_concordance_occurrence_dataframe(
 
     Output column shape is identical to the regex-mode build so paginated
     reads, detach, and dispersion bin fetches don't have to branch on the
-    parquet's origin. Walks ``node_tokens`` (the materialised values of
-    the derived ``__derived__.tokens.<source>.<model>`` column) for exact
-    token equality with ``search_word``, then reuses
+    parquet's origin. Walks ``node_tokens`` (the dynamically hydrated token
+    column for the registered source/model) for exact token equality with
+    ``search_word``, then reuses
     :func:`build_token_hit` to construct each row.
     """
     import polars as pl

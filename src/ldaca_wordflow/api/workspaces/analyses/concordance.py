@@ -46,7 +46,6 @@ from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import (
     CONC_EXTRACTION_COLUMN,
     TOKENS_FORM,
-    is_derived_column_name,
 )
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
@@ -209,7 +208,6 @@ async def run_concordance(
             combined=bool(request.combined),
             search_mode=request.search_mode,
             language=request.language,
-            model=request.model,
         )
 
         task_id = str(uuid4())
@@ -672,37 +670,27 @@ async def materialize_concordance(
             derived_tokens_column = node.find_derived_column(
                 request.column,
                 form=TOKENS_FORM,
-                model=request.model,
             )
         if derived_tokens_column is None:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"No tokens column registered on node {node_id!r} for "
-                    f"source column {request.column!r}"
-                    + (f" with model {request.model!r}" if request.model else "")
-                    + "; re-run Tokenise first."
+                    f"source column {request.column!r}" + "; re-run Tokenise first."
                 ),
             )
         node_data = hydrate_derived_tokens_lazyframe(
             node_data,
             node=node,
             source_column=request.column,
-            user_id=user_id,
             derived_name=derived_tokens_column,
+            user_id=user_id,
         )
 
     # Collect all source columns so the materialized parquet includes metadata.
     # This allows the detach fast path to select only user-chosen columns later.
-    # Hidden ``__derived__.*`` columns are excluded from extras — they are
-    # not user-facing metadata, and (for tokens-mode) we pull the specific
-    # derived tokens column separately below.
     all_schema_columns = list(node_data.collect_schema().names())
-    extra_source_columns = [
-        c
-        for c in all_schema_columns
-        if c != request.column and not is_derived_column_name(c)
-    ]
+    extra_source_columns = [c for c in all_schema_columns if c != request.column]
     select_exprs: list[pl.Expr] = [pl.col(request.column)] + [
         pl.col(c) for c in extra_source_columns
     ]
@@ -815,12 +803,7 @@ async def concordance_detach_options(
     node = ws.nodes[node_id]
     node_data = node.data
 
-    # Hidden ``__derived__.*`` columns must never appear in the picker even
-    # though they exist in the schema — they're an internal analytic layer
-    # (Phase 2 / decision 7) that the detach worker doesn't carry through.
-    available_schema_columns = [
-        c for c in node_data.collect_schema().names() if not is_derived_column_name(c)
-    ]
+    available_schema_columns = node_data.collect_schema().names()
     mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
     mandatory_set = set(mandatory_columns)
     # `CONC_extraction` is a generated column (raw KWIC window) — opt-in for

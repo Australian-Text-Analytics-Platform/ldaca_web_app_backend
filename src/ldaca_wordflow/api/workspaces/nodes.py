@@ -316,32 +316,7 @@ def _propagated_derived(
     parents: "Node | list[Node]",
     result_lf: pl.LazyFrame,
 ) -> dict[str, Any]:
-    """Return the parents' derived registry filtered to the child's schema.
-
-    Every node-creating endpoint here calls ``lazy.filter(...) / .slice(...) /
-    pl.concat(...) / .join(...)`` and then constructs a new ``Node(...)``
-    manually. ``Node.__init__`` accepts an optional ``derived=`` dict, but if
-    you forget to pass it the child silently starts with an empty registry
-    — even when the LazyFrame schema still carries the derived column. Every
-    downstream tool that uses ``Node.find_derived_column`` (Tokens-mode
-    concordance, token-frequency, topic-modelling, etc.) then refuses to run:
-
-        "No tokens column registered on node 'X' for source column 'Y'
-         with model 'Z'; re-run Tokenise first."
-
-    The fix is: always thread the parent's derived dict to the child,
-    filtered to the columns that actually survived the operation. This
-    mirrors what ``docworkspace.Node.filter()`` / ``Node.select()`` /
-    ``Node.join()`` already do internally when you call those methods
-    directly — but the backend bypasses those by calling the LazyFrame
-    methods, so we recreate the propagation here at the boundary.
-
-    Multi-parent (concat / join): union both parents' derived entries
-    and filter to the result schema. Same-named entries on both sides
-    are equivalent in practice — concat would have failed at schema
-    validation if the derived columns disagreed in dtype, and join
-    can only produce a single column per name in the output frame.
-    """
+    """Return parent token metadata whose source column survived."""
     if isinstance(parents, list):
         sources = parents
     else:
@@ -363,7 +338,13 @@ def _propagated_derived(
         if not isinstance(derived, dict):
             continue
         for name, meta in derived.items():
-            if result_columns is None or name in result_columns:
+            if result_columns is None:
+                merged[name] = meta
+                continue
+            if not isinstance(meta, dict):
+                continue
+            source_column = meta.get("source_column")
+            if isinstance(source_column, str) and source_column in result_columns:
                 merged[name] = meta
     return merged
 
@@ -699,9 +680,8 @@ async def get_node_data(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
-    # Hide ``__derived__.*`` columns from the user-facing data view (Phase
-    # 2.10, decision 7). Analytics tools that consume the derived columns
-    # read ``node.data`` directly and are unaffected.
+    # Token columns are hydrated only inside analysis paths. The data view reads
+    # the node's physical columns unchanged.
     lf = project_visible(_require_current_workspace(user_id).nodes[node_id].data)
     schema = {col: str(dtype) for col, dtype in lf.collect_schema().items()}
     columns = list(schema.keys())

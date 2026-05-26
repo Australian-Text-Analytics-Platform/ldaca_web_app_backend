@@ -26,7 +26,7 @@ def _zh_node() -> Node:
     df = pl.DataFrame({"text": ["今天天气很好"]}).lazy()
     node = Node(data=df, name="zh_root")
     node.register_derived_column(
-        "__derived__.tokens.text.jieba",
+        "text.tokenization.jieba",
         {  # type: ignore[arg-type]
             "source_column": "text",
             "form": "tokens",

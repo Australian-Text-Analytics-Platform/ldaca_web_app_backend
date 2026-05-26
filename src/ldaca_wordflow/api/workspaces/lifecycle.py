@@ -479,10 +479,10 @@ async def get_workspace_graph(
     - frontend graph canvas initialization and refresh
 
     Why:
-    - Exposes the workspace's native graph JSON; per-node entries are routed
-      through :func:`frontend_node_info` so the payload hides ``__derived__.*``
-      columns and surfaces structured ``derived`` metadata (needed by the
-      tokens-mode auto-pick and the CustomNode inspector chip).
+        - Exposes the workspace's native graph JSON; per-node entries are routed
+            through :func:`frontend_node_info` so the payload surfaces structured
+            ``derived`` metadata for the CustomNode inspector chip and token-aware
+            analyses.
     """
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)

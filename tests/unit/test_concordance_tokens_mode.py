@@ -13,8 +13,13 @@ should remain byte-identical since search_mode defaults to "regex".
 
 from __future__ import annotations
 
-import polars as pl
+from typing import Any, cast
 
+import polars as pl
+import pytest
+from ldaca_wordflow.api.workspaces.analyses.concordance_core import (
+    compute_node_concordance_page,
+)
 from ldaca_wordflow.api.workspaces.analyses.concordance_tokens_mode import (
     build_token_hit,
     compute_tokens_concordance_page,
@@ -28,7 +33,10 @@ from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_RIGHT_CONTEXT_COLUMN,
     CONC_START_IDX_COLUMN,
 )
+from ldaca_wordflow.core import tokens_cache as tc
+from ldaca_wordflow.core.derived_columns import tokenise_column
 
+from docworkspace import Node
 
 # Toy Chinese document tokenised by jieba-style segmentation. Offsets are
 # char positions in the original text.
@@ -96,7 +104,7 @@ def test_build_token_hit_second_match_has_two_left_tokens() -> None:
 
 
 def test_compute_tokens_page_groups_hits_per_row() -> None:
-    derived_col = "__derived__.tokens.text.jieba"
+    derived_col = "text.tokenization.jieba"
     df = pl.DataFrame(
         {
             "text": [ZH_TEXT, "晚上去看电影", "今天"],
@@ -137,15 +145,75 @@ def test_compute_tokens_page_groups_hits_per_row() -> None:
     second_row_hits = page["data"][1]
     assert len(second_row_hits) == 1
 
-    # Derived column is stripped from the per-hit projection — only
-    # ``text`` and CONC_* fields surface (plus __derived__.* is excluded).
+    # The hydrated token column is stripped from the per-hit projection; only
+    # ``text`` and CONC_* fields surface.
     sample_hit = first_row_hits[0]
     assert derived_col not in sample_hit
     assert sample_hit[CONC_MATCHED_TEXT_COLUMN] == "今天"
 
 
+def test_token_mode_hydrates_only_requested_page_slice(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        tc, "tokens_cache_path", lambda _user_id: tmp_path / "tokens.duckdb"
+    )
+    tokenized_texts: list[list[str]] = []
+    real_tokenize_misses = tc._tokenize_misses
+
+    def spy_tokenize_misses(
+        texts: list[str], **kwargs: Any
+    ) -> list[list[dict[str, Any]]]:
+        tokenized_texts.append(list(texts))
+        return real_tokenize_misses(texts, **kwargs)
+
+    monkeypatch.setattr(tc, "_tokenize_misses", spy_tokenize_misses)
+    node = Node(
+        data=pl.DataFrame({"text": [f"hello {index}" for index in range(5)]}).lazy(),
+        name="probe",
+    )
+    derived_col = tokenise_column(
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="lazy-user",
+    )
+
+    page = compute_node_concordance_page(
+        {
+            "lf": node.data,
+            "column": "text",
+            "label": "probe",
+            "derived_tokens_column": derived_col,
+            "language": "en",
+            "node": node,
+            "user_id": "lazy-user",
+        },
+        {
+            "search_word": "hello",
+            "regex": False,
+            "whole_word": False,
+            "case_sensitive": False,
+            "num_left_tokens": 1,
+            "num_right_tokens": 1,
+            "search_mode": "tokens",
+        },
+        page=1,
+        page_size=2,
+        sort_by=None,
+        descending=True,
+    )
+
+    flat_texts = [t for batch in tokenized_texts for t in batch]
+    assert flat_texts == ["hello 0", "hello 1"]
+    assert page["pagination"]["page_size"] == 2
+    assert page["pagination"]["total_source_rows"] == 5
+    assert page["pagination"]["result_count"] == 2
+
+
 def test_compute_tokens_page_with_english_word_aware_context() -> None:
-    derived_col = "__derived__.tokens.text.bert-base-uncased"
+    derived_col = "text.tokenization.bert-base-uncased"
     en_text = "the quick brown fox jumps over the lazy dog"
     en_tokens = []
     cursor = 0
@@ -176,12 +244,8 @@ def test_compute_tokens_page_with_english_word_aware_context() -> None:
     # 2 actual tokens of left context = "brown " + ""? The slice rule keeps
     # the original separators in the raw text — let's check by reconstructing.
     # tokens[1..3] -> "quick brown" → context = en_text[tokens[1].start : tokens[3].start]
-    expected_left = en_text[
-        en_tokens[1]["start"] : en_tokens[3]["start"]
-    ]
-    expected_right = en_text[
-        en_tokens[3]["end"] : en_tokens[5]["end"]
-    ]
+    expected_left = en_text[en_tokens[1]["start"] : en_tokens[3]["start"]]
+    expected_right = en_text[en_tokens[3]["end"] : en_tokens[5]["end"]]
     assert hit[CONC_LEFT_CONTEXT_COLUMN] == expected_left
     assert hit[CONC_RIGHT_CONTEXT_COLUMN] == expected_right
 
@@ -193,16 +257,14 @@ def test_parse_tokens_mode_alternatives_splits_on_pipe_comma_space() -> None:
     """
     expected = {"cat", "dog", "fish"}
     assert (
-        parse_tokens_mode_alternatives("cat|dog|fish", case_sensitive=False)
-        == expected
+        parse_tokens_mode_alternatives("cat|dog|fish", case_sensitive=False) == expected
     )
     assert (
         parse_tokens_mode_alternatives("cat, dog ,fish", case_sensitive=False)
         == expected
     )
     assert (
-        parse_tokens_mode_alternatives("cat dog fish", case_sensitive=False)
-        == expected
+        parse_tokens_mode_alternatives("cat dog fish", case_sensitive=False) == expected
     )
     # Mixed separators + collapsed runs.
     assert (
@@ -214,21 +276,23 @@ def test_parse_tokens_mode_alternatives_splits_on_pipe_comma_space() -> None:
 def test_parse_tokens_mode_alternatives_drops_empty_pieces() -> None:
     """Stray separators must not produce an empty needle that would match
     nothing-strings everywhere (or, worse, every empty token)."""
-    assert (
-        parse_tokens_mode_alternatives("|cat||dog,,", case_sensitive=False)
-        == {"cat", "dog"}
-    )
+    assert parse_tokens_mode_alternatives("|cat||dog,,", case_sensitive=False) == {
+        "cat",
+        "dog",
+    }
     assert parse_tokens_mode_alternatives("   ", case_sensitive=False) == set()
     assert parse_tokens_mode_alternatives("", case_sensitive=False) == set()
 
 
 def test_parse_tokens_mode_alternatives_casefolds_when_insensitive() -> None:
-    assert parse_tokens_mode_alternatives(
-        "Cat|DOG", case_sensitive=False
-    ) == {"cat", "dog"}
-    assert parse_tokens_mode_alternatives(
-        "Cat|DOG", case_sensitive=True
-    ) == {"Cat", "DOG"}
+    assert parse_tokens_mode_alternatives("Cat|DOG", case_sensitive=False) == {
+        "cat",
+        "dog",
+    }
+    assert parse_tokens_mode_alternatives("Cat|DOG", case_sensitive=True) == {
+        "Cat",
+        "DOG",
+    }
 
 
 def test_find_token_matches_handles_multiple_alternatives() -> None:
@@ -241,10 +305,7 @@ def test_find_token_matches_handles_multiple_alternatives() -> None:
 
 def test_find_token_matches_alternatives_with_no_hits_returns_empty() -> None:
     # The query parses but none of the alternatives are present.
-    assert (
-        find_token_matches(ZH_TOKENS, "cat|dog|fish", case_sensitive=False)
-        == []
-    )
+    assert find_token_matches(ZH_TOKENS, "cat|dog|fish", case_sensitive=False) == []
 
 
 def test_find_token_matches_empty_query_returns_empty() -> None:

@@ -1,16 +1,14 @@
 """Phase 2.5: derived-tokens API endpoint integration tests.
 
-Exercises ``POST /workspaces/nodes/{node_id}/derived/tokens`` and
-``DELETE /workspaces/nodes/{node_id}/derived/{column_name}`` by calling the
-endpoint handlers directly with a monkey-patched ``workspace_manager``.
+Exercises ``POST /workspaces/nodes/{node_id}/derived/tokens`` by calling the
+endpoint handler directly with a monkey-patched ``workspace_manager``.
 The endpoint logic itself is thin (auth + lookup + delegate to
 ``tokenise_column``) so this test ensures:
 
 - 200 with ``is_new=True`` on first call,
 - 200 with ``is_new=False`` and ``replaced_column`` on repeat call,
 - 400 on missing source column,
-- 404 on unknown node / no active workspace / unregistered column,
-- DELETE removes the metadata entry and any legacy physical column if present.
+- 404 on unknown node / no active workspace.
 """
 
 from __future__ import annotations
@@ -94,7 +92,7 @@ async def test_post_tokens_creates_new_column(fake_workspace_manager):
 
     assert result.is_new is True
     assert result.replaced_column is None
-    assert result.column == "__derived__.tokens.text.bert-base-uncased"
+    assert result.column == "text.tokenization.bert-base-uncased"
     assert result.column in node.derived
     assert result.column not in node.data.collect_schema().names()
     assert node.derived[result.column]["cache_backend"] == "duckdb"
@@ -122,6 +120,33 @@ async def test_post_tokens_replays_replaces_existing(fake_workspace_manager):
 
 
 @pytest.mark.asyncio
+async def test_post_tokens_replaces_previous_node_token_spec(fake_workspace_manager):
+    _manager, _workspace, node = fake_workspace_manager
+
+    first = await derived_api.create_derived_tokens(
+        node_id=node.id,
+        request=TokeniseColumnRequest(
+            source_column="text", model="bert-base-uncased", language="en"
+        ),
+        current_user={"id": "user"},
+    )
+    second = await derived_api.create_derived_tokens(
+        node_id=node.id,
+        request=TokeniseColumnRequest(
+            source_column="value", model="jieba", language="zh"
+        ),
+        current_user={"id": "user"},
+    )
+
+    assert second.is_new is False
+    assert second.replaced_column == first.column
+    assert first.column not in node.derived
+    assert second.column == "value.tokenization.jieba"
+    assert second.column in node.derived
+    assert len(node.derived) == 1
+
+
+@pytest.mark.asyncio
 async def test_post_tokens_400_on_missing_source(fake_workspace_manager):
     _manager, _workspace, node = fake_workspace_manager
     request = TokeniseColumnRequest(
@@ -144,42 +169,5 @@ async def test_post_tokens_404_on_unknown_node(fake_workspace_manager):
     with pytest.raises(HTTPException) as exc_info:
         await derived_api.create_derived_tokens(
             node_id="does-not-exist", request=request, current_user={"id": "user"}
-        )
-    assert exc_info.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_delete_derived_column_removes_schema_and_metadata(
-    fake_workspace_manager,
-):
-    _manager, _workspace, node = fake_workspace_manager
-    create_req = TokeniseColumnRequest(
-        source_column="text", model="bert-base-uncased", language="en"
-    )
-    created = await derived_api.create_derived_tokens(
-        node_id=node.id, request=create_req, current_user={"id": "user"}
-    )
-
-    result = await derived_api.delete_derived_column(
-        node_id=node.id,
-        column_name=created.column,
-        current_user={"id": "user"},
-    )
-
-    assert result["state"] == "successful"
-    assert result["deleted_column"] == created.column
-    assert created.column not in node.derived
-    assert created.column not in node.data.collect_schema().names()
-
-
-@pytest.mark.asyncio
-async def test_delete_derived_column_404_on_unregistered(fake_workspace_manager):
-    _manager, _workspace, node = fake_workspace_manager
-
-    with pytest.raises(HTTPException) as exc_info:
-        await derived_api.delete_derived_column(
-            node_id=node.id,
-            column_name="__derived__.tokens.text.never_registered",
-            current_user={"id": "user"},
         )
     assert exc_info.value.status_code == 404

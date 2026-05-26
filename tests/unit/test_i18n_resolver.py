@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import polars as pl
 import pytest
-from docworkspace import Node
-
 from ldaca_wordflow.core.i18n import (
     DEFAULT_LANGUAGE,
     UnsupportedLanguageError,
@@ -22,12 +20,14 @@ from ldaca_wordflow.core.i18n import (
     require_language,
 )
 
+from docworkspace import Node
+
 
 def _node_with_derived(language: str) -> Node:
     df = pl.DataFrame({"text": ["a"]}).lazy()
     node = Node(data=df, name="root")
     node.register_derived_column(
-        "__derived__.tokens.text.jieba",
+        "text.tokenization.jieba",
         {  # type: ignore[arg-type]
             "source_column": "text",
             "form": "tokens",

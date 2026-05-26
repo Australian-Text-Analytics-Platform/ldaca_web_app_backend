@@ -42,8 +42,6 @@ class ConcordanceRequest(BaseAnalysisRequest):
     # Phase 4.4 language hint — resolver chain falls back to derived metadata
     # then "en" when this is None.
     language: str | None = None
-    # Tokens-mode model picker (None = first matching derived column).
-    model: str | None = None
     # node_id -> parquet path holding flattened occurrence rows.
     # Populated when a materialize background task completes for that node.
     materialized_paths: dict[str, str] | None = None

@@ -1,0 +1,2 @@
+import{invoke as e}from"./core-ldWAbZrk.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};
+//# sourceMappingURL=dist-js-BVtzLsI1.js.map

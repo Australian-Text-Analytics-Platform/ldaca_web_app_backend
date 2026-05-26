@@ -132,10 +132,8 @@ def _export_node_artifact(
     export_dir: Path,
     fmt: str,
 ) -> tuple[str, Path]:
-    # Hide ``__derived__.*`` from every export format. The frontend already
-    # filters them out of the data view and Row Details dialog; export was
-    # the last surface still leaking them. Analytics paths that need the
-    # derived columns continue to read ``node.data`` directly.
+    # Token columns are hydrated only inside analysis paths. Export the node's
+    # physical data unchanged.
     data = project_visible(node.data)
 
     spec = EXPORT_FORMAT_SPECS[fmt]

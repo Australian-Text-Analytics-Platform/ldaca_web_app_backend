@@ -1,11 +1,9 @@
 """Bug 2 regression: child nodes from filter / slice / sample / concat /
 join / clone / expression-apply must inherit the parent's ``derived``
-registry. Pre-fix, every Node()-creating endpoint in
-``api.workspaces.nodes`` constructed the new node WITHOUT passing
-``derived=``, so the child started with an empty registry even when the
-LazyFrame still carried the derived column in its schema. Every
-downstream tool using ``Node.find_derived_column`` then refused to run
-with "re-run Tokenise first".
+registry when the registered source column survives the operation. Pre-fix,
+every Node()-creating endpoint in ``api.workspaces.nodes`` constructed the new
+node WITHOUT passing ``derived=``, so downstream tools using
+``Node.find_derived_column`` refused to run with "re-run Tokenise first".
 """
 
 from __future__ import annotations
@@ -29,7 +27,7 @@ from ldaca_wordflow.models import (
 
 from docworkspace import DerivedColumnMeta, Node
 
-DERIVED_TOKENS_COLUMN = "__derived__.tokens.text.lindera-ja-ipadic"
+DERIVED_TOKENS_COLUMN = "text.tokenization.lindera-ja-ipadic"
 DERIVED_META: dict[str, Any] = {
     "source_column": "text",
     "form": "tokens",
@@ -40,26 +38,14 @@ DERIVED_META: dict[str, Any] = {
 
 
 def _make_node_with_tokens(name: str = "root") -> Node:
-    """Create a Node whose LazyFrame schema includes a registered derived
-    tokens column. We don't actually run the tokenizer here — we fabricate
-    the derived list-of-struct column directly with ``with_columns`` so the
-    test stays under a millisecond and doesn't need to fetch any HF dict.
+    """Create a Node with a registered token spec.
+
+    Token arrays are hydrated dynamically in analysis paths; propagation only
+    depends on whether the source column survives the child operation.
     """
     df = pl.DataFrame({"text": ["今日は", "良い天気"], "id": [1, 2]}).lazy()
-    # Fabricate a list<struct{token, start, end}> column that matches the
-    # canonical tokens schema. Per-row content doesn't matter — only the
-    # column name + dtype need to survive across filter/slice/etc.
-    fake_tokens = df.with_columns(
-        pl.struct(
-            pl.col("text").alias("token"),
-            pl.lit(0, dtype=pl.Int64).alias("start"),
-            pl.col("text").str.len_chars().cast(pl.Int64).alias("end"),
-        )
-        .implode()
-        .alias(DERIVED_TOKENS_COLUMN)
-    )
     node = Node(
-        data=fake_tokens,
+        data=df,
         name=name,
         derived={DERIVED_TOKENS_COLUMN: cast(DerivedColumnMeta, dict(DERIVED_META))},
     )
@@ -248,10 +234,8 @@ async def test_expression_apply_with_columns_inherits_derived(single_parent):
 @pytest.mark.asyncio
 async def test_expression_apply_select_drops_derived_if_column_gone(single_parent):
     manager, parent = single_parent
-    # A select that keeps only `id` drops the derived tokens column from the
-    # output schema. The derived entry pointing at the now-absent column
-    # must be filtered out so the child's registry stays consistent with
-    # what its LazyFrame actually carries.
+    # A select that keeps only `id` drops the source text column. The derived
+    # entry pointing at the now-absent source column must be filtered out.
     request = PolarsExpressionRequest(
         context=PolarsExpressionContext.select,
         expressions=[PolarsExpressionItem(code="pl.col('id')")],

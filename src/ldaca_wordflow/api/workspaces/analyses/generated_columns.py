@@ -166,61 +166,59 @@ QUOTE_COLUMN_NAMES = (
 
 
 # ----------------------------------------------------------------------------
-# Derived analytic columns (Phase 2, decision 7)
+# Dynamic analytic columns
 # ----------------------------------------------------------------------------
-# Tokens (and future POS / NER) outputs are addressed by stable derived names:
-# ``__derived__.<form>.<source_column>.<model>`` — e.g.
-# ``__derived__.tokens.text.jieba``. Per-column metadata (source, form, model,
-# language, generated_at, cache backend, params) lives in ``Node.derived``; the
-# physical column may be hydrated only temporarily inside an analysis path.
-#
-# Token-consuming tools (concordance tokens-mode, token-frequency, future
-# POS) look up the right derived name via ``Node.find_derived_column`` rather
-# than relying on a single fixed name.
+# Token outputs are addressed only when an analysis hydrates them into a
+# temporary LazyFrame. Nodes persist a single tokenisation spec in
+# ``Node.derived``; the physical token column is never stored on ``Node.data``.
 
-DERIVED_PREFIX = "__derived__"
 DERIVED_SEPARATOR = "."
 
 TOKENS_FORM = "tokens"
+TOKENS_COLUMN_MARKER = "tokenization"
 TOKENS_TOKEN_FIELD = "token"
 TOKENS_START_FIELD = "start"
 TOKENS_END_FIELD = "end"
 
 
 def derived_column_name(form: str, source_column: str, model: str) -> str:
-    """Build the canonical hidden derived-column name for ``(form, source, model)``.
+    """Build the temporary analysis column name for ``(form, source, model)``.
 
-    Example: ``derived_column_name("tokens", "text", "jieba")`` →
-    ``"__derived__.tokens.text.jieba"``. Used by the tokenise operation and
-    every consumer that wants to register or hydrate a derived column on a node.
+    Example: ``derived_column_name("tokens", "text", "jieba")`` returns
+    ``"text.tokenization.jieba"``. The name is used only when dynamically
+    hydrating a LazyFrame for token-aware analyses.
     """
-    return DERIVED_SEPARATOR.join((DERIVED_PREFIX, form, source_column, model))
+    marker = TOKENS_COLUMN_MARKER if form == TOKENS_FORM else form
+    return DERIVED_SEPARATOR.join((source_column, marker, model))
 
 
 def parse_derived_column(name: str) -> tuple[str, str, str] | None:
     """Inverse of :func:`derived_column_name`. Returns ``(form, source, model)``
     or ``None`` if ``name`` doesn't follow the derived pattern.
 
-    Limitation: source-column names or model IDs containing a ``.`` are
-    ambiguous from the name alone. Callers that need authoritative parts
-    should consult ``Node.derived`` rather than parsing the column name.
+    Limitation: source-column names or model IDs containing a ``.`` remain
+    ambiguous from the name alone. Callers that need authoritative parts should
+    consult ``Node.derived`` rather than parsing the column name.
     """
     parts = name.split(DERIVED_SEPARATOR)
-    if len(parts) != 4 or parts[0] != DERIVED_PREFIX:
+    if len(parts) != 3:
         return None
-    _, form, source_column, model = parts
-    if not (form and source_column and model):
+    source_column, marker, model = parts
+    if not (source_column and marker and model):
         return None
+    if marker != TOKENS_COLUMN_MARKER:
+        return None
+    form = TOKENS_FORM if marker == TOKENS_COLUMN_MARKER else marker
     return form, source_column, model
 
 
 def is_derived_column_name(name: str) -> bool:
-    """Cheap prefix check — True for any name starting with ``__derived__.``.
+    """Return whether ``name`` follows the dynamic analysis-column pattern.
 
-    Use this for the frontend-facing schema filter (Phase 2.10) where the
-    metadata index may not be reachable and the goal is just to hide.
+    Physical node schemas are no longer filtered with this helper; analyses use
+    explicit generated-column sets or ``Node.derived`` metadata instead.
     """
-    return name.startswith(DERIVED_PREFIX + DERIVED_SEPARATOR)
+    return parse_derived_column(name) is not None
 
 
 def tokens_struct_dtype() -> pl.DataType:

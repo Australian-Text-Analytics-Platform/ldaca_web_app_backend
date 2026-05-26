@@ -7,7 +7,6 @@ from typing import cast
 import polars as pl
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
-    DERIVED_PREFIX,
     TOKENS_FORM,
     derived_column_name,
 )
@@ -66,7 +65,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         language="en",
         user_id="test_user",
     )
-    derived_count_first = sum(name.startswith(DERIVED_PREFIX) for name in node.derived)
+    derived_count_first = len(node.derived)
 
     second = tokenise_column(
         node,
@@ -75,7 +74,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         language="en",
         user_id="test_user",
     )
-    derived_count_second = sum(name.startswith(DERIVED_PREFIX) for name in node.derived)
+    derived_count_second = len(node.derived)
 
     assert first == second
     assert derived_count_first == 1
@@ -83,7 +82,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
     assert len(node.derived) == 1
 
 
-def test_tokenise_with_different_model_adds_second_column() -> None:
+def test_tokenise_with_different_model_replaces_node_token_spec() -> None:
     node = _make_node()
 
     bert_name = tokenise_column(
@@ -101,13 +100,46 @@ def test_tokenise_with_different_model_adds_second_column() -> None:
         user_id="test_user",
     )
 
-    schema_names = node.data.collect_schema().names()
-    assert bert_name not in schema_names
-    assert multi_name not in schema_names
-    assert bert_name in node.derived
-    assert multi_name in node.derived
     assert bert_name != multi_name
-    assert len(node.derived) == 2
+    assert bert_name not in node.derived
+    assert multi_name in node.derived
+    assert len(node.derived) == 1
+    assert (
+        node.find_derived_column("text", form=TOKENS_FORM, model="bert-base-uncased")
+        is None
+    )
+    assert (
+        node.find_derived_column(
+            "text", form=TOKENS_FORM, model="bert-base-multilingual-cased"
+        )
+        == multi_name
+    )
+
+
+def test_tokenise_with_different_source_replaces_node_token_spec() -> None:
+    node = _make_node()
+
+    text_name = tokenise_column(
+        node,
+        source_column="text",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
+    )
+    value_name = tokenise_column(
+        node,
+        source_column="value",
+        model="bert-base-uncased",
+        language="en",
+        user_id="test_user",
+    )
+
+    assert text_name != value_name
+    assert text_name not in node.derived
+    assert value_name in node.derived
+    assert len(node.derived) == 1
+    assert node.find_derived_column("text", form=TOKENS_FORM) is None
+    assert node.find_derived_column("value", form=TOKENS_FORM) == value_name
 
 
 def test_tokenise_does_not_touch_undo_stack() -> None:
@@ -155,8 +187,8 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
         node.data,
         node=node,
         source_column="text",
-        user_id="test_user",
         derived_name=derived_name,
+        user_id="test_user",
     )
     schema = hydrated.collect_schema()
     assert schema[derived_name] == tokens_struct_dtype()
@@ -180,8 +212,8 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
         node.data,
         node=node,
         source_column="text",
-        user_id="test_user",
         derived_name=derived_name,
+        user_id="test_user",
     )
     collected = cast(pl.DataFrame, hydrated.collect())
     tokens_lists = collected[derived_name].to_list()

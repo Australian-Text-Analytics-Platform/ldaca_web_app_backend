@@ -12,7 +12,6 @@ import polars as pl
 from fastapi import HTTPException
 
 from ....core.i18n import effective_language
-from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
 
@@ -359,31 +358,11 @@ def resolve_node_sources(
         column = node_columns.get(node_id)
         if not column:
             continue
-        # Tokens-mode (Phase 2.6) needs the derived tokens column name for
-        # this source. Look it up here so the page computation can route
-        # without having to re-touch the workspace. When ``request.model``
-        # is set, narrow the lookup to that model — required for nodes that
-        # carry >1 tokens column for the same source (e.g. jieba and
-        # bert-base-uncased coexisting); ``None`` keeps the historical
-        # first-match behaviour for single-model nodes.
         derived_tokens_column: Optional[str] = None
         if hasattr(node, "find_derived_column"):
-            requested_model = request.get("model")
             derived_tokens_column = node.find_derived_column(
                 column,
                 form=TOKENS_FORM,
-                model=str(requested_model) if requested_model else None,
-            )
-        if (
-            str(request.get("search_mode") or "regex") == "tokens"
-            and derived_tokens_column
-        ):
-            node_data = hydrate_derived_tokens_lazyframe(
-                node_data,
-                node=node,
-                source_column=column,
-                user_id=user_id,
-                derived_name=derived_tokens_column,
             )
         # Per-node effective language drives Bug-4 ``whole_word`` suppression
         # downstream — at the per-node iteration we know which language each
@@ -396,6 +375,8 @@ def resolve_node_sources(
             "label": node_label,
             "derived_tokens_column": derived_tokens_column,
             "language": node_language,
+            "node": node,
+            "user_id": user_id,
         }
 
     return node_sources, label_to_node_map, node_labels
@@ -526,6 +507,8 @@ def compute_node_concordance_page(
             sort_by=sort_by,
             descending=descending,
             node_label=label,
+            token_node=src.get("node"),
+            user_id=src.get("user_id"),
         )
     return compute_concordance_page(
         base_lf,
@@ -563,9 +546,13 @@ def _count_concordance_hits(
 
 def _count_tokens_concordance_hits(
     base_lf: pl.LazyFrame,
+    column: str,
     derived_column: str,
     request: dict[str, Any],
     size: int,
+    *,
+    token_node: Any | None = None,
+    user_id: str | None = None,
 ) -> int:
     """Tokens-mode equivalent of :func:`_count_concordance_hits`.
 
@@ -580,9 +567,22 @@ def _count_tokens_concordance_hits(
         return 0
     case_sensitive = bool(request.get("case_sensitive", False))
     try:
-        slice_df = cast(
-            pl.DataFrame, base_lf.select(derived_column).slice(0, size).collect()
-        )
+        slice_lf = base_lf.slice(0, size)
+        if (
+            derived_column not in slice_lf.collect_schema().names()
+            and token_node is not None
+            and user_id
+        ):
+            from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+
+            slice_lf = hydrate_derived_tokens_lazyframe(
+                slice_lf,
+                node=token_node,
+                source_column=column,
+                derived_name=derived_column,
+                user_id=user_id,
+            )
+        slice_df = cast(pl.DataFrame, slice_lf.select(derived_column).collect())
     except Exception as exc:
         logger.debug("Tokens-mode hit probe failed at size=%d: %s", size, exc)
         return 0
@@ -603,6 +603,8 @@ def _resolve_page_size(
     requested: Optional[int],
     *,
     derived_tokens_column: Optional[str] = None,
+    token_node: Any | None = None,
+    user_id: str | None = None,
 ) -> int:
     """Return an effective page size, estimating when the client omitted one.
 
@@ -618,7 +620,13 @@ def _resolve_page_size(
     )
     if use_tokens_probe:
         probe = partial(
-            _count_tokens_concordance_hits, base_lf, derived_tokens_column, request
+            _count_tokens_concordance_hits,
+            base_lf,
+            column,
+            derived_tokens_column,
+            request,
+            token_node=token_node,
+            user_id=user_id,
         )
     else:
         probe = partial(_count_concordance_hits, base_lf, column, request)
@@ -1013,6 +1021,8 @@ def build_concordance_response(
                     request,
                     None,
                     derived_tokens_column=src.get("derived_tokens_column"),
+                    token_node=src.get("node"),
+                    user_id=src.get("user_id"),
                 )
             )
         if estimates:
@@ -1029,6 +1039,8 @@ def build_concordance_response(
                     request,
                     None,
                     derived_tokens_column=left_src.get("derived_tokens_column"),
+                    token_node=left_src.get("node"),
+                    user_id=left_src.get("user_id"),
                 )
             )
         if right_src and node_ids[1] not in materialized_paths:
@@ -1039,6 +1051,8 @@ def build_concordance_response(
                     request,
                     None,
                     derived_tokens_column=right_src.get("derived_tokens_column"),
+                    token_node=right_src.get("node"),
+                    user_id=right_src.get("user_id"),
                 )
             )
         if estimates_combined:

@@ -758,8 +758,8 @@ async def topic_modeling_detach_options(
             continue
         source_node = ws.nodes[node_id]
         source_data = source_node.data
-        # Phase 2 / decision 7: hidden derived analytic columns
-        # (``__derived__.*``) are excluded from the detach picker.
+        # Temporary dynamic token columns are analysis internals and are
+        # excluded from the detach picker if a caller supplied a hydrated plan.
         original_columns = [
             c
             for c in source_data.collect_schema().names()
