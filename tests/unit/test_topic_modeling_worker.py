@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-
 from ldaca_wordflow.core import worker_tasks_topic
 
 
@@ -41,7 +40,17 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, vectorizer_model=None, language=None, top_n_words=10):
+        def __init__(
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
+        ):
             assert verbose is False
             assert min_topic_size == 2
             assert embedding_model is not None
@@ -219,9 +228,7 @@ def test_run_topic_modeling_task_payload_carries_full_top_n_words(
     assert meaning_row["TOPIC_topic_meaning"] == [f"w{i}" for i in range(15)]
 
 
-def test_run_topic_modeling_task_can_load_corpora_from_workspace(
-    tmp_path, monkeypatch
-):
+def test_run_topic_modeling_task_can_load_corpora_from_workspace(tmp_path, monkeypatch):
     class FakeEmbedder:
         def encode(self, docs, show_progress_bar=False):
             assert docs == ["doc one", "doc two"]
@@ -229,7 +236,17 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, vectorizer_model=None, language=None, top_n_words=10):
+        def __init__(
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
+        ):
             assert verbose is False
             assert min_topic_size == 2
             assert embedding_model is not None
@@ -267,7 +284,9 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(
                             "data": pl.DataFrame(
                                 {"document": ["doc one", "doc two"]}
                             ).lazy(),
-                            "find_tokenization_column": lambda self, _source, *, model=None: None,
+                            "find_tokenization_column": lambda self, _source, *, model=None: (
+                                None
+                            ),
                         },
                     )(),
                 )
@@ -325,7 +344,9 @@ def test_encode_embeddings_in_chunks_preserves_document_order(monkeypatch):
         def encode(self, docs, show_progress_bar=False):
             assert show_progress_bar is False
             encode_calls.append(list(docs))
-            return np.array([[len(doc), index] for index, doc in enumerate(docs)], dtype=float)
+            return np.array(
+                [[len(doc), index] for index, doc in enumerate(docs)], dtype=float
+            )
 
     monkeypatch.setattr(worker_tasks_topic, "_EMBEDDING_CHUNK_SIZE", 2)
 
@@ -353,7 +374,17 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopicClassic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, vectorizer_model=None, language=None, top_n_words=10):
+        def __init__(
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
+        ):
             self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
             self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
 
@@ -374,7 +405,9 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
+    monkeypatch.setattr(
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+    )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -467,7 +500,17 @@ def _make_classic_fake_bertopic_cls(received_docs: list):
     """FakeBERTopic that records the docs passed to fit_transform."""
 
     class FakeBERTopicClassic:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, vectorizer_model=None, language=None, top_n_words=10):
+        def __init__(
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
+        ):
             self.c_tf_idf_ = np.array([[1.0, 0.5]], dtype=float)
             self.topic_embeddings_ = np.array([[0.2, 0.4]], dtype=float)
 
@@ -500,7 +543,9 @@ def test_run_topic_modeling_task_sampling_reduces_corpus(tmp_path, monkeypatch):
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
+    monkeypatch.setattr(
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+    )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -510,7 +555,14 @@ def test_run_topic_modeling_task_sampling_reduces_corpus(tmp_path, monkeypatch):
         user_id="u",
         workspace_id="w",
         corpora=[corpus],
-        node_infos=[{"node_id": "n1", "node_name": "N1", "text_column": "t", "original_columns": []}],
+        node_infos=[
+            {
+                "node_id": "n1",
+                "node_name": "N1",
+                "text_column": "t",
+                "original_columns": [],
+            }
+        ],
         artifact_dir=str(tmp_path),
         artifact_prefix="sample_test",
         sample_fractions=[0.5],
@@ -530,7 +582,17 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
             return np.array([[0.1, 0.2] for _ in docs], dtype=float)
 
     class FakeBERTopicExact:
-        def __init__(self, *, verbose, min_topic_size, embedding_model, umap_model, vectorizer_model=None, language=None, top_n_words=10):
+        def __init__(
+            self,
+            *,
+            verbose,
+            min_topic_size,
+            embedding_model,
+            umap_model,
+            vectorizer_model=None,
+            language=None,
+            top_n_words=10,
+        ):
             self.c_tf_idf_ = np.array(
                 [
                     [1.0, 0.5],
@@ -606,7 +668,9 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
     bertopic_utils_module = cast(Any, ModuleType("bertopic._utils"))
     bertopic_utils_module.select_topic_representation = fake_select
 
-    monkeypatch.setattr(worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder())
+    monkeypatch.setattr(
+        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+    )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
 
@@ -615,7 +679,14 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
         user_id="u",
         workspace_id="w",
         corpora=[["doc one", "doc two"]],
-        node_infos=[{"node_id": "n1", "node_name": "N1", "text_column": "t", "original_columns": []}],
+        node_infos=[
+            {
+                "node_id": "n1",
+                "node_name": "N1",
+                "text_column": "t",
+                "original_columns": [],
+            }
+        ],
         artifact_dir=str(tmp_path),
         artifact_prefix="exact_test",
         topic_size_mode="exact",

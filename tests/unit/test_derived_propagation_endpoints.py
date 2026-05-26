@@ -201,7 +201,7 @@ async def test_join_inherits_tokenization_from_both_parents(two_parents):
 
 
 # ---------------------------------------------------------------------------
-# Expression apply — schema-changing variant must filter tokenization
+# Expression apply — schema-changing variant must filter derived
 # ---------------------------------------------------------------------------
 
 
@@ -227,8 +227,8 @@ async def test_expression_apply_with_columns_inherits_tokenization(single_parent
 @pytest.mark.asyncio
 async def test_expression_apply_select_drops_tokenization_if_column_gone(single_parent):
     manager, parent = single_parent
-    # A select that keeps only `id` drops the source text column. The
-    # tokenization entry pointing at the now-absent source column must be filtered out.
+    # A select that keeps only `id` drops the source text column. The derived
+    # entry pointing at the now-absent source column must be filtered out.
     request = PolarsExpressionRequest(
         context=PolarsExpressionContext.select,
         expressions=[PolarsExpressionItem(code="pl.col('id')")],

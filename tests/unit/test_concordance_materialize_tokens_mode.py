@@ -19,7 +19,6 @@ don't have to branch on the parquet's origin.
 from __future__ import annotations
 
 import polars as pl
-
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_END_IDX_COLUMN,
     CONC_EXTRACTION_COLUMN,
@@ -35,7 +34,6 @@ from ldaca_wordflow.core.worker_tasks_concordance import (
     _build_concordance_occurrence_dataframe,
     _build_tokens_concordance_occurrence_dataframe,
 )
-
 
 _ZH_TOKENS_DOC_A = [
     {"token": "今天", "start": 0, "end": 2},

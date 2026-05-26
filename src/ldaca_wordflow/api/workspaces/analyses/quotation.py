@@ -548,7 +548,9 @@ async def quotation_detach_options(
     # Temporary dynamic token columns have no user-facing role in detach
     # payloads, so filter them if a caller supplied a hydrated plan.
     available_schema_columns = [
-        c for c in node_data.collect_schema().names() if not is_tokenization_column_name(c)
+        c
+        for c in node_data.collect_schema().names()
+        if not is_tokenization_column_name(c)
     ]
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
     # `QUOTE_extraction` is a generated column (raw source-document text)

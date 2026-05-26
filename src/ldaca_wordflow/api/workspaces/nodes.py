@@ -335,7 +335,10 @@ def _propagated_tokenization(
                 continue
             if result_columns is not None:
                 meta_source = meta.get("source_column")
-                if source_column not in result_columns and meta_source not in result_columns:
+                if (
+                    source_column not in result_columns
+                    and meta_source not in result_columns
+                ):
                     continue
             existing = merged.get(source_column)
             if existing is not None and existing != meta:
@@ -1382,9 +1385,7 @@ async def join_nodes(
             workspace=workspace,
             operation=f"join({left_node.name}, {right_node.name})",
             parents=[left_node, right_node],
-            tokenization=_propagated_tokenization(
-                [left_node, right_node], joined_data
-            ),
+            tokenization=_propagated_tokenization([left_node, right_node], joined_data),
         )
         workspace.add_node(new_node)
         update_workspace(user_id, workspace_id)
