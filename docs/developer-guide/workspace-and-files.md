@@ -90,10 +90,10 @@ allows only the supported transformation contexts.
 `api/workspaces/schema_filter.py` is the frontend-facing schema filter.
 Tokenisation specs are tracked in `Node.derived` under dynamic names such as
 `text.tokenization.jieba`. The node stores only the source column, selected
-model, language, and cache metadata; token arrays are hydrated from the
-per-user DuckDB cache only inside analysis paths. Normal table/schema responses
-preserve the physical node schema and expose structured `derived` metadata
-where the UI needs it.
+model, language, and cache metadata. Analysis paths resolve the per-user
+DuckDB cache path and call `polars_text.tokenize(..., cache=path)` to hydrate
+temporary token structs. Normal table/schema responses preserve the physical
+node schema and expose structured `derived` metadata where the UI needs it.
 
 Use this shared projection for frontend node metadata instead of filtering or
 fabricating token columns in individual routers.

@@ -122,9 +122,10 @@ records for the unloaded workspace. The unload lifecycle also removes the whole
 workspace session.
 
 Tokenisation and embeddings are performance caches rather than workspace
-artifacts. Token specs live in `Node.derived`; token rows are stored in a
-per-user `tokens.duckdb` file and joined into temporary LazyFrames by token-mode
-concordance, token frequencies, and topic-modeling label preparation. Embedding
-vectors are stored in a per-user `embeddings.duckdb` file keyed by model,
-provider, and content hash. Missing cache files are recreated from schema on
-first use.
+artifacts. Token specs live in `Node.derived`; Wordflow resolves a per-user
+`tokens.duckdb` path, then delegates cache population and reuse to
+`polars_text.tokenize(..., cache=path)`. The resulting token structs are
+attached to temporary LazyFrames by token-mode concordance, token frequencies,
+and topic-modeling label preparation. Embedding vectors are stored in a
+per-user `embeddings.duckdb` file keyed by model, provider, and content hash.
+Missing cache files are recreated from schema on first use.

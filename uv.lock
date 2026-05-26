@@ -643,11 +643,15 @@ name = "docworkspace"
 version = "0.2.8"
 source = { editable = "../docworkspace" }
 dependencies = [
+    { name = "polars-source-utils" },
     { name = "polars-text" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "polars-text", specifier = ">=0.1.6" }]
+requires-dist = [
+    { name = "polars-source-utils", editable = "../polars-source-utils" },
+    { name = "polars-text", editable = "../polars-text" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0.0" }]
@@ -1539,7 +1543,7 @@ requires-dist = [
     { name = "onnxruntime", specifier = ">=1.18.0" },
     { name = "openai", specifier = ">=2.26.0" },
     { name = "polars", extras = ["rtcompat"], specifier = ">=1.40.0" },
-    { name = "polars-text", specifier = ">=0.2.1" },
+    { name = "polars-text", editable = "../polars-text" },
     { name = "psutil", specifier = ">=6.1.0" },
     { name = "pyarrow", specifier = ">=16.0.0" },
     { name = "pydantic-settings", specifier = ">=2.0.0" },
@@ -2256,17 +2260,41 @@ wheels = [
 ]
 
 [[package]]
-name = "polars-text"
-version = "0.2.1"
-source = { registry = "https://pypi.org/simple" }
+name = "polars-source-utils"
+version = "0.1.0"
+source = { editable = "../polars-source-utils" }
 dependencies = [
     { name = "polars" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c6/d3/c7aad91e33ffa633af0a255aef4c54cb6e2a388329bb690acae11ac9e7fa/polars_text-0.2.1.tar.gz", hash = "sha256:db655233f4edb693b00bbd232110d6e0ae893e8013a39aa4d115f8a6ad071f96", size = 5385266, upload-time = "2026-05-15T07:13:23.845Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/77/4d/5964965c4bc82c62e0d8f06bac31713fd3d0d05a990273cdae0bc127636c/polars_text-0.2.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:e6f6d613d5fe43f9cca799ceca2e394edca340fba7f440dcf7921965cf80032d", size = 21846388, upload-time = "2026-05-15T07:13:15.307Z" },
-    { url = "https://files.pythonhosted.org/packages/f5/88/91618ac1f15cd888e4adf56add213e8ad73a02963a5ab60aa9d18d220416/polars_text-0.2.1-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:bd14f08bb1e766388bc4d1ad8b3ea79f442ac1cdd1393948d947f9466aa07a44", size = 27033773, upload-time = "2026-05-15T07:13:18.264Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/6f/a2c73dcbfb6ffa21f9d22e5f69736ae402df49c22b6d012fd41ccd8541ad/polars_text-0.2.1-cp314-cp314-win_amd64.whl", hash = "sha256:b0a6f7a29d418b3693b684b3e6b7c9a71a1a530b094c1afb7ebdebd3503db139", size = 21929281, upload-time = "2026-05-15T07:13:21.646Z" },
+
+[package.metadata]
+requires-dist = [{ name = "polars", specifier = "==1.40.0" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "maturin", specifier = ">=1.0,<2.0" },
+    { name = "pytest", specifier = ">=7.4.0" },
+]
+
+[[package]]
+name = "polars-text"
+version = "0.3.0"
+source = { editable = "../polars-text" }
+dependencies = [
+    { name = "duckdb" },
+    { name = "polars" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "duckdb", specifier = ">=1.4.0" },
+    { name = "polars", specifier = "==1.40.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "maturin", specifier = ">=1.0,<2.0" },
+    { name = "pytest", specifier = ">=7.4.0" },
 ]
 
 [[package]]

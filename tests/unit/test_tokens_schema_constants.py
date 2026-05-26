@@ -3,7 +3,7 @@
 Asserts:
 - dynamic token column names round-trip,
 - ``tokens_struct_dtype()`` lines up with the schema polars-text's
-  ``tokenize_with_offsets`` actually emits, and
+    ``tokenize`` actually emits, and
 - ``is_derived_tokens_column`` reads from ``Node.derived`` (the metadata
   index per decision 7), not from a fixed magic column name.
 
@@ -67,7 +67,7 @@ def test_struct_field_names_match_rust_output() -> None:
 
 def test_tokens_struct_dtype_matches_polars_text_output() -> None:
     df = pl.DataFrame({"text": ["Hello world"]})
-    out = df.select(pt.tokenize_with_offsets(pl.col("text")).alias(_TOKENS_NAME))
+    out = df.select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME))
     assert out.schema[_TOKENS_NAME] == tokens_struct_dtype(), (
         f"polars-text emits {out.schema[_TOKENS_NAME]!r}, "
         f"but generated_columns declares {tokens_struct_dtype()!r}"
@@ -78,7 +78,7 @@ def test_is_derived_tokens_column_reads_from_node_metadata() -> None:
     # Build a node with a derived tokens column registered in Node.derived.
     df = pl.DataFrame({"text": ["hi"]})
     with_tokens = df.lazy().select(
-        pl.col("text"), pt.tokenize_with_offsets(pl.col("text")).alias(_TOKENS_NAME)
+        pl.col("text"), pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)
     )
     node = Node(data=with_tokens, name="tokens_root")
     node.register_derived_column(
@@ -96,7 +96,7 @@ def test_is_derived_tokens_column_reads_from_node_metadata() -> None:
 
 def test_is_derived_tokens_column_rejects_unregistered_column() -> None:
     df = pl.DataFrame({"text": ["hi"]})
-    out = df.lazy().select(pt.tokenize_with_offsets(pl.col("text")).alias(_TOKENS_NAME))
+    out = df.lazy().select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME))
     node = Node(data=out, name="unregistered")
     # Column exists in schema but isn't in Node.derived → not a tokens column.
     assert not is_derived_tokens_column(node, _TOKENS_NAME)
@@ -122,7 +122,7 @@ def test_is_derived_tokens_column_rejects_wrong_form() -> None:
 def test_tokens_struct_projection_unpacks_fields() -> None:
     df = pl.DataFrame({"text": ["hello world"]})
     tokens_df = df.select(
-        pt.tokenize_with_offsets(pl.col("text")).alias(_TOKENS_NAME)
+        pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)
     ).explode(_TOKENS_NAME)
     unpacked = tokens_df.select(*tokens_struct_projection(_TOKENS_NAME))
     assert set(unpacked.columns) == {

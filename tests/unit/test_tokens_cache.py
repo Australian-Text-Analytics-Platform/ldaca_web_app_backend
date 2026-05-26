@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import duckdb
 import polars as pl
+import polars_text.token_cache as pt_cache
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     TOKENS_FORM,
@@ -28,7 +29,16 @@ def isolated_cache_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_cache_schema_has_six_columns(isolated_cache_db: Path) -> None:
-    tc._connect(TEST_USER).close()
+    base = pl.DataFrame({"text": ["hello world"]}).lazy()
+    expr = tc.cached_tokens_expr(
+        pl.col("text"),
+        user_id=TEST_USER,
+        model="bert-base-uncased",
+        lowercase=True,
+        remove_punct=True,
+    )
+    base.with_columns(expr.alias("tokens")).collect()
+
     assert isolated_cache_db.exists()
 
     with duckdb.connect(str(isolated_cache_db), read_only=True) as conn:
@@ -110,7 +120,7 @@ def test_warm_cache_does_not_retokenize(monkeypatch: pytest.MonkeyPatch) -> None
     def fail(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("warm-cache run should not tokenize misses")
 
-    monkeypatch.setattr(tc, "_tokenize_misses", fail)
+    monkeypatch.setattr(pt_cache, "_tokenize_misses", fail)
 
     warm = cast(
         pl.DataFrame,
@@ -131,13 +141,13 @@ def test_filter_pushdown_only_tokenizes_surviving_rows(
     ).lazy()
 
     seen: list[list[str]] = []
-    real = tc._tokenize_misses
+    real = pt_cache._tokenize_misses
 
     def spy(texts: list[str], **kwargs: Any) -> list[list[dict[str, Any]]]:
         seen.append(list(texts))
         return real(texts, **kwargs)
 
-    monkeypatch.setattr(tc, "_tokenize_misses", spy)
+    monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
     expr = tc.cached_tokens_expr(
         pl.col("text"),
@@ -161,13 +171,13 @@ def test_repeated_texts_in_chunk_are_deduplicated(
     base = pl.DataFrame({"text": ["same", "same", "same"]}).lazy()
 
     seen: list[list[str]] = []
-    real = tc._tokenize_misses
+    real = pt_cache._tokenize_misses
 
     def spy(texts: list[str], **kwargs: Any) -> list[list[dict[str, Any]]]:
         seen.append(list(texts))
         return real(texts, **kwargs)
 
-    monkeypatch.setattr(tc, "_tokenize_misses", spy)
+    monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
     expr = tc.cached_tokens_expr(
         pl.col("text"),
