@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import polars as pl
+import polars_text.token_cache as pt_token_cache
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.concordance_core import (
     compute_node_concordance_page,
@@ -159,7 +160,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
         tc, "tokens_cache_path", lambda _user_id: tmp_path / "tokens.duckdb"
     )
     tokenized_texts: list[list[str]] = []
-    real_tokenize_misses = tc._tokenize_misses
+    real_tokenize_misses = pt_token_cache._tokenize_misses
 
     def spy_tokenize_misses(
         texts: list[str], **kwargs: Any
@@ -167,7 +168,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
         tokenized_texts.append(list(texts))
         return real_tokenize_misses(texts, **kwargs)
 
-    monkeypatch.setattr(tc, "_tokenize_misses", spy_tokenize_misses)
+    monkeypatch.setattr(pt_token_cache, "_tokenize_misses", spy_tokenize_misses)
     node = Node(
         data=pl.DataFrame({"text": [f"hello {index}" for index in range(5)]}).lazy(),
         name="probe",
