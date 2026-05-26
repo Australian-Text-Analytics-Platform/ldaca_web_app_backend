@@ -2,7 +2,7 @@
 tool should use, with a stable precedence:
 
 1. Explicit ``request_language`` wins,
-2. else first non-empty language on a derived column,
+2. else first non-empty language on tokenization metadata,
 3. else default ``"en"`` so existing English flows stay unchanged.
 
 ``UnsupportedLanguageError`` carries structured fields so the API layer
@@ -23,14 +23,14 @@ from ldaca_wordflow.core.i18n import (
 from docworkspace import Node
 
 
-def _node_with_derived(language: str) -> Node:
+def _node_with_tokenization(language: str) -> Node:
     df = pl.DataFrame({"text": ["a"]}).lazy()
     node = Node(data=df, name="root")
-    node.register_derived_column(
-        "text.tokenization.jieba",
+    node.register_tokenization(
+        "text",
         {  # type: ignore[arg-type]
             "source_column": "text",
-            "form": "tokens",
+            "column_name": "tokenization.text.jieba",
             "model": "jieba",
             "language": language,
             "generated_at": "2026-05-12T00:00:00+00:00",
@@ -39,13 +39,13 @@ def _node_with_derived(language: str) -> Node:
     return node
 
 
-def test_effective_language_request_wins_over_derived() -> None:
-    node = _node_with_derived("zh")
+def test_effective_language_request_wins_over_tokenization() -> None:
+    node = _node_with_tokenization("zh")
     assert effective_language("ja", node) == "ja"
 
 
-def test_effective_language_falls_back_to_derived_when_request_empty() -> None:
-    node = _node_with_derived("zh")
+def test_effective_language_falls_back_to_tokenization_when_request_empty() -> None:
+    node = _node_with_tokenization("zh")
     assert effective_language(None, node) == "zh"
     assert effective_language("", node) == "zh"
     assert effective_language("   ", node) == "zh"

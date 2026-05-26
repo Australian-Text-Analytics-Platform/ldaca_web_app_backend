@@ -37,7 +37,7 @@ class UserPreferences(BaseModel):
     favorite_workspaces: list[str] = Field(default_factory=list)
     quotation: QuotationPreferences = Field(default_factory=QuotationPreferences)
     # Phase 4.1: per-user multilingual defaults. ``None`` falls back to the
-    # per-request resolution chain (request → derived → "en") so existing
+    # per-request resolution chain (request → tokenization → "en") so existing
     # English users see no behaviour change.
     default_language: str | None = None
     default_tokenizer_model: str | None = None

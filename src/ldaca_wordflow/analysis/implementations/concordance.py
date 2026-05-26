@@ -35,11 +35,11 @@ class ConcordanceRequest(BaseAnalysisRequest):
     case_sensitive: bool = False
     combined: bool = False
     # Engine selector: "regex" walks raw text (default, preserves partial-word
-    # patterns); "tokens" walks the active node's derived tokens column for
+    # patterns); "tokens" walks the active node's tokenization column for
     # exact-token matches with N-actual-token context. Persisted on the task
     # so hydration replays the same engine.
     search_mode: Literal["regex", "tokens"] = "regex"
-    # Phase 4.4 language hint — resolver chain falls back to derived metadata
+    # Phase 4.4 language hint — resolver chain falls back to tokenization metadata
     # then "en" when this is None.
     language: str | None = None
     # node_id -> parquet path holding flattened occurrence rows.

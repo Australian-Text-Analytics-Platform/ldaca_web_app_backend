@@ -8,8 +8,8 @@ language-appropriate backend or refuse cleanly when they don't support it.
 Resolution order is:
 1. ``request_language`` — passed explicitly by the caller (e.g. frontend
    sends ``language="zh"``). This always wins.
-2. ``Node.derived[*]["language"]`` — if the user has tokenised this node,
-   the derived metadata records what language the tokeniser was configured
+2. ``Node.tokenization[*]["language"]`` — if the user has tokenised this node,
+   the tokenization metadata records what language the tokeniser was configured
    for. Honor that as a fallback so the user doesn't have to re-state it.
 3. Default ``"en"`` so existing English flows are unchanged when nothing
    has been specified anywhere.
@@ -82,9 +82,9 @@ def effective_language(
             return normalized
 
     if node is not None:
-        derived = getattr(node, "derived", None)
-        if isinstance(derived, dict):
-            for meta in derived.values():
+        tokenization = getattr(node, "tokenization", None)
+        if isinstance(tokenization, dict):
+            for meta in tokenization.values():
                 if not isinstance(meta, dict):
                     continue
                 lang = meta.get("language")

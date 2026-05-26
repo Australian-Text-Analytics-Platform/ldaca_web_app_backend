@@ -1,4 +1,4 @@
-"""Derived-column metadata operations.
+"""Tokenization metadata operations.
 
 Tokenisation is registered as node metadata only. Token-consuming analyses
 hydrate the requested tokens from the user-specific cache into a temporary
@@ -11,12 +11,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
-from docworkspace import DerivedColumnMeta, Node
+from docworkspace import Node, TokenizationMeta
 
-from ..api.workspaces.analyses.generated_columns import (
-    TOKENS_FORM,
-    derived_column_name,
-)
+from ..api.workspaces.analyses.generated_columns import tokenization_column_name
 
 _CASE_FREE_MODELS: frozenset[str] = frozenset(
     {
@@ -31,14 +28,6 @@ _REMOVE_PUNCT_DEFAULT = True
 
 def _model_is_case_free(model: str) -> bool:
     return model in _CASE_FREE_MODELS
-
-
-def _registered_token_specs(node: Node) -> list[str]:
-    return [
-        name
-        for name, meta in node.derived.items()
-        if isinstance(meta, dict) and meta.get("form") == TOKENS_FORM
-    ]
 
 
 def tokenise_column(
@@ -63,19 +52,17 @@ def tokenise_column(
             f"available columns: {sorted(schema_names)}"
         )
 
-    derived_name = derived_column_name(TOKENS_FORM, source_column, model)
-    for existing in _registered_token_specs(node):
-        node.unregister_derived_column(existing)
+    tokenization_name = tokenization_column_name(source_column, model)
 
     params: dict[str, bool] = {
         "lowercase": not _model_is_case_free(model),
         "remove_punct": _REMOVE_PUNCT_DEFAULT,
     }
-    derived_meta = cast(
-        DerivedColumnMeta,
+    tokenization_meta = cast(
+        TokenizationMeta,
         {
             "source_column": source_column,
-            "form": TOKENS_FORM,
+            "column_name": tokenization_name,
             "model": model,
             "language": language,
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -83,8 +70,8 @@ def tokenise_column(
             "params": params,
         },
     )
-    node.register_derived_column(derived_name, derived_meta)
-    return derived_name
+    node.register_tokenization(source_column, tokenization_meta)
+    return tokenization_name
 
 
 __all__ = ["tokenise_column"]

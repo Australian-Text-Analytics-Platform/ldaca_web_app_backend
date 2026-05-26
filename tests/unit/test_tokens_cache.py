@@ -10,11 +10,10 @@ import polars as pl
 import polars_text.token_cache as pt_cache
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
-    TOKENS_FORM,
-    derived_column_name,
+    tokenization_column_name,
 )
 from ldaca_wordflow.core import tokens_cache as tc
-from ldaca_wordflow.core.derived_columns import tokenise_column
+from ldaca_wordflow.core.tokenization import tokenise_column
 
 from docworkspace import Node
 
@@ -60,7 +59,7 @@ def test_tokenise_column_registers_metadata_without_mutating_node_data() -> None
         name="probe",
     )
 
-    derived_name = tokenise_column(
+    tokenization_name = tokenise_column(
         node,
         source_column="text",
         model="bert-base-uncased",
@@ -69,20 +68,20 @@ def test_tokenise_column_registers_metadata_without_mutating_node_data() -> None
         workspace_id="workspace",
     )
 
-    assert derived_name == derived_column_name(TOKENS_FORM, "text", "bert-base-uncased")
-    assert derived_name in node.derived
-    assert derived_name not in node.data.collect_schema().names()
-    derived_meta = cast(dict[str, Any], node.derived[derived_name])
-    assert derived_meta["cache_backend"] == "duckdb"
-    assert "cache_schema_version" not in derived_meta
+    assert tokenization_name == tokenization_column_name("text", "bert-base-uncased")
+    assert node.tokenization["text"]["column_name"] == tokenization_name
+    assert tokenization_name not in node.data.collect_schema().names()
+    tokenization_meta = cast(dict[str, Any], node.tokenization["text"])
+    assert tokenization_meta["cache_backend"] == "duckdb"
+    assert "cache_schema_version" not in tokenization_meta
 
 
-def test_hydrate_derived_tokens_adds_tokens_column() -> None:
+def test_hydrate_tokenization_adds_tokens_column() -> None:
     node = Node(
         data=pl.DataFrame({"text": ["hello world", "hello again"]}).lazy(),
         name="probe",
     )
-    derived_name = tokenise_column(
+    tokenization_name = tokenise_column(
         node,
         source_column="text",
         model="bert-base-uncased",
@@ -90,18 +89,18 @@ def test_hydrate_derived_tokens_adds_tokens_column() -> None:
         user_id="ignored",
     )
 
-    hydrated = tc.hydrate_derived_tokens_lazyframe(
+    hydrated = tc.hydrate_tokenization_lazyframe(
         node.data,
         node=node,
         source_column="text",
-        derived_name=derived_name,
+        tokenization_column=tokenization_name,
         user_id=TEST_USER,
     )
     hydrated_df = cast(pl.DataFrame, hydrated.collect())
 
-    assert derived_name in hydrated_df.columns
-    assert derived_name not in node.data.collect_schema().names()
-    first_tokens = hydrated_df.to_dicts()[0][derived_name]
+    assert tokenization_name in hydrated_df.columns
+    assert tokenization_name not in node.data.collect_schema().names()
+    first_tokens = hydrated_df.to_dicts()[0][tokenization_name]
     assert isinstance(first_tokens, list) and first_tokens
     assert first_tokens[0]["token"]
 

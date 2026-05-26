@@ -1,17 +1,16 @@
 """Bug 2 regression: child nodes from filter / slice / sample / concat /
-join / clone / expression-apply must inherit the parent's ``derived``
+join / clone / expression-apply must inherit the parent's ``tokenization``
 registry when the registered source column survives the operation. Pre-fix,
 every Node()-creating endpoint in ``api.workspaces.nodes`` constructed the new
-node WITHOUT passing ``derived=``, so downstream tools using
-``Node.find_derived_column`` refused to run with "re-run Tokenise first".
+node WITHOUT passing ``tokenization=``, so downstream tools using
+``Node.find_tokenization_column`` refused to run with "re-run Tokenise first".
 """
 
 from __future__ import annotations
 
-from typing import Any, cast
-
 import polars as pl
 import pytest
+from docworkspace import Node, TokenizationMeta
 from docworkspace.workspace.core import Workspace
 from ldaca_wordflow.api.workspaces import nodes as nodes_api
 from ldaca_wordflow.api.workspaces import utils as workspace_utils
@@ -25,12 +24,10 @@ from ldaca_wordflow.models import (
     SliceRequest,
 )
 
-from docworkspace import DerivedColumnMeta, Node
-
-DERIVED_TOKENS_COLUMN = "text.tokenization.lindera-ja-ipadic"
-DERIVED_META: dict[str, Any] = {
+TOKENIZATION_COLUMN = "tokenization.text.lindera-ja-ipadic"
+TOKENIZATION_META: TokenizationMeta = {
     "source_column": "text",
-    "form": "tokens",
+    "column_name": TOKENIZATION_COLUMN,
     "model": "lindera-ja-ipadic",
     "language": "ja",
     "generated_at": "2026-05-14T00:00:00+00:00",
@@ -47,7 +44,7 @@ def _make_node_with_tokens(name: str = "root") -> Node:
     node = Node(
         data=df,
         name=name,
-        derived={DERIVED_TOKENS_COLUMN: cast(DerivedColumnMeta, dict(DERIVED_META))},
+        tokenization={"text": TOKENIZATION_META},
     )
     return node
 
@@ -83,7 +80,7 @@ class _FakeManager:
 
 @pytest.fixture
 def single_parent(monkeypatch: pytest.MonkeyPatch):
-    """Workspace with one parent node that already carries a derived entry."""
+    """Workspace with one parent node that already carries tokenization."""
     parent = _make_node_with_tokens("parent")
     manager = _FakeManager(parent)
     monkeypatch.setattr(nodes_api, "workspace_manager", manager)
@@ -95,7 +92,7 @@ def single_parent(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture
 def two_parents(monkeypatch: pytest.MonkeyPatch):
-    """Workspace with two schema-aligned parents, both carrying derived."""
+    """Workspace with two schema-aligned parents, both carrying tokenization."""
     parent_a = _make_node_with_tokens("parent_a")
     parent_b = _make_node_with_tokens("parent_b")
     manager = _FakeManager(parent_a, parent_b)
@@ -123,19 +120,19 @@ def _child(manager: _FakeManager, parent_ids: set[str]) -> Node:
 
 
 @pytest.mark.asyncio
-async def test_clone_inherits_derived(single_parent):
+async def test_clone_inherits_tokenization(single_parent):
     manager, parent = single_parent
 
     await nodes_api.clone_node(parent.id, current_user={"id": "user"})
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
-    assert child.derived[DERIVED_TOKENS_COLUMN]["model"] == "lindera-ja-ipadic"
-    assert child.derived[DERIVED_TOKENS_COLUMN]["language"] == "ja"
+    assert child.tokenization["text"]["column_name"] == TOKENIZATION_COLUMN
+    assert child.tokenization["text"]["model"] == "lindera-ja-ipadic"
+    assert child.tokenization["text"]["language"] == "ja"
 
 
 @pytest.mark.asyncio
-async def test_filter_inherits_derived(single_parent):
+async def test_filter_inherits_tokenization(single_parent):
     manager, parent = single_parent
     request = FilterRequest(
         conditions=[FilterCondition(column="id", operator="greater_than", value=0)],
@@ -144,30 +141,29 @@ async def test_filter_inherits_derived(single_parent):
     await nodes_api.filter_node(parent.id, request, current_user={"id": "user"})
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
-    assert child.derived[DERIVED_TOKENS_COLUMN] == DERIVED_META
+    assert child.tokenization["text"] == TOKENIZATION_META
 
 
 @pytest.mark.asyncio
-async def test_slice_inherits_derived(single_parent):
+async def test_slice_inherits_tokenization(single_parent):
     manager, parent = single_parent
     request = SliceRequest(offset=0, length=1)
 
     await nodes_api.slice_node(parent.id, request, current_user={"id": "user"})
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
+    assert child.tokenization["text"] == TOKENIZATION_META
 
 
 @pytest.mark.asyncio
-async def test_sample_inherits_derived(single_parent):
+async def test_sample_inherits_tokenization(single_parent):
     manager, parent = single_parent
     request = SliceRequest(mode="random_sample", sample_size=0.5, random_seed=1)
 
     await nodes_api.slice_node(parent.id, request, current_user={"id": "user"})
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
+    assert child.tokenization["text"] == TOKENIZATION_META
 
 
 # ---------------------------------------------------------------------------
@@ -176,20 +172,18 @@ async def test_sample_inherits_derived(single_parent):
 
 
 @pytest.mark.asyncio
-async def test_concat_inherits_derived_from_parents(two_parents):
+async def test_concat_inherits_tokenization_from_parents(two_parents):
     manager, parent_a, parent_b = two_parents
     request = ConcatRequest(node_ids=[parent_a.id, parent_b.id], deduplicate=False)
 
     await nodes_api.concat_nodes(request, current_user={"id": "user"})
 
     child = _child(manager, {parent_a.id, parent_b.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
-    # Both parents had the same derived entry name; result is one entry.
-    assert child.derived[DERIVED_TOKENS_COLUMN]["model"] == "lindera-ja-ipadic"
+    assert child.tokenization["text"]["model"] == "lindera-ja-ipadic"
 
 
 @pytest.mark.asyncio
-async def test_join_inherits_derived_from_both_parents(two_parents):
+async def test_join_inherits_tokenization_from_both_parents(two_parents):
     manager, parent_a, parent_b = two_parents
 
     await nodes_api.join_nodes(
@@ -202,18 +196,16 @@ async def test_join_inherits_derived_from_both_parents(two_parents):
     )
 
     child = _child(manager, {parent_a.id, parent_b.id})
-    # Join produces one of the derived columns (right side collides on name);
-    # the metadata must still surface so token-mode tools can find it.
-    assert DERIVED_TOKENS_COLUMN in child.derived
+    assert child.tokenization["text"] == TOKENIZATION_META
 
 
 # ---------------------------------------------------------------------------
-# Expression apply — schema-changing variant must filter derived
+# Expression apply — schema-changing variant must filter tokenization
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_expression_apply_with_columns_inherits_derived(single_parent):
+async def test_expression_apply_with_columns_inherits_tokenization(single_parent):
     manager, parent = single_parent
     # with_columns + new_node_name forces a new child node (the in-place
     # branch is at L1577 in nodes.py and doesn't go through our fix).
@@ -228,14 +220,14 @@ async def test_expression_apply_with_columns_inherits_derived(single_parent):
     )
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN in child.derived
+    assert child.tokenization["text"] == TOKENIZATION_META
 
 
 @pytest.mark.asyncio
-async def test_expression_apply_select_drops_derived_if_column_gone(single_parent):
+async def test_expression_apply_select_drops_tokenization_if_column_gone(single_parent):
     manager, parent = single_parent
-    # A select that keeps only `id` drops the source text column. The derived
-    # entry pointing at the now-absent source column must be filtered out.
+    # A select that keeps only `id` drops the source text column. The
+    # tokenization entry pointing at the now-absent source column must be filtered out.
     request = PolarsExpressionRequest(
         context=PolarsExpressionContext.select,
         expressions=[PolarsExpressionItem(code="pl.col('id')")],
@@ -247,5 +239,4 @@ async def test_expression_apply_select_drops_derived_if_column_gone(single_paren
     )
 
     child = _child(manager, {parent.id})
-    assert DERIVED_TOKENS_COLUMN not in child.derived
-    assert child.derived == {}
+    assert child.tokenization == {}

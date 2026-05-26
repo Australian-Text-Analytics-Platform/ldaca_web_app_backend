@@ -39,7 +39,7 @@ from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
-    is_derived_column_name,
+    is_tokenization_column_name,
 )
 
 router = APIRouter(prefix="/workspaces", tags=["topic-modeling"])
@@ -407,7 +407,7 @@ async def run_topic_modeling(
         )
         # Phase 3.5: resolve a single effective language for the label-stage
         # CountVectorizer. Explicit request param wins; otherwise we read
-        # from the first node's derived metadata (decision 7). Multi-language
+        # from the first node's tokenization metadata (decision 7). Multi-language
         # corpora left to the user — the frontend should send "multi" or the
         # union language label when mixing nodes.
         first_node = ws.nodes[request.node_ids[0]]
@@ -763,7 +763,7 @@ async def topic_modeling_detach_options(
         original_columns = [
             c
             for c in source_data.collect_schema().names()
-            if not is_derived_column_name(c)
+            if not is_tokenization_column_name(c)
         ]
         topic_column_name = _resolve_topic_column_name(
             TOPIC_COLUMN, set(original_columns)

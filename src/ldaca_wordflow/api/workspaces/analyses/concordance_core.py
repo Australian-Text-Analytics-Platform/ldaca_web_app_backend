@@ -14,6 +14,24 @@ from fastapi import HTTPException
 from ....core.i18n import effective_language
 from ....core.utils import stringify_unsafe_integers
 from ....core.workspace import workspace_manager
+from .concordance_tokens_mode import (
+    compute_tokens_concordance_page,
+    find_token_matches,
+)
+from .generated_columns import (
+    CONC_END_IDX_COLUMN,
+    CONC_EXTRACTION_COLUMN,
+    CONC_L1_COLUMN,
+    CONC_LEFT_CONTEXT_COLUMN,
+    CONC_MATCHED_TEXT_COLUMN,
+    CONC_R1_COLUMN,
+    CONC_RIGHT_CONTEXT_COLUMN,
+    CONC_START_IDX_COLUMN,
+    CORE_CONCORDANCE_COLUMNS,
+    MATERIALIZED_CONCORDANCE_COLUMNS,
+    compute_concordance_extraction_string,
+)
+from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, estimate_page_size
 
 # CJK languages — whole-word (``\b``-style) regex semantics don't apply
 # meaningfully because there's no whitespace word boundary between
@@ -39,27 +57,6 @@ def _whole_word_active_for_language(
         return whole_word_request
     return language.strip().lower() not in _CJK_LANGUAGES
 
-
-from .concordance_tokens_mode import (
-    compute_tokens_concordance_page,
-    find_token_matches,
-)
-from .generated_columns import (
-    CONC_END_IDX_COLUMN,
-    CONC_EXTRACTION_COLUMN,
-    CONC_L1_COLUMN,
-    CONC_LEFT_CONTEXT_COLUMN,
-    CONC_MATCHED_TEXT_COLUMN,
-    CONC_R1_COLUMN,
-    CONC_RIGHT_CONTEXT_COLUMN,
-    CONC_START_IDX_COLUMN,
-    CORE_CONCORDANCE_COLUMNS,
-    MATERIALIZED_CONCORDANCE_COLUMNS,
-    TOKENS_FORM,
-    compute_concordance_extraction_string,
-    concordance_struct_projection,
-)
-from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, estimate_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -358,12 +355,9 @@ def resolve_node_sources(
         column = node_columns.get(node_id)
         if not column:
             continue
-        derived_tokens_column: Optional[str] = None
-        if hasattr(node, "find_derived_column"):
-            derived_tokens_column = node.find_derived_column(
-                column,
-                form=TOKENS_FORM,
-            )
+        tokenization_column: Optional[str] = None
+        if hasattr(node, "find_tokenization_column"):
+            tokenization_column = node.find_tokenization_column(column)
         # Per-node effective language drives Bug-4 ``whole_word`` suppression
         # downstream — at the per-node iteration we know which language each
         # node actually is, so we can keep the request's global toggle and
@@ -373,7 +367,7 @@ def resolve_node_sources(
             "lf": node_data,
             "column": column,
             "label": node_label,
-            "derived_tokens_column": derived_tokens_column,
+            "tokenization_column": tokenization_column,
             "language": node_language,
             "node": node,
             "user_id": user_id,
@@ -475,14 +469,14 @@ def compute_node_concordance_page(
     """Route a node to either regex-mode or tokens-mode page computation.
 
     Tokens-mode only activates when ``request['search_mode'] == 'tokens'``
-    AND the node carries a derived tokens column for the source column.
+    AND the node carries tokenization metadata for the source column.
     Otherwise we fall back to the existing regex/text path so EN goldens
     stay byte-identical.
     """
     base_lf = src["lf"]
     column = src["column"]
     label = src.get("label")
-    derived_tokens_column = src.get("derived_tokens_column")
+    tokenization_column = src.get("tokenization_column")
     search_mode = str(request.get("search_mode") or "regex")
 
     # Per-node copy of the request with ``node_language`` injected. The
@@ -491,7 +485,7 @@ def compute_node_concordance_page(
     # whole_word-suppression path inspects in build_concordance_search_pattern.
     node_request: dict[str, Any] = {**request, "node_language": src.get("language")}
 
-    if search_mode == "tokens" and derived_tokens_column:
+    if search_mode == "tokens" and tokenization_column:
         effective_page_size = (
             int(page_size)
             if page_size is not None and int(page_size) > 0
@@ -500,7 +494,7 @@ def compute_node_concordance_page(
         return compute_tokens_concordance_page(
             base_lf,
             column=column,
-            derived_column=derived_tokens_column,
+            tokenization_column=tokenization_column,
             request=node_request,
             page=page,
             page_size=effective_page_size,
@@ -547,7 +541,7 @@ def _count_concordance_hits(
 def _count_tokens_concordance_hits(
     base_lf: pl.LazyFrame,
     column: str,
-    derived_column: str,
+    tokenization_column: str,
     request: dict[str, Any],
     size: int,
     *,
@@ -556,7 +550,7 @@ def _count_tokens_concordance_hits(
 ) -> int:
     """Tokens-mode equivalent of :func:`_count_concordance_hits`.
 
-    Walks the first ``size`` rows of the derived tokens column and counts
+    Walks the first ``size`` rows of the tokenization column and counts
     exact-token matches of ``search_word``. Without this, the page-size
     estimator probes via the regex engine, which produces 0 hits for CJK
     queries (``\\b``-style whole-word semantics don't apply) and pushes the
@@ -569,25 +563,25 @@ def _count_tokens_concordance_hits(
     try:
         slice_lf = base_lf.slice(0, size)
         if (
-            derived_column not in slice_lf.collect_schema().names()
+            tokenization_column not in slice_lf.collect_schema().names()
             and token_node is not None
             and user_id
         ):
-            from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+            from ....core.tokens_cache import hydrate_tokenization_lazyframe
 
-            slice_lf = hydrate_derived_tokens_lazyframe(
+            slice_lf = hydrate_tokenization_lazyframe(
                 slice_lf,
                 node=token_node,
                 source_column=column,
-                derived_name=derived_column,
+                tokenization_column=tokenization_column,
                 user_id=user_id,
             )
-        slice_df = cast(pl.DataFrame, slice_lf.select(derived_column).collect())
+        slice_df = cast(pl.DataFrame, slice_lf.select(tokenization_column).collect())
     except Exception as exc:
         logger.debug("Tokens-mode hit probe failed at size=%d: %s", size, exc)
         return 0
     total = 0
-    for tokens in slice_df.get_column(derived_column).to_list():
+    for tokens in slice_df.get_column(tokenization_column).to_list():
         if not isinstance(tokens, list) or not tokens:
             continue
         total += len(
@@ -602,13 +596,13 @@ def _resolve_page_size(
     request: dict[str, Any],
     requested: Optional[int],
     *,
-    derived_tokens_column: Optional[str] = None,
+    tokenization_column: Optional[str] = None,
     token_node: Any | None = None,
     user_id: str | None = None,
 ) -> int:
     """Return an effective page size, estimating when the client omitted one.
 
-    For tokens-mode requests with a derived tokens column on the node, the
+    For tokens-mode requests with tokenization metadata on the node, the
     probe walks the tokens column directly so CJK searches estimate against
     actual hit density instead of the regex engine's near-zero count.
     """
@@ -616,14 +610,14 @@ def _resolve_page_size(
         return int(requested)
     use_tokens_probe = (
         str(request.get("search_mode") or "regex") == "tokens"
-        and derived_tokens_column is not None
+        and tokenization_column is not None
     )
     if use_tokens_probe:
         probe = partial(
             _count_tokens_concordance_hits,
             base_lf,
             column,
-            derived_tokens_column,
+            tokenization_column,
             request,
             token_node=token_node,
             user_id=user_id,
@@ -867,7 +861,7 @@ def collect_interleaved_combined(
     Why:
     - Preserves per-node page semantics while presenting a merged comparison view.
       Routes through ``compute_node_concordance_page`` so each side independently
-      picks regex- vs tokens-mode based on the request and its derived columns.
+    picks regex- vs tokens-mode based on the request and tokenization metadata.
     """
     left_result = compute_node_concordance_page(
         left_src,
@@ -1020,7 +1014,7 @@ def build_concordance_response(
                     src["column"],
                     request,
                     None,
-                    derived_tokens_column=src.get("derived_tokens_column"),
+                    tokenization_column=src.get("tokenization_column"),
                     token_node=src.get("node"),
                     user_id=src.get("user_id"),
                 )
@@ -1038,7 +1032,7 @@ def build_concordance_response(
                     left_src["column"],
                     request,
                     None,
-                    derived_tokens_column=left_src.get("derived_tokens_column"),
+                    tokenization_column=left_src.get("tokenization_column"),
                     token_node=left_src.get("node"),
                     user_id=left_src.get("user_id"),
                 )
@@ -1050,7 +1044,7 @@ def build_concordance_response(
                     right_src["column"],
                     request,
                     None,
-                    derived_tokens_column=right_src.get("derived_tokens_column"),
+                    tokenization_column=right_src.get("tokenization_column"),
                     token_node=right_src.get("node"),
                     user_id=right_src.get("user_id"),
                 )

@@ -5,7 +5,7 @@ Implements the second concordance mode introduced in decision 6:
 - **Regex mode (default)** — unchanged. Polars-text concordance engine walks
   raw text; ``num_left_tokens`` means "characters" for CJK because there's
   no whitespace, but partial-word patterns like ``equ\\w*`` survive.
-- **Tokens mode** — walks the derived tokens column (Phase 2.3 / decision 7)
+- **Tokens mode** — walks the tokenization column (Phase 2.3 / decision 7)
   for exact-token matches with N-**actual-token** left/right context. The
   word-aware semantics CJK users want once Tokenise has been run.
 
@@ -79,7 +79,7 @@ def find_token_matches(
     so the user can supply one or many tokens separated by space, comma,
     or ``|`` — the same alternation regex-mode users get for free via
     regex syntax. Each alternative is an exact-token equality match
-    against the derived tokens column; substring / partial matches are
+    against the tokenization column; substring / partial matches are
     intentionally not supported in tokens mode (that's what text mode
     is for).
     """
@@ -150,7 +150,7 @@ def compute_tokens_concordance_page(
     base_lf: pl.LazyFrame,
     *,
     column: str,
-    derived_column: str,
+    tokenization_column: str,
     request: dict[str, Any],
     page: int,
     page_size: int,
@@ -190,22 +190,22 @@ def compute_tokens_concordance_page(
     start = max(page - 1, 0) * page_size
     page_lf = base_lf.slice(start, page_size)
     if (
-        derived_column not in page_lf.collect_schema().names()
+        tokenization_column not in page_lf.collect_schema().names()
         and token_node is not None
         and user_id
     ):
-        from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+        from ....core.tokens_cache import hydrate_tokenization_lazyframe
 
-        page_lf = hydrate_derived_tokens_lazyframe(
+        page_lf = hydrate_tokenization_lazyframe(
             page_lf,
             node=token_node,
             source_column=column,
-            derived_name=derived_column,
+            tokenization_column=tokenization_column,
             user_id=user_id,
         )
     page_df = cast(pl.DataFrame, page_lf.collect())
 
-    metadata_columns = [c for c in page_df.columns if c != derived_column]
+    metadata_columns = [c for c in page_df.columns if c != tokenization_column]
     has_text_column = column in metadata_columns
     columns = list(metadata_columns) + list(CORE_CONCORDANCE_COLUMNS)
     if has_text_column:
@@ -215,12 +215,14 @@ def compute_tokens_concordance_page(
 
     grouped_rows: list[list[dict[str, Any]]] = []
     for row in page_df.to_dicts():
-        tokens = row.get(derived_column) or []
+        tokens = row.get(tokenization_column) or []
         if not isinstance(tokens, list) or not tokens:
             continue
         raw_text = str(row.get(column) or "") if has_text_column else ""
         # Drop the temporary hydrated token column from the metadata copy.
-        base_row = {key: value for key, value in row.items() if key != derived_column}
+        base_row = {
+            key: value for key, value in row.items() if key != tokenization_column
+        }
 
         match_indices = find_token_matches(
             tokens, search_word, case_sensitive=case_sensitive

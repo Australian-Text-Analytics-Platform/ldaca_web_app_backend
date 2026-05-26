@@ -966,34 +966,33 @@ class TestSequentialAnalysisPersistence:
 class TestWorkspaceGraphEnrichment:
     """Test workspace graph enrichment with analysis data."""
 
-    async def test_graph_surfaces_derived_metadata_on_tokenised_node(
+    async def test_graph_surfaces_tokenization_metadata_on_tokenised_node(
         self, authenticated_client, workspace_id, tiny_node_id, test_user
     ):
-        """After Tokenise, ``/graph`` must surface ``derived`` per-node so the
+        """After Tokenise, ``/graph`` must surface ``tokenization`` per-node so the
         frontend tokens-mode auto-pick can read it.
 
         Regression test: the endpoint previously returned ``node.info()``
-        directly (no ``derived`` metadata), which left the
+        directly (no tokenization metadata), which left the
         concordance tokens-mode radio permanently disabled for CJK corpora.
         """
-        # Given: a tokenised node. Register the derived column directly on
+        # Given: a tokenised node. Register tokenization directly on
         # the in-memory node so we don't round-trip through plbin (polars
         # FFI plugin plans don't serialise cleanly across every polars
         # version, and this test only cares about the graph payload shape).
         from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
-            TOKENS_FORM,
-            derived_column_name,
+            tokenization_column_name,
         )
 
         workspace = workspace_manager.get_current_workspace(test_user["id"])
         assert workspace is not None
         node = workspace.nodes[tiny_node_id]
-        derived_name = derived_column_name(TOKENS_FORM, "document", "bert-base-uncased")
-        node.register_derived_column(  # type: ignore[arg-type]
-            derived_name,
+        tokenization_name = tokenization_column_name("document", "bert-base-uncased")
+        node.register_tokenization(  # type: ignore[arg-type]
+            "document",
             {
                 "source_column": "document",
-                "form": TOKENS_FORM,
+                "column_name": tokenization_name,
                 "model": "bert-base-uncased",
                 "language": "en",
                 "generated_at": "2026-05-12T00:00:00+00:00",
@@ -1005,18 +1004,17 @@ class TestWorkspaceGraphEnrichment:
         assert response.status_code == 200
         graph_data = response.json()
 
-        # Then: the tokenised node carries `derived` metadata.
+        # Then: the tokenised node carries `tokenization` metadata.
         node_entry = next(
             (n for n in graph_data["nodes"] if n.get("id") == tiny_node_id), None
         )
         assert node_entry is not None
-        assert "derived" in node_entry
-        assert "derived_columns" not in node_entry
-        derived = node_entry["derived"]
-        assert len(derived) == 1
-        only_meta = next(iter(derived.values()))
-        assert only_meta["form"] == "tokens"
+        assert "tokenization" in node_entry
+        tokenization = node_entry["tokenization"]
+        assert len(tokenization) == 1
+        only_meta = tokenization["document"]
         assert only_meta["source_column"] == "document"
+        assert only_meta["column_name"] == tokenization_name
         assert only_meta["model"] == "bert-base-uncased"
 
 

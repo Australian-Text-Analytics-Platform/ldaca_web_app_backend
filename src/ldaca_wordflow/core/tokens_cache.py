@@ -1,7 +1,7 @@
 """Wordflow integration for the polars-text token cache.
 
-Nodes store a versioned tokenisation spec in ``Node.derived``. Analyses
-attach those specs to a LazyFrame with ``hydrate_derived_tokens_lazyframe``.
+Nodes store per-column versioned tokenisation specs in ``Node.tokenization``. Analyses
+attach those specs to a LazyFrame with ``hydrate_tokenization_lazyframe``.
 The generic DuckDB cache mechanics live in ``polars_text.tokenize(...,
 cache=...)``; this module owns only Wordflow's per-user cache path and node
 metadata hydration.
@@ -48,34 +48,37 @@ def cached_tokens_expr(
     )
 
 
-def hydrate_derived_tokens_lazyframe(
+def hydrate_tokenization_lazyframe(
     base_lf: pl.LazyFrame,
     *,
     node: Any,
     source_column: str,
-    derived_name: str,
+    tokenization_column: str,
     user_id: str,
 ) -> pl.LazyFrame:
-    """Lazily attach a derived tokens column registered on ``node``.
+    """Lazily attach a tokenization column registered on ``node``.
 
     Short-circuits if the column is already physically present. Otherwise
-    reads the model and tokenisation params from ``node.derived[derived_name]``
+    reads the model and tokenisation params from
+    ``node.tokenization[source_column]``
     and attaches a cache-backed elementwise expression keyed on ``user_id``.
     """
-    if derived_name in base_lf.collect_schema().names():
+    if tokenization_column in base_lf.collect_schema().names():
         return base_lf
 
-    derived_registry = getattr(node, "derived", {})
-    derived_meta = (
-        derived_registry.get(derived_name)
-        if isinstance(derived_registry, dict)
+    tokenization_registry = getattr(node, "tokenization", {})
+    tokenization_meta = (
+        tokenization_registry.get(source_column)
+        if isinstance(tokenization_registry, dict)
         else None
     )
-    if not isinstance(derived_meta, dict):
+    if not isinstance(tokenization_meta, dict):
+        return base_lf
+    if tokenization_meta.get("column_name") != tokenization_column:
         return base_lf
 
-    model = derived_meta.get("model")
-    params = derived_meta.get("params") or {}
+    model = tokenization_meta.get("model")
+    params = tokenization_meta.get("params") or {}
     if not isinstance(model, str):
         return base_lf
 
@@ -86,13 +89,13 @@ def hydrate_derived_tokens_lazyframe(
             model=model,
             lowercase=bool(params.get("lowercase", True)),
             remove_punct=bool(params.get("remove_punct", True)),
-        ).alias(derived_name)
+        ).alias(tokenization_column)
     )
 
 
 __all__ = [
     "TOKENS_CACHE_FILENAME",
     "cached_tokens_expr",
-    "hydrate_derived_tokens_lazyframe",
+    "hydrate_tokenization_lazyframe",
     "tokens_cache_path",
 ]

@@ -80,5 +80,6 @@ To add a long-running job:
 
 For node/workspace operations, prefer existing helpers in
 `api/workspaces/utils.py`, `schema_filter.py`, and `core/polars_operations.py`.
-Preserve derived metadata when a transformation keeps derived columns. Drop or
-invalidate derived metadata when the source user column is removed or renamed.
+Preserve tokenization metadata when a transformation keeps the tokenized source
+column. Drop or invalidate tokenization metadata when the source user column is
+removed or renamed.

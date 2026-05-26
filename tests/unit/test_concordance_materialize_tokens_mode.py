@@ -6,7 +6,7 @@ that found ~750 live page hits collapsed to ~4 byte-coincidence regex
 hits after the user clicked Process All. The fix:
 
 - ``ConcordanceMaterializeRequest.search_mode`` accepted by the route.
-- Route extracts the derived tokens column when ``search_mode="tokens"``.
+- Route extracts the tokenization column when ``search_mode="tokens"``.
 - Worker dispatches ``_build_tokens_concordance_occurrence_dataframe``
   which walks tokens for exact-token matches, then the existing
   L1/R1 freq join applies unchanged.

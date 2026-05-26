@@ -2,8 +2,8 @@
 
 Token outputs are cache-backed and hydrated only inside analysis paths; node
 schemas no longer need special hidden-column filtering. This module preserves
-the physical schema while surfacing ``Node.derived`` metadata for UI affordances
-that need to know whether a node has been tokenised.
+the physical schema while surfacing ``Node.tokenization`` metadata for UI
+affordances that need to know whether a node has been tokenised.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def project_visible(lf: pl.LazyFrame) -> pl.LazyFrame:
     """Return a LazyFrame projected onto the user-facing columns only.
 
     Useful for endpoints that materialise rows for display (data view, export).
-    Analytics paths that need token specs should resolve ``Node.derived`` and
+    Analytics paths that need token specs should resolve ``Node.tokenization`` and
     hydrate through the cache helper.
     """
     visible = visible_column_names(lf.collect_schema().names())
@@ -43,12 +43,14 @@ def frontend_node_info(node: Node) -> dict[str, Any]:
     info["columns"] = filtered_columns
     info["schema"] = filtered_schema
     info["shape"] = (height, len(filtered_columns))
-    # Guard against test mocks where ``node.derived`` isn't a real dict.
-    derived = getattr(node, "derived", None)
-    if isinstance(derived, dict):
-        info["derived"] = {name: dict(derived[name]) for name in sorted(derived.keys())}
+    # Guard against test mocks where metadata attributes are not real dicts.
+    tokenization = getattr(node, "tokenization", None)
+    if isinstance(tokenization, dict):
+        info["tokenization"] = {
+            source: dict(tokenization[source]) for source in sorted(tokenization.keys())
+        }
     else:
-        info["derived"] = {}
+        info["tokenization"] = {}
     return info
 
 

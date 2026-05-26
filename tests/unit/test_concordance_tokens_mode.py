@@ -1,9 +1,9 @@
-"""Phase 2.6: concordance tokens-mode honors the derived tokens column.
+"""Phase 2.6: concordance tokens-mode honors the tokenization column.
 
 Decision 6 + decision 7:
 - Regex mode (default) walks raw text; ``num_left_tokens`` means "chars" on
   CJK because there's no whitespace.
-- Tokens mode walks the derived tokens column for exact-token matches with
+- Tokens mode walks the tokenization column for exact-token matches with
   N-actual-token context — the segmentation-aware semantics CJK users want.
 
 These tests cover the pure helpers without touching FastAPI; the route
@@ -35,7 +35,7 @@ from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     CONC_START_IDX_COLUMN,
 )
 from ldaca_wordflow.core import tokens_cache as tc
-from ldaca_wordflow.core.derived_columns import tokenise_column
+from ldaca_wordflow.core.tokenization import tokenise_column
 
 from docworkspace import Node
 
@@ -105,11 +105,11 @@ def test_build_token_hit_second_match_has_two_left_tokens() -> None:
 
 
 def test_compute_tokens_page_groups_hits_per_row() -> None:
-    derived_col = "text.tokenization.jieba"
+    tokenization_col = "tokenization.text.jieba"
     df = pl.DataFrame(
         {
             "text": [ZH_TEXT, "晚上去看电影", "今天"],
-            derived_col: [
+            tokenization_col: [
                 ZH_TOKENS,
                 [
                     {"token": "晚上", "start": 0, "end": 2},
@@ -125,7 +125,7 @@ def test_compute_tokens_page_groups_hits_per_row() -> None:
     page = compute_tokens_concordance_page(
         df,
         column="text",
-        derived_column=derived_col,
+        tokenization_column=tokenization_col,
         request={
             "search_word": "今天",
             "case_sensitive": False,
@@ -149,7 +149,7 @@ def test_compute_tokens_page_groups_hits_per_row() -> None:
     # The hydrated token column is stripped from the per-hit projection; only
     # ``text`` and CONC_* fields surface.
     sample_hit = first_row_hits[0]
-    assert derived_col not in sample_hit
+    assert tokenization_col not in sample_hit
     assert sample_hit[CONC_MATCHED_TEXT_COLUMN] == "今天"
 
 
@@ -173,7 +173,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
         data=pl.DataFrame({"text": [f"hello {index}" for index in range(5)]}).lazy(),
         name="probe",
     )
-    derived_col = tokenise_column(
+    tokenization_col = tokenise_column(
         node,
         source_column="text",
         model="bert-base-uncased",
@@ -186,7 +186,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
             "lf": node.data,
             "column": "text",
             "label": "probe",
-            "derived_tokens_column": derived_col,
+            "tokenization_column": tokenization_col,
             "language": "en",
             "node": node,
             "user_id": "lazy-user",
@@ -214,7 +214,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
 
 
 def test_compute_tokens_page_with_english_word_aware_context() -> None:
-    derived_col = "text.tokenization.bert-base-uncased"
+    tokenization_col = "tokenization.text.bert-base-uncased"
     en_text = "the quick brown fox jumps over the lazy dog"
     en_tokens = []
     cursor = 0
@@ -222,12 +222,12 @@ def test_compute_tokens_page_with_english_word_aware_context() -> None:
         start = en_text.find(tok, cursor)
         en_tokens.append({"token": tok, "start": start, "end": start + len(tok)})
         cursor = start + len(tok)
-    df = pl.DataFrame({"text": [en_text], derived_col: [en_tokens]}).lazy()
+    df = pl.DataFrame({"text": [en_text], tokenization_col: [en_tokens]}).lazy()
 
     page = compute_tokens_concordance_page(
         df,
         column="text",
-        derived_column=derived_col,
+        tokenization_column=tokenization_col,
         request={
             "search_word": "fox",
             "case_sensitive": False,

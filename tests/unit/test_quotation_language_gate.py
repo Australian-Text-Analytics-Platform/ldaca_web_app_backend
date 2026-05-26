@@ -25,11 +25,11 @@ from docworkspace import Node
 def _zh_node() -> Node:
     df = pl.DataFrame({"text": ["今天天气很好"]}).lazy()
     node = Node(data=df, name="zh_root")
-    node.register_derived_column(
-        "text.tokenization.jieba",
+    node.register_tokenization(
+        "text",
         {  # type: ignore[arg-type]
             "source_column": "text",
-            "form": "tokens",
+            "column_name": "tokenization.text.jieba",
             "model": "jieba",
             "language": "zh",
             "generated_at": "2026-05-12T00:00:00+00:00",
@@ -88,11 +88,11 @@ async def test_get_quotation_rejects_explicit_chinese(fake_workspace_manager):
 
 
 @pytest.mark.asyncio
-async def test_get_quotation_rejects_implicit_chinese_via_derived(
+async def test_get_quotation_rejects_implicit_chinese_via_tokenization(
     fake_workspace_manager,
 ):
-    """No explicit language in request, but node has jieba/zh derived
-    tokens — gate falls back to derived metadata and refuses."""
+    """No explicit language in request, but node has jieba/zh tokens;
+    gate falls back to tokenization metadata and refuses."""
     _ws, node = fake_workspace_manager
     request = QuotationRequest(column="text")  # language=None
 

@@ -10,4 +10,4 @@ __pycache__/
 dist/
 
 # Frontend build assets (decompressed from build.tar.gz; the archive is tracked)
-src/ldaca_web_app/resources/frontend/build/
+src/ldaca_wordflow/resources/frontend/build/

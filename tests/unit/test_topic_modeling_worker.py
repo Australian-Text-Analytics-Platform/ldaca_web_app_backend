@@ -267,7 +267,7 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(
                             "data": pl.DataFrame(
                                 {"document": ["doc one", "doc two"]}
                             ).lazy(),
-                            "find_derived_column": lambda self, _source, *, form="tokens", model=None: None,
+                            "find_tokenization_column": lambda self, _source, *, model=None: None,
                         },
                     )(),
                 )

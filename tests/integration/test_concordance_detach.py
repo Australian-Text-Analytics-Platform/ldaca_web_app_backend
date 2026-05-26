@@ -107,13 +107,12 @@ async def test_concordance_detach_options_ignore_token_metadata(
 ):
     """Token metadata must not create extra detach-picker columns.
 
-    Token specs live in ``Node.derived`` and are hydrated only inside analysis
+    Token specs live in ``Node.tokenization`` and are hydrated only inside analysis
     paths. Registering a token spec should leave detach options scoped to the
     node's physical columns.
     """
     from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
-        TOKENS_FORM,
-        derived_column_name,
+        tokenization_column_name,
     )
 
     df = pl.DataFrame({"text": ["alpha beta", "beta gamma"]})
@@ -128,15 +127,15 @@ async def test_concordance_detach_options_ignore_token_metadata(
     )
     workspace.add_node(node)
 
-    # Register a derived column directly on the in-memory node so the test
+    # Register tokenization directly on the in-memory node so the test
     # doesn't need to round-trip through plbin (the polars FFI plan can't
     # always be deserialized cross-version; see prior FfiPlugin episode).
-    derived_name = derived_column_name(TOKENS_FORM, "text", "bert-base-uncased")
-    node.register_derived_column(  # type: ignore[arg-type]
-        derived_name,
+    tokenization_name = tokenization_column_name("text", "bert-base-uncased")
+    node.register_tokenization(  # type: ignore[arg-type]
+        "text",
         {
             "source_column": "text",
-            "form": TOKENS_FORM,
+            "column_name": tokenization_name,
             "model": "bert-base-uncased",
             "language": "en",
             "generated_at": "2026-05-12T00:00:00+00:00",
@@ -150,6 +149,6 @@ async def test_concordance_detach_options_ignore_token_metadata(
 
     assert resp.status_code == 200, resp.text
     node_option = resp.json()["data"]["nodes"][0]
-    assert derived_name not in node_option["available_columns"]
-    assert derived_name not in node_option["disabled_columns"]
+    assert tokenization_name not in node_option["available_columns"]
+    assert tokenization_name not in node_option["disabled_columns"]
     assert "text" in node_option["available_columns"]

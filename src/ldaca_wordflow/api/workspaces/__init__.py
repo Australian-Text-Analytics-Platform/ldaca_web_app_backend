@@ -23,10 +23,10 @@ from . import base, lifecycle, nodes, ui_state
 from .analyses import (
     ai_annotation,
     concordance,
-    derived_columns,
     quotation,
     sequential_analysis,
     token_frequencies,
+    tokenization,
     topic_modeling,
 )
 
@@ -41,7 +41,7 @@ router.include_router(quotation.router)
 router.include_router(concordance.router)
 router.include_router(topic_modeling.router)
 router.include_router(ai_annotation.router)
-router.include_router(derived_columns.router)
+router.include_router(tokenization.router)
 router.include_router(ui_state.router)
 
 __all__ = ["router", "workspace_manager"]

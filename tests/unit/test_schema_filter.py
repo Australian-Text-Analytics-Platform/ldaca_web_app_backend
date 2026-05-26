@@ -17,69 +17,69 @@ from ldaca_wordflow.api.workspaces.schema_filter import (
     visible_column_names,
 )
 
-from docworkspace import DerivedColumnMeta, Node
+from docworkspace import Node, TokenizationMeta
 
-_DERIVED_NAME = "text.tokenization.jieba"
+_TOKENS_NAME = "tokenization.text.jieba"
 
 
-def _meta(source: str = "text", model: str = "jieba") -> DerivedColumnMeta:
+def _meta(source: str = "text", model: str = "jieba") -> TokenizationMeta:
     return {
         "source_column": source,
-        "form": "tokens",
+        "column_name": _TOKENS_NAME,
         "model": model,
         "language": "zh",
         "generated_at": "2026-05-12T00:00:00+00:00",
     }
 
 
-def _make_node_with_derived() -> Node:
+def _make_node_with_tokenization() -> Node:
     df = pl.DataFrame(
         {
             "text": ["a", "b"],
             "value": [1, 2],
-            _DERIVED_NAME: [
+            _TOKENS_NAME: [
                 [{"token": "a", "start": 0, "end": 1}],
                 [{"token": "b", "start": 0, "end": 1}],
             ],
         }
     ).lazy()
     node = Node(data=df, name="root")
-    node.register_derived_column(_DERIVED_NAME, _meta())
+    node.register_tokenization("text", _meta())
     return node
 
 
 def test_visible_column_names_preserves_physical_columns() -> None:
-    columns = ["text", "value", _DERIVED_NAME]
+    columns = ["text", "value", _TOKENS_NAME]
     assert visible_column_names(columns) == columns
 
 
 def test_project_visible_preserves_lazyframe_columns() -> None:
-    node = _make_node_with_derived()
+    node = _make_node_with_tokenization()
 
     projected = project_visible(node.data)
     projected_columns = projected.collect_schema().names()
-    assert _DERIVED_NAME in projected_columns
+    assert _TOKENS_NAME in projected_columns
     assert "text" in projected_columns
     assert "value" in projected_columns
 
 
 def test_frontend_node_info_preserves_schema_and_reports_token_metadata() -> None:
-    node = _make_node_with_derived()
+    node = _make_node_with_tokenization()
     info = frontend_node_info(node)
 
-    assert _DERIVED_NAME in info["columns"]
-    assert _DERIVED_NAME in info["schema"]
-    assert info["columns"] == ["text", "value", _DERIVED_NAME]
+    assert _TOKENS_NAME in info["columns"]
+    assert _TOKENS_NAME in info["schema"]
+    assert info["columns"] == ["text", "value", _TOKENS_NAME]
     assert info["shape"][1] == 3
-    assert info["derived"] == {_DERIVED_NAME: _meta()}
+    assert info["tokenization"] == {"text": _meta()}
 
 
-def test_frontend_node_info_round_trips_empty_derived() -> None:
+def test_frontend_node_info_reports_empty_tokenization() -> None:
     df = pl.DataFrame({"text": ["a"]}).lazy()
     node = Node(data=df, name="plain")
     info = frontend_node_info(node)
     assert info["columns"] == ["text"]
-    assert info["derived"] == {}
+    assert info["tokenization"] == {}
     assert info["shape"][1] == 1
 
 
@@ -88,7 +88,7 @@ def test_project_visible_preserves_row_order_and_counts() -> None:
     df = pl.DataFrame(
         {
             "text": ["a", "b", "c"],
-            _DERIVED_NAME: [
+            _TOKENS_NAME: [
                 [{"token": "a", "start": 0, "end": 1}],
                 [{"token": "b", "start": 0, "end": 1}],
                 [{"token": "c", "start": 0, "end": 1}],

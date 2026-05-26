@@ -26,13 +26,12 @@ from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....core.analysis_helpers import sanitize_stop_words
 from ....core.auth import get_current_user
-from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+from ....core.tokens_cache import hydrate_tokenization_lazyframe
 from ....core.workspace import workspace_manager
 from ....models import TokenFrequencyRequest, TokenFrequencyResponse
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
-from .generated_columns import TOKENS_FORM
 
 router = APIRouter(prefix="/workspaces")
 logger = logging.getLogger(__name__)
@@ -482,13 +481,13 @@ async def calculate_token_frequencies(
                 exc,
             )
 
-        derived_tokens_col = node.find_derived_column(column_name, form=TOKENS_FORM)
-        if derived_tokens_col is not None:
-            node_data = hydrate_derived_tokens_lazyframe(
+        tokenization_col = node.find_tokenization_column(column_name)
+        if tokenization_col is not None:
+            node_data = hydrate_tokenization_lazyframe(
                 node_data,
                 node=node,
                 source_column=column_name,
-                derived_name=derived_tokens_col,
+                tokenization_column=tokenization_col,
                 user_id=user_id,
             )
             # Phase 5 perf fix: spill the explode-flattened tokens to a
@@ -503,7 +502,7 @@ async def calculate_token_frequencies(
             )
             (
                 node_data.select(
-                    pl.col(derived_tokens_col)
+                    pl.col(tokenization_col)
                     .list.eval(pl.element().struct.field("token"))
                     .explode()
                     .alias("token")

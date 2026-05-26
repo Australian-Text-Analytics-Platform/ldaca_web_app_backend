@@ -150,7 +150,7 @@ def _load_corpora_from_workspace(
 
     from docworkspace import Workspace
 
-    from .tokens_cache import hydrate_derived_tokens_lazyframe
+    from .tokens_cache import hydrate_tokenization_lazyframe
 
     workspace = Workspace.load(Path(target_workspace_dir))
     raw_corpora: list[list[str]] = []
@@ -183,17 +183,17 @@ def _load_corpora_from_workspace(
             ]
         )
 
-        tokens_column = node.find_derived_column(text_column, form="tokens")
+        tokens_column = node.find_tokenization_column(text_column)
         if tokens_column is None:
             vectorizer_corpora.append(None)
             tokens_columns.append(None)
             continue
 
-        node_data = hydrate_derived_tokens_lazyframe(
+        node_data = hydrate_tokenization_lazyframe(
             node.data,
             node=node,
             source_column=text_column,
-            derived_name=tokens_column,
+            tokenization_column=tokens_column,
             user_id=user_id,
         )
 

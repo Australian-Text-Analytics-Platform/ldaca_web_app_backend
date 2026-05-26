@@ -22,7 +22,7 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.i18n import effective_language
-from ....core.tokens_cache import hydrate_derived_tokens_lazyframe
+from ....core.tokens_cache import hydrate_tokenization_lazyframe
 from ....core.workspace import workspace_manager
 from ....models import (
     ConcordanceAnalysisRequest,
@@ -45,7 +45,6 @@ from .concordance_core import (
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import (
     CONC_EXTRACTION_COLUMN,
-    TOKENS_FORM,
 )
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
@@ -660,18 +659,15 @@ async def materialize_concordance(
     node = ws.nodes[node_id]
     node_data = node.data
 
-    # Tokens-mode materialize needs the derived tokens column alongside the
-    # text. Look it up via the node's derived registry so we know exactly
+    # Tokens-mode materialize needs the tokenization column alongside the
+    # text. Look it up via the node's tokenization registry so we know exactly
     # which column to pull. Empty/missing → 400 so the caller can fall back
     # or prompt the user to re-tokenise.
-    derived_tokens_column: Optional[str] = None
+    tokenization_column: Optional[str] = None
     if request.search_mode == "tokens":
-        if hasattr(node, "find_derived_column"):
-            derived_tokens_column = node.find_derived_column(
-                request.column,
-                form=TOKENS_FORM,
-            )
-        if derived_tokens_column is None:
+        if hasattr(node, "find_tokenization_column"):
+            tokenization_column = node.find_tokenization_column(request.column)
+        if tokenization_column is None:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -679,11 +675,11 @@ async def materialize_concordance(
                     f"source column {request.column!r}" + "; re-run Tokenise first."
                 ),
             )
-        node_data = hydrate_derived_tokens_lazyframe(
+        node_data = hydrate_tokenization_lazyframe(
             node_data,
             node=node,
             source_column=request.column,
-            derived_name=derived_tokens_column,
+            tokenization_column=tokenization_column,
             user_id=user_id,
         )
 
@@ -694,8 +690,8 @@ async def materialize_concordance(
     select_exprs: list[pl.Expr] = [pl.col(request.column)] + [
         pl.col(c) for c in extra_source_columns
     ]
-    if derived_tokens_column is not None:
-        select_exprs.append(pl.col(derived_tokens_column))
+    if tokenization_column is not None:
+        select_exprs.append(pl.col(tokenization_column))
 
     corpus_df = cast(
         pl.DataFrame,
@@ -717,8 +713,8 @@ async def materialize_concordance(
         for value in corpus_df.get_column(request.column).to_list()
     ]
     node_tokens: Optional[list[Any]] = None
-    if derived_tokens_column is not None:
-        node_tokens = corpus_df.get_column(derived_tokens_column).to_list()
+    if tokenization_column is not None:
+        node_tokens = corpus_df.get_column(tokenization_column).to_list()
 
     extra_columns_data: dict[str, list] | None = None
     extra_columns_dtypes: dict[str, Any] | None = None

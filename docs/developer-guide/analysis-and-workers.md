@@ -94,7 +94,7 @@ The analysis routes live under `api/workspaces/analyses/`.
   per-user DuckDB embedding cache.
 - AI annotation calls OpenAI structured-output classification and can detach
   saved labels into workspace data.
-- Derived-column routes register and remove tokenisation metadata. Downstream
+- Tokenization routes register and remove tokenisation metadata. Downstream
   analyses hydrate those token specs from the per-user DuckDB token cache when
   needed.
 
@@ -122,7 +122,7 @@ records for the unloaded workspace. The unload lifecycle also removes the whole
 workspace session.
 
 Tokenisation and embeddings are performance caches rather than workspace
-artifacts. Token specs live in `Node.derived`; Wordflow resolves a per-user
+artifacts. Token specs live in `Node.tokenization`; Wordflow resolves a per-user
 `tokens.duckdb` path, then delegates cache population and reuse to
 `polars_text.tokenize(..., cache=path)`. The resulting token structs are
 attached to temporary LazyFrames by token-mode concordance, token frequencies,

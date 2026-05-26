@@ -1,12 +1,13 @@
-"""Derived-column lifecycle endpoints (Phase 2.5 of multilingual).
+"""Tokenization lifecycle endpoints (Phase 2.5 of multilingual).
 
-POST  /workspaces/nodes/{node_id}/derived/tokens
-    Register the node's single tokenisation spec. A new source/model replaces
-    any previous tokens spec for the node; token arrays are hydrated from the
-    per-user DuckDB cache only inside analysis paths.
+POST  /workspaces/nodes/{node_id}/tokenization
+    Register one source column's tokenisation spec. A new model replaces that
+    source column's previous spec; other source columns keep their specs. Token
+    arrays are hydrated from the per-user DuckDB cache only inside analysis
+    paths.
 
-The endpoint persists the workspace via :func:`update_workspace` so the derived
-metadata round-trips through plbin.
+The endpoint persists the workspace via :func:`update_workspace` so the
+tokenization metadata round-trips through plbin.
 """
 
 from __future__ import annotations
@@ -19,17 +20,16 @@ from pydantic import BaseModel
 from docworkspace import Node
 
 from ....core.auth import get_current_user
-from ....core.derived_columns import tokenise_column
+from ....core.tokenization import tokenise_column
 from ....core.workspace import workspace_manager
 from ..utils import update_workspace
-from .generated_columns import TOKENS_FORM
 
-router = APIRouter(prefix="/workspaces", tags=["derived_columns"])
+router = APIRouter(prefix="/workspaces", tags=["tokenization"])
 logger = logging.getLogger(__name__)
 
 
 class TokeniseColumnRequest(BaseModel):
-    """Body for ``POST /nodes/{node_id}/derived/tokens``."""
+    """Body for ``POST /nodes/{node_id}/tokenization``."""
 
     source_column: str
     model: str
@@ -56,8 +56,8 @@ def _get_active_workspace_node(user_id: str, node_id: str) -> tuple[str, Node]:
     return workspace_id, workspace.nodes[node_id]
 
 
-@router.post("/nodes/{node_id}/derived/tokens", response_model=TokeniseColumnResponse)
-async def create_derived_tokens(
+@router.post("/nodes/{node_id}/tokenization", response_model=TokeniseColumnResponse)
+async def create_tokenization(
     node_id: str,
     request: TokeniseColumnRequest,
     current_user: dict = Depends(get_current_user),
@@ -65,19 +65,13 @@ async def create_derived_tokens(
     user_id = current_user["id"]
     workspace_id, node = _get_active_workspace_node(user_id, node_id)
 
-    # A node carries at most one tokens spec. Snapshot any existing tokens entry
-    # so the caller knows whether this request switched column/model.
-    existing = next(
-        (
-            name
-            for name, meta in node.derived.items()
-            if isinstance(meta, dict) and meta.get("form") == TOKENS_FORM
-        ),
-        None,
+    existing_meta = node.tokenization.get(request.source_column)
+    existing = (
+        existing_meta.get("column_name") if isinstance(existing_meta, dict) else None
     )
 
     try:
-        derived_name = tokenise_column(
+        tokenization_name = tokenise_column(
             node,
             source_column=request.source_column,
             model=request.model,
@@ -90,7 +84,7 @@ async def create_derived_tokens(
 
     update_workspace(user_id, workspace_id, best_effort=True)
     return TokeniseColumnResponse(
-        column=derived_name,
+        column=tokenization_name,
         is_new=existing is None,
         replaced_column=existing,
     )

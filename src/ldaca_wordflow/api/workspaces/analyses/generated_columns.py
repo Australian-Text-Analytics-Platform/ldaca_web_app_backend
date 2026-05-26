@@ -166,59 +166,59 @@ QUOTE_COLUMN_NAMES = (
 
 
 # ----------------------------------------------------------------------------
-# Dynamic analytic columns
+# Dynamic tokenization columns
 # ----------------------------------------------------------------------------
 # Token outputs are addressed only when an analysis hydrates them into a
-# temporary LazyFrame. Nodes persist a single tokenisation spec in
-# ``Node.derived``; the physical token column is never stored on ``Node.data``.
+# temporary LazyFrame. Nodes persist per-source tokenisation specs in
+# ``Node.tokenization``; the physical token column is never stored on
+# ``Node.data``.
 
-DERIVED_SEPARATOR = "."
+TOKENIZATION_SEPARATOR = "."
 
-TOKENS_FORM = "tokens"
 TOKENS_COLUMN_MARKER = "tokenization"
 TOKENS_TOKEN_FIELD = "token"
 TOKENS_START_FIELD = "start"
 TOKENS_END_FIELD = "end"
 
 
-def derived_column_name(form: str, source_column: str, model: str) -> str:
-    """Build the temporary analysis column name for ``(form, source, model)``.
+def tokenization_column_name(source_column: str, model: str) -> str:
+    """Build the temporary tokenization column name for ``(source, model)``.
 
-    Example: ``derived_column_name("tokens", "text", "jieba")`` returns
-    ``"text.tokenization.jieba"``. The name is used only when dynamically
+    Example: ``tokenization_column_name("text", "jieba")`` returns
+    ``"tokenization.text.jieba"``. The name is used only when dynamically
     hydrating a LazyFrame for token-aware analyses.
     """
-    marker = TOKENS_COLUMN_MARKER if form == TOKENS_FORM else form
-    return DERIVED_SEPARATOR.join((source_column, marker, model))
+    return TOKENIZATION_SEPARATOR.join((TOKENS_COLUMN_MARKER, source_column, model))
 
 
-def parse_derived_column(name: str) -> tuple[str, str, str] | None:
-    """Inverse of :func:`derived_column_name`. Returns ``(form, source, model)``
-    or ``None`` if ``name`` doesn't follow the derived pattern.
+def parse_tokenization_column(name: str) -> tuple[str, str] | None:
+    """Inverse of :func:`tokenization_column_name`.
+
+    Returns ``(source, model)`` or ``None`` if ``name`` doesn't follow the
+    tokenization column pattern.
 
     Limitation: source-column names or model IDs containing a ``.`` remain
     ambiguous from the name alone. Callers that need authoritative parts should
-    consult ``Node.derived`` rather than parsing the column name.
+    consult ``Node.tokenization`` rather than parsing the column name.
     """
-    parts = name.split(DERIVED_SEPARATOR)
+    parts = name.split(TOKENIZATION_SEPARATOR)
     if len(parts) != 3:
         return None
-    source_column, marker, model = parts
+    marker, source_column, model = parts
     if not (source_column and marker and model):
         return None
     if marker != TOKENS_COLUMN_MARKER:
         return None
-    form = TOKENS_FORM if marker == TOKENS_COLUMN_MARKER else marker
-    return form, source_column, model
+    return source_column, model
 
 
-def is_derived_column_name(name: str) -> bool:
-    """Return whether ``name`` follows the dynamic analysis-column pattern.
+def is_tokenization_column_name(name: str) -> bool:
+    """Return whether ``name`` follows the tokenization column pattern.
 
     Physical node schemas are no longer filtered with this helper; analyses use
-    explicit generated-column sets or ``Node.derived`` metadata instead.
+    explicit generated-column sets or ``Node.tokenization`` metadata instead.
     """
-    return parse_derived_column(name) is not None
+    return parse_tokenization_column(name) is not None
 
 
 def tokens_struct_dtype() -> pl.DataType:
@@ -240,17 +240,22 @@ def tokens_struct_dtype() -> pl.DataType:
     )
 
 
-def is_derived_tokens_column(node: "Node", col_name: str) -> bool:
-    """Metadata-driven detector for a tokens-form derived column.
+def is_tokenization_column(node: "Node", col_name: str) -> bool:
+    """Metadata-driven detector for a hydrated tokenization column.
 
-    Reads ``Node.derived`` (decision 7's source of truth) — True when the
-    column is registered on this node with ``form == "tokens"``. The
+    Reads ``Node.tokenization`` — True when the column is registered on this
+    node as one source column's tokenization output. The
     LazyFrame dtype check is implicit: tokens-form entries are only ever
     registered by the tokenise operation, which guarantees the canonical
     dtype.
     """
-    meta = node.derived.get(col_name)
-    return meta is not None and meta.get("form") == TOKENS_FORM
+    tokenization = getattr(node, "tokenization", {})
+    if not isinstance(tokenization, dict):
+        return False
+    return any(
+        isinstance(meta, dict) and meta.get("column_name") == col_name
+        for meta in tokenization.values()
+    )
 
 
 def tokens_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:

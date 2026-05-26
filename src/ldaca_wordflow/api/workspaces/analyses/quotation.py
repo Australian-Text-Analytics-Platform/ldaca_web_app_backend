@@ -40,7 +40,7 @@ from ....settings import settings
 from ..utils import update_workspace
 from . import quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
-from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_derived_column_name
+from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_tokenization_column_name
 
 logger = logging.getLogger(__name__)
 
@@ -548,7 +548,7 @@ async def quotation_detach_options(
     # Temporary dynamic token columns have no user-facing role in detach
     # payloads, so filter them if a caller supplied a hydrated plan.
     available_schema_columns = [
-        c for c in node_data.collect_schema().names() if not is_derived_column_name(c)
+        c for c in node_data.collect_schema().names() if not is_tokenization_column_name(c)
     ]
     mandatory_set = set(CORE_QUOTATION_COLUMNS)
     # `QUOTE_extraction` is a generated column (raw source-document text)
@@ -701,7 +701,7 @@ async def materialize_quotation(
     extra_metadata_columns = [
         col
         for col in source_columns
-        if col != request.column and not is_derived_column_name(col)
+        if col != request.column and not is_tokenization_column_name(col)
     ]
 
     node_corpus, extra_columns_data, extra_columns_dtypes = (

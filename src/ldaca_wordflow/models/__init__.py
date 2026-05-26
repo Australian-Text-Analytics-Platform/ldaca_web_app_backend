@@ -520,14 +520,14 @@ class ConcordanceAnalysisRequest(BaseModel):
     combined: bool = False  # if true, backend builds a combined view across nodes
     # "regex" (default) uses the polars-text concordance engine on raw text,
     # preserving partial-word patterns like ``equ\w*`` for English users.
-    # "tokens" looks up a derived tokens column (decision 7) and walks it for
+    # "tokens" looks up a tokenization column (decision 7) and walks it for
     # exact-token matches with N-actual-token left/right context — the
     # word-aware semantics CJK users want once Tokenise has been run.
-    # Falls back to regex behaviour if no derived tokens column exists.
+    # Falls back to regex behaviour if no tokenization column exists.
     search_mode: Literal["regex", "tokens"] = "regex"
     # Phase 4.4 language hint: lets the frontend tell the backend what
     # language to assume (drives the resolver chain in core/i18n.py).
-    # ``None`` defers to the active node's derived metadata then ``"en"``.
+    # ``None`` defers to the active node's tokenization metadata then ``"en"``.
     language: Optional[str] = None
     # Sorting parameters
     sort_by: Optional[str] = None  # column name to sort by
@@ -653,7 +653,7 @@ class QuotationRequest(BaseModel):
     # Phase 3.6: quotation is English-only. The route resolves an effective
     # language and rejects non-EN with a typed UnsupportedLanguageError so
     # users see a clear "English-only" message rather than garbage output.
-    # ``None`` falls back to the node's derived metadata (if it's been
+    # ``None`` falls back to the node's tokenization metadata (if it's been
     # tokenised) and then ``"en"``.
     language: Optional[str] = None
 
@@ -1103,7 +1103,7 @@ class AiAnnotationDetachRequest(BaseModel):
     seed: Optional[int] = 42
     batch_size: int = Field(default=100, ge=1)
     # Phase 3.7: optional language hint surfaced to the LLM prompt; falls
-    # back to the node's derived metadata then to ``"en"``.
+    # back to the node's tokenization metadata then to ``"en"``.
     language: Optional[str] = None
 
 

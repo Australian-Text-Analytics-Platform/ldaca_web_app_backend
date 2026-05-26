@@ -1,4 +1,4 @@
-"""``tokenise_column`` registers cache-backed derived-token metadata."""
+"""``tokenise_column`` registers cache-backed tokenization metadata."""
 
 from __future__ import annotations
 
@@ -7,11 +7,10 @@ from typing import cast
 import polars as pl
 import pytest
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
-    TOKENS_FORM,
-    derived_column_name,
+    tokenization_column_name,
 )
-from ldaca_wordflow.core.derived_columns import tokenise_column
-from ldaca_wordflow.core.tokens_cache import hydrate_derived_tokens_lazyframe
+from ldaca_wordflow.core.tokenization import tokenise_column
+from ldaca_wordflow.core.tokens_cache import hydrate_tokenization_lazyframe
 
 from docworkspace import Node
 
@@ -28,7 +27,7 @@ def _make_node(name: str = "root") -> Node:
 
 def test_tokenise_registers_metadata_without_mutating_node_data() -> None:
     node = _make_node()
-    expected_name = derived_column_name(TOKENS_FORM, "text", "bert-base-uncased")
+    expected_name = tokenization_column_name("text", "bert-base-uncased")
 
     result_name = tokenise_column(
         node,
@@ -40,10 +39,10 @@ def test_tokenise_registers_metadata_without_mutating_node_data() -> None:
 
     assert result_name == expected_name
     assert expected_name not in node.data.collect_schema().names()
-    assert expected_name in node.derived
-    meta = node.derived[expected_name]
+    assert "text" in node.tokenization
+    meta = node.tokenization["text"]
     assert meta["source_column"] == "text"
-    assert meta["form"] == TOKENS_FORM
+    assert meta["column_name"] == expected_name
     assert meta["model"] == "bert-base-uncased"
     assert meta["language"] == "en"
     assert meta["cache_backend"] == "duckdb"
@@ -65,7 +64,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         language="en",
         user_id="test_user",
     )
-    derived_count_first = len(node.derived)
+    tokenization_count_first = len(node.tokenization)
 
     second = tokenise_column(
         node,
@@ -74,12 +73,12 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         language="en",
         user_id="test_user",
     )
-    derived_count_second = len(node.derived)
+    tokenization_count_second = len(node.tokenization)
 
     assert first == second
-    assert derived_count_first == 1
-    assert derived_count_second == 1
-    assert len(node.derived) == 1
+    assert tokenization_count_first == 1
+    assert tokenization_count_second == 1
+    assert len(node.tokenization) == 1
 
 
 def test_tokenise_with_different_model_replaces_node_token_spec() -> None:
@@ -101,22 +100,15 @@ def test_tokenise_with_different_model_replaces_node_token_spec() -> None:
     )
 
     assert bert_name != multi_name
-    assert bert_name not in node.derived
-    assert multi_name in node.derived
-    assert len(node.derived) == 1
+    assert len(node.tokenization) == 1
+    assert node.find_tokenization_column("text", model="bert-base-uncased") is None
     assert (
-        node.find_derived_column("text", form=TOKENS_FORM, model="bert-base-uncased")
-        is None
-    )
-    assert (
-        node.find_derived_column(
-            "text", form=TOKENS_FORM, model="bert-base-multilingual-cased"
-        )
+        node.find_tokenization_column("text", model="bert-base-multilingual-cased")
         == multi_name
     )
 
 
-def test_tokenise_with_different_source_replaces_node_token_spec() -> None:
+def test_tokenise_with_different_source_preserves_existing_token_specs() -> None:
     node = _make_node()
 
     text_name = tokenise_column(
@@ -135,11 +127,9 @@ def test_tokenise_with_different_source_replaces_node_token_spec() -> None:
     )
 
     assert text_name != value_name
-    assert text_name not in node.derived
-    assert value_name in node.derived
-    assert len(node.derived) == 1
-    assert node.find_derived_column("text", form=TOKENS_FORM) is None
-    assert node.find_derived_column("value", form=TOKENS_FORM) == value_name
+    assert len(node.tokenization) == 2
+    assert node.find_tokenization_column("text") == text_name
+    assert node.find_tokenization_column("value") == value_name
 
 
 def test_tokenise_does_not_touch_undo_stack() -> None:
@@ -170,28 +160,28 @@ def test_tokenise_rejects_missing_source_column() -> None:
 
 
 def test_tokenise_emits_canonical_struct_dtype() -> None:
-    """Hydrated derived tokens use the canonical struct dtype."""
+    """Hydrated tokenization columns use the canonical struct dtype."""
     from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
         tokens_struct_dtype,
     )
 
     node = _make_node()
-    derived_name = tokenise_column(
+    tokenization_name = tokenise_column(
         node,
         source_column="text",
         model="bert-base-uncased",
         language="en",
         user_id="test_user",
     )
-    hydrated = hydrate_derived_tokens_lazyframe(
+    hydrated = hydrate_tokenization_lazyframe(
         node.data,
         node=node,
         source_column="text",
-        derived_name=derived_name,
+        tokenization_column=tokenization_name,
         user_id="test_user",
     )
     schema = hydrated.collect_schema()
-    assert schema[derived_name] == tokens_struct_dtype()
+    assert schema[tokenization_name] == tokens_struct_dtype()
 
 
 def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
@@ -200,7 +190,7 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
     df = pl.DataFrame({"text": ["今天天气很好"]}).lazy()
     node = Node(data=df, name="zh_root")
 
-    derived_name = tokenise_column(
+    tokenization_name = tokenise_column(
         node,
         source_column="text",
         model="jieba",
@@ -208,15 +198,15 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
         user_id="test_user",
     )
 
-    hydrated = hydrate_derived_tokens_lazyframe(
+    hydrated = hydrate_tokenization_lazyframe(
         node.data,
         node=node,
         source_column="text",
-        derived_name=derived_name,
+        tokenization_column=tokenization_name,
         user_id="test_user",
     )
     collected = cast(pl.DataFrame, hydrated.collect())
-    tokens_lists = collected[derived_name].to_list()
+    tokens_lists = collected[tokenization_name].to_list()
     assert len(tokens_lists) == 1
     tokens = [entry["token"] for entry in tokens_lists[0]]
     # Word-level segmentation produces multi-character tokens, not pure chars.

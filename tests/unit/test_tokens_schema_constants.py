@@ -1,11 +1,11 @@
-"""Phase 2.1 v2: derived-column naming helper + tokens schema contract.
+"""Tokenization column naming helper + tokens schema contract.
 
 Asserts:
 - dynamic token column names round-trip,
 - ``tokens_struct_dtype()`` lines up with the schema polars-text's
     ``tokenize`` actually emits, and
-- ``is_derived_tokens_column`` reads from ``Node.derived`` (the metadata
-  index per decision 7), not from a fixed magic column name.
+- ``is_tokenization_column`` reads from ``Node.tokenization``, not from a
+    fixed magic column name.
 
 These are the contracts every Phase 2 consumer (concordance tokens-mode,
 token-frequency tokens-path, future POS) relies on, so any drift between
@@ -19,12 +19,11 @@ import polars as pl
 import polars_text as pt
 from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
     TOKENS_END_FIELD,
-    TOKENS_FORM,
     TOKENS_START_FIELD,
     TOKENS_TOKEN_FIELD,
-    derived_column_name,
-    is_derived_tokens_column,
-    parse_derived_column,
+    is_tokenization_column,
+    parse_tokenization_column,
+    tokenization_column_name,
     tokens_struct_dtype,
     tokens_struct_projection,
 )
@@ -34,29 +33,27 @@ from docworkspace import Node
 # Test fixture: canonical (source, model) we use throughout this module.
 _TEXT_COLUMN = "text"
 _BERT_MODEL = "bert-base-uncased"
-_TOKENS_NAME = f"{_TEXT_COLUMN}.tokenization.{_BERT_MODEL}"
+_TOKENS_NAME = f"tokenization.{_TEXT_COLUMN}.{_BERT_MODEL}"
 
 
-def test_derived_column_name_builds_canonical_label() -> None:
-    assert derived_column_name(TOKENS_FORM, _TEXT_COLUMN, _BERT_MODEL) == _TOKENS_NAME
+def test_tokenization_column_name_builds_canonical_label() -> None:
+    assert tokenization_column_name(_TEXT_COLUMN, _BERT_MODEL) == _TOKENS_NAME
 
 
-def test_parse_derived_column_round_trips() -> None:
-    assert parse_derived_column(_TOKENS_NAME) == (
-        TOKENS_FORM,
+def test_parse_tokenization_column_round_trips() -> None:
+    assert parse_tokenization_column(_TOKENS_NAME) == (
         _TEXT_COLUMN,
         _BERT_MODEL,
     )
 
 
-def test_parse_derived_column_rejects_non_derived_names() -> None:
-    assert parse_derived_column("plain_column") is None
+def test_parse_tokenization_column_rejects_non_tokenization_names() -> None:
+    assert parse_tokenization_column("plain_column") is None
     # Missing prefix.
-    assert parse_derived_column("tokens.text.jieba") is None
+    assert parse_tokenization_column("tokens.text.jieba") is None
     # Wrong number of parts (source or model containing dots is ambiguous —
-    # by design we treat it as unparseable; consult Node.derived instead).
-    assert parse_derived_column("__derived__.tokens.foo") is None
-    assert parse_derived_column("text.tokenization.foo.bar") is None
+    # by design we treat it as unparseable; consult Node.tokenization instead).
+    assert parse_tokenization_column("tokenization.text.foo.bar") is None
 
 
 def test_struct_field_names_match_rust_output() -> None:
@@ -74,56 +71,46 @@ def test_tokens_struct_dtype_matches_polars_text_output() -> None:
     )
 
 
-def test_is_derived_tokens_column_reads_from_node_metadata() -> None:
-    # Build a node with a derived tokens column registered in Node.derived.
+def test_is_tokenization_column_reads_from_node_metadata() -> None:
+    # Build a node with a token column registered in Node.tokenization.
     df = pl.DataFrame({"text": ["hi"]})
     with_tokens = df.lazy().select(
         pl.col("text"), pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)
     )
     node = Node(data=with_tokens, name="tokens_root")
-    node.register_derived_column(
-        _TOKENS_NAME,
+    node.register_tokenization(
+        _TEXT_COLUMN,
         {  # type: ignore[arg-type]
             "source_column": _TEXT_COLUMN,
-            "form": TOKENS_FORM,
+            "column_name": _TOKENS_NAME,
             "model": _BERT_MODEL,
             "language": "en",
             "generated_at": "2026-05-12T00:00:00+00:00",
         },
     )
-    assert is_derived_tokens_column(node, _TOKENS_NAME)
+    assert is_tokenization_column(node, _TOKENS_NAME)
 
 
-def test_is_derived_tokens_column_rejects_unregistered_column() -> None:
+def test_is_tokenization_column_rejects_unregistered_column() -> None:
     df = pl.DataFrame({"text": ["hi"]})
     out = df.lazy().select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME))
     node = Node(data=out, name="unregistered")
-    # Column exists in schema but isn't in Node.derived → not a tokens column.
-    assert not is_derived_tokens_column(node, _TOKENS_NAME)
+    # Column exists in schema but isn't in Node.tokenization → not a tokens column.
+    assert not is_tokenization_column(node, _TOKENS_NAME)
 
 
-def test_is_derived_tokens_column_rejects_wrong_form() -> None:
+def test_is_tokenization_column_rejects_non_token_column() -> None:
     df = pl.DataFrame({"text": ["hi"]}).lazy()
     pos_name = "text.pos.spacy-en"
     node = Node(data=df, name="pos_root")
-    node.register_derived_column(
-        pos_name,
-        {  # type: ignore[arg-type]
-            "source_column": _TEXT_COLUMN,
-            "form": "pos",
-            "model": "spacy-en",
-            "language": "en",
-            "generated_at": "2026-05-12T00:00:00+00:00",
-        },
-    )
-    assert not is_derived_tokens_column(node, pos_name)
+    assert not is_tokenization_column(node, pos_name)
 
 
 def test_tokens_struct_projection_unpacks_fields() -> None:
     df = pl.DataFrame({"text": ["hello world"]})
-    tokens_df = df.select(
-        pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)
-    ).explode(_TOKENS_NAME)
+    tokens_df = df.select(pt.tokenize(pl.col("text")).alias(_TOKENS_NAME)).explode(
+        _TOKENS_NAME
+    )
     unpacked = tokens_df.select(*tokens_struct_projection(_TOKENS_NAME))
     assert set(unpacked.columns) == {
         TOKENS_TOKEN_FIELD,
