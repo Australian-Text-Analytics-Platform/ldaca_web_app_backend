@@ -991,11 +991,10 @@ class TestWorkspaceGraphEnrichment:
         node.register_tokenization(  # type: ignore[arg-type]
             "document",
             {
-                "source_column": "document",
                 "column_name": tokenization_name,
                 "model": "bert-base-uncased",
                 "language": "en",
-                "generated_at": "2026-05-12T00:00:00+00:00",
+                "params": {"lowercase": True, "remove_punct": True},
             },
         )
 
@@ -1013,7 +1012,6 @@ class TestWorkspaceGraphEnrichment:
         tokenization = node_entry["tokenization"]
         assert len(tokenization) == 1
         only_meta = tokenization["document"]
-        assert only_meta["source_column"] == "document"
         assert only_meta["column_name"] == tokenization_name
         assert only_meta["model"] == "bert-base-uncased"
 

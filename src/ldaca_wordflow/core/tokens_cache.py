@@ -1,6 +1,6 @@
 """Wordflow integration for the polars-text token cache.
 
-Nodes store per-column versioned tokenisation specs in ``Node.tokenization``. Analyses
+Nodes store per-column tokenisation specs in ``Node.tokenization``. Analyses
 attach those specs to a LazyFrame with ``hydrate_tokenization_lazyframe``.
 The generic DuckDB cache mechanics live in ``pl.col(...).text.tokenize(...,
 cache=...)``; this module owns only Wordflow's per-user cache path and node
@@ -26,23 +26,18 @@ def tokens_cache_path(user_id: str) -> Path:
 
 
 def hydrate_tokenization_lazyframe(
-    base_lf: pl.LazyFrame,
     *,
     node: Any,
     source_column: str,
-    tokenization_column: str,
     user_id: str,
 ) -> pl.LazyFrame:
     """Lazily attach a tokenization column registered on ``node``.
 
-    Short-circuits if the column is already physically present. Otherwise
-    reads the model and tokenisation params from
-    ``node.tokenization[source_column]``
-    and attaches a cache-backed elementwise expression keyed on ``user_id``.
+    Short-circuits if the column is already physically present. Otherwise reads
+    the model, token column, and tokenisation params from
+    ``node.tokenization[source_column]`` and attaches a cache-backed elementwise
+    expression keyed on ``user_id``.
     """
-    if tokenization_column in base_lf.collect_schema().names():
-        return base_lf
-
     tokenization_registry = getattr(node, "tokenization", {})
     tokenization_meta = (
         tokenization_registry.get(source_column)
@@ -50,16 +45,18 @@ def hydrate_tokenization_lazyframe(
         else None
     )
     if not isinstance(tokenization_meta, dict):
-        return base_lf
-    if tokenization_meta.get("column_name") != tokenization_column:
-        return base_lf
+        return node.data
 
+    tokenization_column = tokenization_meta.get("column_name")
     model = tokenization_meta.get("model")
     params = tokenization_meta.get("params") or {}
-    if not isinstance(model, str):
-        return base_lf
+    if not isinstance(tokenization_column, str) or not isinstance(model, str):
+        return node.data
 
-    return base_lf.with_columns(
+    if tokenization_column in node.data.collect_schema().names():
+        return node.data
+
+    return node.data.with_columns(
         cast(Any, pl.col(source_column))
         .text.tokenize(
             lowercase=bool(params.get("lowercase", True)),

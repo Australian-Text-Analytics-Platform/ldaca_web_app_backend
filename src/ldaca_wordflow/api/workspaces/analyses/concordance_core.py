@@ -486,6 +486,16 @@ def compute_node_concordance_page(
     node_request: dict[str, Any] = {**request, "node_language": src.get("language")}
 
     if search_mode == "tokens" and tokenization_column:
+        token_node = src.get("node")
+        source_user_id = src.get("user_id")
+        if token_node is not None and source_user_id:
+            from ....core.tokens_cache import hydrate_tokenization_lazyframe
+
+            base_lf = hydrate_tokenization_lazyframe(
+                node=token_node,
+                source_column=column,
+                user_id=source_user_id,
+            )
         effective_page_size = (
             int(page_size)
             if page_size is not None and int(page_size) > 0
@@ -501,8 +511,6 @@ def compute_node_concordance_page(
             sort_by=sort_by,
             descending=descending,
             node_label=label,
-            token_node=src.get("node"),
-            user_id=src.get("user_id"),
         )
     return compute_concordance_page(
         base_lf,
@@ -544,9 +552,6 @@ def _count_tokens_concordance_hits(
     tokenization_column: str,
     request: dict[str, Any],
     size: int,
-    *,
-    token_node: Any | None = None,
-    user_id: str | None = None,
 ) -> int:
     """Tokens-mode equivalent of :func:`_count_concordance_hits`.
 
@@ -562,20 +567,6 @@ def _count_tokens_concordance_hits(
     case_sensitive = bool(request.get("case_sensitive", False))
     try:
         slice_lf = base_lf.slice(0, size)
-        if (
-            tokenization_column not in slice_lf.collect_schema().names()
-            and token_node is not None
-            and user_id
-        ):
-            from ....core.tokens_cache import hydrate_tokenization_lazyframe
-
-            slice_lf = hydrate_tokenization_lazyframe(
-                slice_lf,
-                node=token_node,
-                source_column=column,
-                tokenization_column=tokenization_column,
-                user_id=user_id,
-            )
         slice_df = cast(pl.DataFrame, slice_lf.select(tokenization_column).collect())
     except Exception as exc:
         logger.debug("Tokens-mode hit probe failed at size=%d: %s", size, exc)
@@ -597,8 +588,6 @@ def _resolve_page_size(
     requested: Optional[int],
     *,
     tokenization_column: Optional[str] = None,
-    token_node: Any | None = None,
-    user_id: str | None = None,
 ) -> int:
     """Return an effective page size, estimating when the client omitted one.
 
@@ -619,8 +608,6 @@ def _resolve_page_size(
             column,
             tokenization_column,
             request,
-            token_node=token_node,
-            user_id=user_id,
         )
     else:
         probe = partial(_count_concordance_hits, base_lf, column, request)
@@ -1015,8 +1002,6 @@ def build_concordance_response(
                     request,
                     None,
                     tokenization_column=src.get("tokenization_column"),
-                    token_node=src.get("node"),
-                    user_id=src.get("user_id"),
                 )
             )
         if estimates:
@@ -1033,8 +1018,6 @@ def build_concordance_response(
                     request,
                     None,
                     tokenization_column=left_src.get("tokenization_column"),
-                    token_node=left_src.get("node"),
-                    user_id=left_src.get("user_id"),
                 )
             )
         if right_src and node_ids[1] not in materialized_paths:
@@ -1045,8 +1028,6 @@ def build_concordance_response(
                     request,
                     None,
                     tokenization_column=right_src.get("tokenization_column"),
-                    token_node=right_src.get("node"),
-                    user_id=right_src.get("user_id"),
                 )
             )
         if estimates_combined:

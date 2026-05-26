@@ -34,20 +34,19 @@ def test_tokenise_registers_metadata_without_mutating_node_data() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
 
     assert result_name == expected_name
     assert expected_name not in node.data.collect_schema().names()
     assert "text" in node.tokenization
     meta = node.tokenization["text"]
-    assert meta["source_column"] == "text"
+    assert "source_column" not in meta
     assert meta["column_name"] == expected_name
     assert meta["model"] == "bert-base-uncased"
     assert meta["language"] == "en"
-    assert meta["cache_backend"] == "duckdb"
+    assert "cache_backend" not in meta
     assert meta["params"] == {"lowercase": True, "remove_punct": True}
-    assert meta["generated_at"]  # ISO timestamp string
+    assert "generated_at" not in meta
 
     schema_names = node.data.collect_schema().names()
     assert "text" in schema_names
@@ -62,7 +61,6 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     tokenization_count_first = len(node.tokenization)
 
@@ -71,7 +69,6 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     tokenization_count_second = len(node.tokenization)
 
@@ -89,14 +86,12 @@ def test_tokenise_with_different_model_replaces_node_token_spec() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     multi_name = tokenise_column(
         node,
         source_column="text",
         model="bert-base-multilingual-cased",
         language="en",
-        user_id="test_user",
     )
 
     assert bert_name != multi_name
@@ -116,14 +111,12 @@ def test_tokenise_with_different_source_preserves_existing_token_specs() -> None
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     value_name = tokenise_column(
         node,
         source_column="value",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
 
     assert text_name != value_name
@@ -141,7 +134,6 @@ def test_tokenise_does_not_touch_undo_stack() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     assert not node.can_undo
     assert set(node.data.collect_schema().names()) == schema_before
@@ -155,7 +147,6 @@ def test_tokenise_rejects_missing_source_column() -> None:
             source_column="nonexistent",
             model="bert-base-uncased",
             language="en",
-            user_id="test_user",
         )
 
 
@@ -171,13 +162,10 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="test_user",
     )
     hydrated = hydrate_tokenization_lazyframe(
-        node.data,
         node=node,
         source_column="text",
-        tokenization_column=tokenization_name,
         user_id="test_user",
     )
     schema = hydrated.collect_schema()
@@ -195,14 +183,11 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
         source_column="text",
         model="jieba",
         language="zh",
-        user_id="test_user",
     )
 
     hydrated = hydrate_tokenization_lazyframe(
-        node.data,
         node=node,
         source_column="text",
-        tokenization_column=tokenization_name,
         user_id="test_user",
     )
     collected = cast(pl.DataFrame, hydrated.collect())

@@ -190,10 +190,8 @@ def _load_corpora_from_workspace(
             continue
 
         node_data = hydrate_tokenization_lazyframe(
-            node.data,
             node=node,
             source_column=text_column,
-            tokenization_column=tokens_column,
             user_id=user_id,
         )
 

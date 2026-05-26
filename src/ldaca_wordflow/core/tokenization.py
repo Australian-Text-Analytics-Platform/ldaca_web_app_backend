@@ -8,7 +8,6 @@ LazyFrame when they need them; the hydrated frame is never persisted back to
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import cast
 
 from docworkspace import Node, TokenizationMeta
@@ -36,8 +35,6 @@ def tokenise_column(
     source_column: str,
     model: str,
     language: str | None,
-    user_id: str,
-    workspace_id: str | None = None,
 ) -> str:
     """Register a versioned tokenisation spec on ``node``.
 
@@ -61,12 +58,9 @@ def tokenise_column(
     tokenization_meta = cast(
         TokenizationMeta,
         {
-            "source_column": source_column,
             "column_name": tokenization_name,
             "model": model,
             "language": language,
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "cache_backend": "duckdb",
             "params": params,
         },
     )

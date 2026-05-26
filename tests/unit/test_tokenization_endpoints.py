@@ -96,7 +96,7 @@ async def test_post_tokens_creates_new_column(fake_workspace_manager):
     assert result.column == "tokenization.text.bert-base-uncased"
     assert node.tokenization["text"]["column_name"] == result.column
     assert result.column not in node.data.collect_schema().names()
-    assert node.tokenization["text"]["cache_backend"] == "duckdb"
+    assert "cache_backend" not in node.tokenization["text"]
 
 
 @pytest.mark.asyncio

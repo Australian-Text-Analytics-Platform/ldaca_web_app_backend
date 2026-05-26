@@ -178,7 +178,6 @@ def test_token_mode_hydrates_only_requested_page_slice(
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="lazy-user",
     )
 
     page = compute_node_concordance_page(

@@ -27,11 +27,10 @@ from docworkspace import Node, TokenizationMeta
 
 TOKENIZATION_COLUMN = "tokenization.text.lindera-ja-ipadic"
 TOKENIZATION_META: TokenizationMeta = {
-    "source_column": "text",
     "column_name": TOKENIZATION_COLUMN,
     "model": "lindera-ja-ipadic",
     "language": "ja",
-    "generated_at": "2026-05-14T00:00:00+00:00",
+    "params": {"lowercase": True, "remove_punct": True},
 }
 
 

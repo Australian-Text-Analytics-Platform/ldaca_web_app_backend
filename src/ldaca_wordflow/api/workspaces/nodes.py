@@ -334,11 +334,7 @@ def _propagated_tokenization(
             if not isinstance(source_column, str) or not isinstance(meta, dict):
                 continue
             if result_columns is not None:
-                meta_source = meta.get("source_column")
-                if (
-                    source_column not in result_columns
-                    and meta_source not in result_columns
-                ):
+                if source_column not in result_columns:
                     continue
             existing = merged.get(source_column)
             if existing is not None and existing != meta:

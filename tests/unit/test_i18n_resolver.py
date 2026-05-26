@@ -29,11 +29,10 @@ def _node_with_tokenization(language: str) -> Node:
     node.register_tokenization(
         "text",
         {  # type: ignore[arg-type]
-            "source_column": "text",
             "column_name": "tokenization.text.jieba",
             "model": "jieba",
             "language": language,
-            "generated_at": "2026-05-12T00:00:00+00:00",
+            "params": {"lowercase": True, "remove_punct": True},
         },
     )
     return node

@@ -11,6 +11,9 @@ from typing import cast
 
 import polars as pl
 import pytest
+from ldaca_wordflow.api.workspaces.analyses.generated_columns import (
+    tokenization_column_name,
+)
 from ldaca_wordflow.api.workspaces.schema_filter import (
     frontend_node_info,
     project_visible,
@@ -24,11 +27,10 @@ _TOKENS_NAME = "tokenization.text.jieba"
 
 def _meta(source: str = "text", model: str = "jieba") -> TokenizationMeta:
     return {
-        "source_column": source,
-        "column_name": _TOKENS_NAME,
+        "column_name": tokenization_column_name(source, model),
         "model": model,
         "language": "zh",
-        "generated_at": "2026-05-12T00:00:00+00:00",
+        "params": {"lowercase": True, "remove_punct": True},
     }
 
 

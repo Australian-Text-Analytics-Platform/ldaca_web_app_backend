@@ -83,11 +83,10 @@ def test_is_tokenization_column_reads_from_node_metadata() -> None:
     node.register_tokenization(
         _TEXT_COLUMN,
         {  # type: ignore[arg-type]
-            "source_column": _TEXT_COLUMN,
             "column_name": _TOKENS_NAME,
             "model": _BERT_MODEL,
             "language": "en",
-            "generated_at": "2026-05-12T00:00:00+00:00",
+            "params": {"lowercase": True, "remove_punct": True},
         },
     )
     assert is_tokenization_column(node, _TOKENS_NAME)

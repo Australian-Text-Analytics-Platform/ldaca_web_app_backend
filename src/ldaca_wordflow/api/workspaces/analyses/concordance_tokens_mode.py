@@ -157,8 +157,6 @@ def compute_tokens_concordance_page(
     sort_by: Optional[str],
     descending: bool,
     node_label: Optional[str] = None,
-    token_node: Any | None = None,
-    user_id: str | None = None,
 ) -> dict[str, Any]:
     """Page payload for the tokens-mode concordance path.
 
@@ -189,20 +187,6 @@ def compute_tokens_concordance_page(
 
     start = max(page - 1, 0) * page_size
     page_lf = base_lf.slice(start, page_size)
-    if (
-        tokenization_column not in page_lf.collect_schema().names()
-        and token_node is not None
-        and user_id
-    ):
-        from ....core.tokens_cache import hydrate_tokenization_lazyframe
-
-        page_lf = hydrate_tokenization_lazyframe(
-            page_lf,
-            node=token_node,
-            source_column=column,
-            tokenization_column=tokenization_column,
-            user_id=user_id,
-        )
     page_df = cast(pl.DataFrame, page_lf.collect())
 
     metadata_columns = [c for c in page_df.columns if c != tokenization_column]

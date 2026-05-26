@@ -64,16 +64,15 @@ def test_tokenise_column_registers_metadata_without_mutating_node_data() -> None
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="ignored",
-        workspace_id="workspace",
     )
 
     assert tokenization_name == tokenization_column_name("text", "bert-base-uncased")
     assert node.tokenization["text"]["column_name"] == tokenization_name
     assert tokenization_name not in node.data.collect_schema().names()
     tokenization_meta = cast(dict[str, Any], node.tokenization["text"])
-    assert tokenization_meta["cache_backend"] == "duckdb"
-    assert "cache_schema_version" not in tokenization_meta
+    assert "source_column" not in tokenization_meta
+    assert "cache_backend" not in tokenization_meta
+    assert "generated_at" not in tokenization_meta
 
 
 def test_hydrate_tokenization_adds_tokens_column() -> None:
@@ -86,14 +85,11 @@ def test_hydrate_tokenization_adds_tokens_column() -> None:
         source_column="text",
         model="bert-base-uncased",
         language="en",
-        user_id="ignored",
     )
 
     hydrated = tc.hydrate_tokenization_lazyframe(
-        node.data,
         node=node,
         source_column="text",
-        tokenization_column=tokenization_name,
         user_id=TEST_USER,
     )
     hydrated_df = cast(pl.DataFrame, hydrated.collect())

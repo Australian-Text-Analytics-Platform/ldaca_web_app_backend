@@ -484,10 +484,8 @@ async def calculate_token_frequencies(
         tokenization_col = node.find_tokenization_column(column_name)
         if tokenization_col is not None:
             node_data = hydrate_tokenization_lazyframe(
-                node_data,
                 node=node,
                 source_column=column_name,
-                tokenization_column=tokenization_col,
                 user_id=user_id,
             )
             # Phase 5 perf fix: spill the explode-flattened tokens to a

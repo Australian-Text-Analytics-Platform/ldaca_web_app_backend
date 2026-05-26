@@ -134,11 +134,10 @@ async def test_concordance_detach_options_ignore_token_metadata(
     node.register_tokenization(  # type: ignore[arg-type]
         "text",
         {
-            "source_column": "text",
             "column_name": tokenization_name,
             "model": "bert-base-uncased",
             "language": "en",
-            "generated_at": "2026-05-12T00:00:00+00:00",
+            "params": {"lowercase": True, "remove_punct": True},
         },
     )
 

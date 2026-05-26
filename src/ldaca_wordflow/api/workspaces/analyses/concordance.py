@@ -676,10 +676,8 @@ async def materialize_concordance(
                 ),
             )
         node_data = hydrate_tokenization_lazyframe(
-            node_data,
             node=node,
             source_column=request.column,
-            tokenization_column=tokenization_column,
             user_id=user_id,
         )
 

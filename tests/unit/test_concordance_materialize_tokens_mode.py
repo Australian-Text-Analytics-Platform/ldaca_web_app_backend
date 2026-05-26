@@ -227,22 +227,21 @@ async def test_tokens_materialize_route_selects_tokenization_column_once(
     node.register_tokenization(
         "text",
         {  # type: ignore[arg-type]
-            "source_column": "text",
             "column_name": tokenization_column,
             "model": "bert-base-uncased",
             "language": "en",
-            "generated_at": "2026-05-26T00:00:00+00:00",
+            "params": {"lowercase": True, "remove_punct": True},
         },
     )
 
     def hydrate_probe(
-        lf: pl.LazyFrame,
         *,
         node: Node,
         source_column: str,
-        tokenization_column: str,
         user_id: str,
     ) -> pl.LazyFrame:
+        tokenization_column = node.find_tokenization_column(source_column)
+        assert tokenization_column is not None
         tokens = [
             [
                 {"token": "hello", "start": 0, "end": 5},
@@ -253,7 +252,7 @@ async def test_tokens_materialize_route_selects_tokenization_column_once(
                 {"token": "again", "start": 6, "end": 11},
             ],
         ]
-        return lf.with_columns(pl.Series(tokenization_column, tokens))
+        return node.data.with_columns(pl.Series(tokenization_column, tokens))
 
     captured_task_args: dict[str, Any] = {}
 
