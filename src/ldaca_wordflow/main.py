@@ -34,6 +34,30 @@ from .settings import reload_settings, settings
 
 logger = logging.getLogger(__name__)
 
+# Saved-workspace serialization format. Bump this whenever the docworkspace /
+# polars on-disk format changes so the desktop shell can warn before a
+# cross-format up/downgrade (workspaces saved by a newer version may not open in
+# an older one). Surfaced via /health for the in-app upgrade flow.
+WORKSPACE_FORMAT = 1
+
+
+def get_app_version() -> str:
+    """Return the installed ldaca-wordflow package version.
+
+    Used by:
+    - /health and /status, and the desktop shell's update UI
+
+    Why:
+    - The FastAPI `version` field below is the API contract version (3.x), not
+      the release version users see; this reports the actual installed release.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("ldaca-wordflow")
+    except PackageNotFoundError:
+        return "unknown"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -286,6 +310,8 @@ async def health_check():
     return {
         "status": "healthy",
         "version": "3.0.0",
+        "app_version": get_app_version(),
+        "workspace_format": WORKSPACE_FORMAT,
         "system": "Enhanced LDaCA Web App API",
         "database": "connected",
         "features": {
@@ -296,6 +322,96 @@ async def health_check():
             "data_folder": str(settings.get_data_root()),
             "debug_mode": settings.debug,
         },
+    }
+
+
+# Cache the latest-on-PyPI lookup so the version endpoint doesn't hit the
+# network on every poll. Refreshed at most once per TTL.
+_LATEST_PYPI_VERSION: dict[str, Any] = {"value": None, "checked_at": 0.0}
+_PYPI_CACHE_TTL_SECONDS = 6 * 60 * 60
+
+
+def _fetch_latest_pypi_version() -> str | None:
+    """Blocking fetch of the latest stable ldaca-wordflow version from PyPI.
+
+    Returns None on any failure (offline, blocked, parse error) so callers
+    degrade to "no update info" rather than erroring.
+    """
+    import json
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/ldaca-wordflow/json",
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310 - fixed https URL
+            data = json.load(resp)
+        # `info.version` is PyPI's latest STABLE release (excludes pre-releases).
+        return data.get("info", {}).get("version") or None
+    except Exception:  # noqa: BLE001 - network/parse errors are all non-fatal
+        return None
+
+
+async def _get_latest_pypi_version() -> str | None:
+    """Cached, non-blocking accessor for the latest PyPI version."""
+    import time
+
+    now = time.time()
+    cached = _LATEST_PYPI_VERSION
+    if (
+        cached["value"] is not None
+        and (now - cached["checked_at"]) < _PYPI_CACHE_TTL_SECONDS
+    ):
+        return cached["value"]
+    latest = await asyncio.to_thread(_fetch_latest_pypi_version)
+    if latest is not None:
+        cached["value"] = latest
+        cached["checked_at"] = now
+    return latest
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    """Parse a dotted version into a numeric tuple for ordering (e.g. 0.5.10
+    sorts after 0.5.4). Non-numeric suffixes on a segment are ignored."""
+    parts: list[int] = []
+    for chunk in value.split("."):
+        digits = ""
+        for ch in chunk:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+@app.get("/api/version")
+async def version_info():
+    """Report the running version and the latest available release.
+
+    Used by:
+    - the in-app "update available" banner on every platform (desktop, uvx,
+      and web/Binder/Nectar deployments)
+
+    Why:
+    - Any deployment can then nudge users that a newer Wordflow release exists.
+      The banner is dismissible and purely informational; on a hosted server the
+      user can request an update via the feedback form. Degrades to
+      update_available=false when PyPI is unreachable.
+    """
+    current = get_app_version()
+    latest = await _get_latest_pypi_version()
+    update_available = False
+    if latest and current and current != "unknown":
+        try:
+            update_available = _version_tuple(latest) > _version_tuple(current)
+        except Exception:  # noqa: BLE001 - never let version math break the UI
+            update_available = False
+    return {
+        "current": current,
+        "latest": latest,
+        "update_available": update_available,
     }
 
 
