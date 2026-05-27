@@ -37,7 +37,9 @@ from ...models import (
     ConcatRequest,
     FilterPreviewResponse,
     FilterRequest,
+    NodeActionResponse,
     NodeDataResponse,
+    NodeOperationResponse,
     NodeQueryPlanResponse,
     NodeShapeResponse,
     PaginationInfo,
@@ -887,7 +889,7 @@ async def describe_column(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.delete("/nodes/{node_id}")
+@router.delete("/nodes/{node_id}", response_model=NodeActionResponse)
 async def delete_node(node_id: str, current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
@@ -900,7 +902,7 @@ async def delete_node(node_id: str, current_user: dict = Depends(get_current_use
     return {"state": "successful", "message": "Node deleted successfully"}
 
 
-@router.put("/nodes/{node_id}/name")
+@router.put("/nodes/{node_id}/name", response_model=WorkspaceNodeInfo)
 async def update_node_name(
     node_id: str,
     new_name: str,
@@ -965,7 +967,7 @@ async def clone_node(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/nodes/{node_id}/filter")
+@router.post("/nodes/{node_id}/filter", response_model=NodeOperationResponse)
 async def filter_node(
     node_id: str,
     request: FilterRequest,
@@ -1062,7 +1064,7 @@ async def filter_preview(
     )
 
 
-@router.post("/nodes/{node_id}/slice")
+@router.post("/nodes/{node_id}/slice", response_model=NodeOperationResponse)
 async def slice_node(
     node_id: str,
     request: SliceRequest,
@@ -1152,7 +1154,7 @@ async def slice_preview(
     )
 
 
-@router.post("/nodes/concat/preview")
+@router.post("/nodes/concat/preview", response_model=FilterPreviewResponse)
 async def concat_nodes_preview(
     request: ConcatPreviewRequest,
     page: int = Query(1, ge=1),
@@ -1221,7 +1223,7 @@ async def concat_nodes_preview(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/nodes/concat")
+@router.post("/nodes/concat", response_model=WorkspaceNodeInfo)
 async def concat_nodes(
     request: ConcatRequest,
     current_user: dict = Depends(get_current_user),
@@ -1261,7 +1263,7 @@ async def concat_nodes(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/nodes/join/preview")
+@router.post("/nodes/join/preview", response_model=FilterPreviewResponse)
 async def join_nodes_preview(
     left_node_id: str,
     right_node_id: str,
@@ -1358,7 +1360,7 @@ async def join_nodes_preview(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.post("/nodes/join")
+@router.post("/nodes/join", response_model=WorkspaceNodeInfo)
 async def join_nodes(
     left_node_id: str,
     right_node_id: str,

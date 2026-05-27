@@ -34,6 +34,8 @@ def project_visible(lf: pl.LazyFrame) -> pl.LazyFrame:
 def frontend_node_info(node: Node) -> dict[str, Any]:
     """Return :meth:`Node.info` with structured token metadata attached."""
     info = node.info()
+    if "id" not in info and "node_id" in info:
+        info["id"] = info["node_id"]
     columns: Sequence[str] = info.get("columns", [])
     schema: dict[str, Any] = info.get("schema", {})
     filtered_columns = visible_column_names(columns)

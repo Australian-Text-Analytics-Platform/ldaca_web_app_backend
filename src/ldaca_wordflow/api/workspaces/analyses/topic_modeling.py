@@ -39,6 +39,7 @@ from ....models import (
     TopicModelingEmbeddingCacheSizeResponse,
     TopicModelingRequest,
     TopicModelingResponse,
+    TopicModelingResultUpdateRequest,
 )
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
@@ -599,7 +600,7 @@ async def topic_modeling_task_result(
 )
 async def update_topic_modeling_task_result(
     task_id: str,
-    updates: dict | None,
+    updates: TopicModelingResultUpdateRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """Re-aggregate a completed exact topic-modeling task without refitting."""
@@ -623,9 +624,7 @@ async def update_topic_modeling_task_result(
             detail="Only exact topic modeling results can be re-aggregated",
         )
 
-    requested_topic_count = (
-        updates.get("topic_size_value") if isinstance(updates, dict) else None
-    )
+    requested_topic_count = updates.topic_size_value
     if isinstance(requested_topic_count, bool) or not isinstance(
         requested_topic_count, int
     ):

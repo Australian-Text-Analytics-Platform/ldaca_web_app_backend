@@ -121,7 +121,7 @@ class SampleDataCollection(BaseModel):
     total_size_bytes: int
     recommended_for: List[str]
     files: List[SampleDataFileEntry]
-    status: str  # bundled | downloaded | partial | not_downloaded
+    status: Literal["bundled", "downloaded", "partial", "not_downloaded"]
 
 
 class SampleDataCatalogueResponse(BaseModel):
@@ -168,7 +168,7 @@ class DemoSnapshotEntry(BaseModel):
     recommended_dataset: Optional[str] = None
     """Catalogue collection id (e.g. ``SCL``) the snapshot was built on
     — informational so users can import the matching dataset alongside."""
-    status: str = "not_downloaded"
+    status: Literal["downloaded", "not_downloaded", "conflict"]
     """Computed per-user: ``downloaded`` | ``not_downloaded`` | ``conflict``.
     ``conflict`` means a file with the same name exists locally but its
     SHA differs (older bundle, or the user's own save). The importer
@@ -192,7 +192,13 @@ class ImportDemoSnapshotsRequest(BaseModel):
 class DemoSnapshotImportResult(BaseModel):
     id: str
     filename: str
-    status: str  # imported | replaced | skipped_existing | skipped_conflict | failed
+    status: Literal[
+        "imported",
+        "replaced",
+        "skipped_existing",
+        "skipped_conflict",
+        "failed",
+    ]
     message: Optional[str] = None
 
 
@@ -214,7 +220,15 @@ class LDaCAImportRequest(BaseModel):
 
 
 class OniSearchRequest(BaseModel):
-    method: str = Field(default="keyword")
+    method: Literal[
+        "keyword",
+        "identifier",
+        "id",
+        "string",
+        "collection",
+        "file_format",
+        "all",
+    ] = Field(default="keyword")
     query: str = Field(default="")
     limit: int = Field(default=25, ge=1, le=100)
     offset: int = Field(default=0, ge=0)
@@ -225,17 +239,17 @@ class OniSearchResult(BaseModel):
     crate_id: str | None = None
     title: str
     description: str | None = None
-    types: list[str] = Field(default_factory=list)
+    types: list[str]
     license: str | None = None
-    importable: bool = True
+    importable: bool
     access: dict[str, Any] | None = None
-    collections: list[str] = Field(default_factory=list)
-    file_formats: list[str] = Field(default_factory=list)
-    stats: dict[str, Any] = Field(default_factory=dict)
+    collections: list[str]
+    file_formats: list[str]
+    stats: dict[str, Any]
 
 
 class OniSearchResponse(BaseModel):
-    state: str
+    state: Literal["successful"]
     data: list[OniSearchResult]
     message: str
 
@@ -276,14 +290,48 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class RenameColumnRequest(BaseModel):
+    new_name: str
+
+
 class FilesTaskMetadataResponse(BaseModel):
     task_id: str
 
 
 class FilesImportTaskStartResponse(BaseModel):
-    state: str
+    state: Literal["running"]
     message: str
     metadata: FilesTaskMetadataResponse
+
+
+class TaskListResponse(BaseModel):
+    state: Literal["successful"]
+    data: list[dict[str, Any]]
+    message: str
+
+
+class TaskClearActionDataResponse(BaseModel):
+    cleared_worker: bool
+    cleared_analysis: bool
+    cleared_worker_ids: list[str]
+    cleared_analysis_ids: list[str]
+    cleared_task_ids: list[str]
+
+
+class TaskClearActionResponse(BaseModel):
+    state: Literal["successful"]
+    data: TaskClearActionDataResponse
+    message: str
+
+
+class TaskCancelActionDataResponse(BaseModel):
+    stopped: bool
+
+
+class TaskCancelActionResponse(BaseModel):
+    state: Literal["successful"]
+    data: TaskCancelActionDataResponse
+    message: str
 
 
 class FilesTasksListResponse(BaseModel):
@@ -312,6 +360,25 @@ class FileInfoResponse(BaseModel):
     file_type: str
 
 
+class SnapshotListItem(BaseModel):
+    filename: str
+    manifest: dict[str, Any]
+    size_bytes: int
+
+
+class SnapshotListResponse(BaseModel):
+    items: list[SnapshotListItem]
+
+
+class SnapshotUploadResponse(BaseModel):
+    filename: str
+    manifest: dict[str, Any]
+
+
+class SnapshotDeleteResponse(BaseModel):
+    deleted: list[str]
+
+
 # =============================================================================
 # WORKSPACE MODELS
 # =============================================================================
@@ -324,8 +391,8 @@ class WorkspaceInfo(BaseModel):
     created_at: Optional[str] = None
     modified_at: Optional[str] = None
     total_nodes: int
-    root_nodes: int
-    leaf_nodes: int
+    root_nodes: int = 0
+    leaf_nodes: int = 0
 
 
 class WorkspaceSummary(BaseModel):
@@ -405,6 +472,23 @@ class WorkspaceSaveRequest(BaseModel):
     workspace_id: str
     name: Optional[str] = None
     description: Optional[str] = None
+
+
+class WorkspaceActionResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    id: str | None = None
+
+
+class WorkspaceTaskStartResponse(BaseModel):
+    state: Literal["running"]
+    message: str
+    metadata: FilesTaskMetadataResponse
+
+
+class WorkspaceUploadResponse(BaseModel):
+    state: Literal["successful"]
+    workspace: WorkspaceSummary
 
 
 # =============================================================================
@@ -527,6 +611,39 @@ class ConcatPreviewRequest(BaseModel):
 
 class ConcatRequest(ConcatPreviewRequest):
     new_node_name: Optional[str] = None
+
+
+class NodeOperationResponse(BaseModel):
+    node_name: str
+    node_id: str
+
+
+class NodeActionResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+
+
+class CastNodeRequest(BaseModel):
+    column: str
+    target_type: str
+    format: str | None = None
+    strict: bool | None = None
+
+
+class CastNodeInfo(BaseModel):
+    column: str
+    original_type: str
+    new_type: str
+    target_type: str
+    format_used: str | None = None
+    strict_used: bool | None = None
+
+
+class CastNodeResponse(BaseModel):
+    state: Literal["successful"]
+    node_id: str
+    cast_info: CastNodeInfo
+    message: str
 
 
 class DataFrameOperationRequest(BaseModel):
@@ -893,6 +1010,10 @@ class SequentialAnalysisPreferenceUpdateData(BaseModel):
     chart_type: Literal["line", "bar", "area"]
 
 
+class SequentialAnalysisPreferenceUpdateRequest(BaseModel):
+    chart_type: str | None = None
+
+
 class SequentialAnalysisPreferenceUpdateResponse(BaseModel):
     state: Literal["successful"]
     message: str
@@ -1204,6 +1325,11 @@ class TokenFrequencyRequest(BaseModel):
     )
 
 
+class TokenFrequencyPreferenceUpdateRequest(BaseModel):
+    token_limit: int | None = None
+    stop_words: list[str] | None = None
+
+
 class TokenFrequencyData(BaseModel):
     token: str
     frequency: int
@@ -1491,6 +1617,10 @@ class TopicModelingResponse(BaseModel):
     message: str
     data: Optional[TopicModelingData] = None
     metadata: AnalysisTaskMetadata | None = None
+
+
+class TopicModelingResultUpdateRequest(BaseModel):
+    topic_size_value: int
 
 
 class TopicMeaningOverrideItem(BaseModel):

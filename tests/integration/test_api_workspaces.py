@@ -843,9 +843,10 @@ class TestWorkspaceAPI:
             json={"column": "test_col"},  # Missing target_type
         )
 
-        assert response.status_code == 400
-        assert (
-            "must contain 'column' and 'target_type' keys" in response.json()["detail"]
+        assert response.status_code == 422
+        assert any(
+            error.get("loc", [])[-1] == "target_type"
+            for error in response.json()["detail"]
         )
 
     async def test_cast_node_preserves_data_type(self, authenticated_client):

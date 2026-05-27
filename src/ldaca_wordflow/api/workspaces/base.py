@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import cast
 
 import polars as pl
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from docworkspace import Node
 
@@ -25,7 +25,12 @@ from ...core.auth import get_current_user
 # Note: DocWorkspace API helpers are not used directly in this HTTP layer
 from ...core.utils import get_user_data_folder, load_data_file, normalize_dtypes
 from ...core.workspace import workspace_manager
-from ...models import WorkspaceNodeInfo
+from ...models import (
+    CastNodeRequest,
+    CastNodeResponse,
+    RenameColumnRequest,
+    WorkspaceNodeInfo,
+)
 from .schema_filter import frontend_node_info, project_visible
 from .utils import stage_dataframe_as_lazy, update_workspace
 
@@ -213,7 +218,9 @@ def _export_node_artifact(
     return archive_name, output_path
 
 
-@router.delete("/nodes/{node_id}/columns/{column_name}")
+@router.delete(
+    "/nodes/{node_id}/columns/{column_name}", response_model=WorkspaceNodeInfo
+)
 async def delete_node_column(
     node_id: str,
     column_name: str,
@@ -236,22 +243,17 @@ async def delete_node_column(
     return frontend_node_info(node)
 
 
-@router.put("/nodes/{node_id}/columns/{column_name}")
+@router.put("/nodes/{node_id}/columns/{column_name}", response_model=WorkspaceNodeInfo)
 async def rename_node_column(
     node_id: str,
     column_name: str,
-    payload: dict = Body(...),
+    payload: RenameColumnRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """Rename a column by delegating to DocWorkspace Node.rename."""
 
     user_id = current_user["id"]
-    new_name = payload.get("new_name") if isinstance(payload, dict) else None
-    if not isinstance(new_name, str):
-        raise HTTPException(
-            status_code=400,
-            detail="Request body must include a 'new_name' string field.",
-        )
+    new_name = payload.new_name
 
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
@@ -512,10 +514,10 @@ async def add_node_to_workspace(
     return info
 
 
-@router.post("/nodes/{node_id}/cast")
+@router.post("/nodes/{node_id}/cast", response_model=CastNodeResponse)
 async def cast_node(
     node_id: str,
-    cast_data: dict,
+    cast_data: CastNodeRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -539,28 +541,14 @@ async def cast_node(
     if not workspace_id or ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
-    # Validate cast_data structure
-    if not isinstance(cast_data, dict):
-        raise HTTPException(status_code=400, detail="cast_data must be a dictionary")
-
-    if "column" not in cast_data or "target_type" not in cast_data:
-        raise HTTPException(
-            status_code=400,
-            detail="cast_data must contain 'column' and 'target_type' keys",
-        )
-    column_name = cast_data["column"]
-    target_type = cast_data["target_type"]
-    datetime_format = cast_data.get("format")  # Optional datetime format
+    column_name = cast_data.column
+    target_type = cast_data.target_type
+    datetime_format = cast_data.format
     # Optional strict flag (Polars defaults to strict=True). We default to False to avoid
     # hard failures on a few malformed rows (frontend previously succeeded with strict=False).
     strict_flag = (
-        cast_data.get("strict") if "strict" in cast_data else False
+        cast_data.strict if cast_data.strict is not None else False
     )  # default lenient
-
-    if not isinstance(column_name, str) or not isinstance(target_type, str):
-        raise HTTPException(
-            status_code=400, detail="'column' and 'target_type' must be strings"
-        )
 
     node = ws.nodes[node_id]
     lazyframe = node.data

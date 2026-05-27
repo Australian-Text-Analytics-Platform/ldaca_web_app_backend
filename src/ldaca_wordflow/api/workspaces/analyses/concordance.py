@@ -398,7 +398,10 @@ async def concordance_task_result_post(
     return result
 
 
-@router.post("/nodes/{node_id}/concordance/detach")
+@router.post(
+    "/nodes/{node_id}/concordance/detach",
+    response_model=AnalysisTaskActionResponse,
+)
 async def detach_concordance(
     node_id: str,
     request: ConcordanceDetachRequest,

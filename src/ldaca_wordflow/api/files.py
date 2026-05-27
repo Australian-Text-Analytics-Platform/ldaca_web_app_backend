@@ -4,8 +4,9 @@ import hashlib
 import logging
 import xml.etree.ElementTree as ET
 import zipfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 import polars as pl
 from fastapi import (
@@ -61,6 +62,7 @@ from ..models import (
     MoveFileRequest,
     OniSearchRequest,
     OniSearchResponse,
+    OniSearchResult,
     SampleDataCatalogueResponse,
     SampleDataCollection,
     SampleDataFileEntry,
@@ -72,6 +74,10 @@ logger = logging.getLogger(__name__)
 
 README_FILENAME = "README.md"
 LDACA_API_TOKEN_HEADER = "X-LDACA-API-Token"
+SampleDataCollectionStatus = Literal[
+    "bundled", "downloaded", "partial", "not_downloaded"
+]
+DemoSnapshotStatus = Literal["downloaded", "not_downloaded", "conflict"]
 
 
 def _normalise_ldaca_api_token(api_token: str | None) -> str | None:
@@ -84,6 +90,21 @@ def _ldaca_oni_client(api_token: str | None) -> OniClient:
     )
 
 
+def _normalise_oni_results(
+    records: Sequence[Mapping[str, Any]],
+) -> list[OniSearchResult]:
+    return [
+        OniSearchResult.model_validate(
+            {
+                "collections": [],
+                "file_formats": [],
+                **record,
+            }
+        )
+        for record in records
+    ]
+
+
 @router.get("/ldaca/featured", response_model=OniSearchResponse)
 async def list_ldaca_featured_collections(
     current_user: dict = Depends(get_current_user),
@@ -92,8 +113,10 @@ async def list_ldaca_featured_collections(
     """Return staff-picked LDaCA collections for the import dialog."""
     del current_user
     client = _ldaca_oni_client(ldaca_api_token)
-    data = await client.featured_collections(
-        settings.get_ldaca_oni_featured_collection_ids()
+    data = _normalise_oni_results(
+        await client.featured_collections(
+            settings.get_ldaca_oni_featured_collection_ids()
+        )
     )
     return {
         "state": "successful",
@@ -118,11 +141,13 @@ async def search_ldaca_collections(
         ) from exc
 
     client = _ldaca_oni_client(ldaca_api_token)
-    data = await client.search(
-        method=method,
-        query=request.query,
-        limit=request.limit,
-        offset=request.offset,
+    data = _normalise_oni_results(
+        await client.search(
+            method=method,
+            query=request.query,
+            limit=request.limit,
+            offset=request.offset,
+        )
     )
     return {
         "state": "successful",
@@ -570,7 +595,9 @@ async def delete_file(filename: str, current_user: dict = Depends(get_current_us
     return {"message": f"File {filename} deleted successfully"}
 
 
-def _compute_collection_status(col: dict, target_dir: Path) -> str:
+def _compute_collection_status(
+    col: dict, target_dir: Path
+) -> SampleDataCollectionStatus:
     """Return status string for a single catalogue collection."""
     files = col.get("files", [])
     if not files:
@@ -739,7 +766,9 @@ async def import_sample_data(
 _DEMO_SNAPSHOT_REMOTE_DIR = "demo_snapshots"
 
 
-def _compute_demo_snapshot_status(entry: dict, snapshots_dir: Path) -> str:
+def _compute_demo_snapshot_status(
+    entry: dict, snapshots_dir: Path
+) -> DemoSnapshotStatus:
     """Return ``downloaded`` / ``conflict`` / ``not_downloaded`` for one entry."""
     filename = entry.get("filename") or ""
     expected_sha256 = entry.get("sha256") or ""

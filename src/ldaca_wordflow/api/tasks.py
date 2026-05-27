@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from ..analysis.manager import get_task_manager as get_analysis_task_manager
 from ..core.auth import get_current_user
 from ..core.workspace import workspace_manager
+from ..models import TaskCancelActionResponse, TaskClearActionResponse, TaskListResponse
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +35,10 @@ def _dedupe_task_ids(task_ids: list[str]) -> list[str]:
     return deduped
 
 
-@router.get("")
+@router.get("", response_model=TaskListResponse)
 async def list_tasks(
     current_user: dict = Depends(get_current_user),
-) -> dict[str, Any]:
+):
     """List tasks for current user."""
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
@@ -49,11 +50,11 @@ async def list_tasks(
     }
 
 
-@router.post("/clear")
+@router.post("/clear", response_model=TaskClearActionResponse)
 async def clear_tasks(
     task_id: str = Query(...),
     current_user: dict = Depends(get_current_user),
-) -> dict[str, Any]:
+):
     """Clear a task and all associated caches by task id.
 
     If the task is still running it is cancelled first.  Both the worker
@@ -122,11 +123,11 @@ async def clear_tasks(
     }
 
 
-@router.post("/cancel")
+@router.post("/cancel", response_model=TaskCancelActionResponse)
 async def cancel_task(
     task_id: str = Query(...),
     current_user: dict = Depends(get_current_user),
-) -> dict[str, Any]:
+):
     """Stop a running task and mark it as cancelled.
 
     Unlike ``/tasks/clear``, the task record is kept so the user can see the

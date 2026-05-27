@@ -24,6 +24,11 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from ..core.auth import get_current_user
 from ..core.utils import get_user_snapshots_folder
+from ..models import (
+    SnapshotDeleteResponse,
+    SnapshotListResponse,
+    SnapshotUploadResponse,
+)
 
 router = APIRouter(prefix="/users/me/snapshots", tags=["snapshots"])
 logger = logging.getLogger(__name__)
@@ -221,21 +226,21 @@ def _list_user_snapshots(user_id: str, tool_filter: str | None) -> list[dict]:
     return items
 
 
-@router.get("")
+@router.get("", response_model=SnapshotListResponse)
 async def list_snapshots(
     tool: str | None = None,
     user: dict = Depends(get_current_user),
-) -> dict:
+):
     """List snapshots for the current user, optionally filtered by tool."""
     return {"items": _list_user_snapshots(user["id"], tool)}
 
 
-@router.post("")
+@router.post("", response_model=SnapshotUploadResponse)
 async def upload_snapshot(
     file: UploadFile = File(...),
     filename: str = Form(...),
     user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Store a bundle uploaded from the frontend.
 
     Validates the filename, extracts the internal ``manifest.json`` to
@@ -347,11 +352,11 @@ def _delete_bundle_with_sidecars(bundle_path: Path) -> None:
     description_sidecar.unlink(missing_ok=True)
 
 
-@router.delete("/{filename}")
+@router.delete("/{filename}", response_model=SnapshotDeleteResponse)
 async def delete_snapshot(
     filename: str,
     user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Remove one snapshot (bundle + both sidecars)."""
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
@@ -361,12 +366,12 @@ async def delete_snapshot(
     return {"deleted": [bundle_path.name]}
 
 
-@router.delete("")
+@router.delete("", response_model=SnapshotDeleteResponse)
 async def batch_delete_snapshots(
     tool: str,
     incompatible_with: str | None = None,
     user: dict = Depends(get_current_user),
-) -> dict:
+):
     """Batch delete. Without ``incompatible_with``, removes every
     snapshot for ``tool``. With it, removes only those whose
     ``manifest.tool_version`` is incompatible (MAJOR.MINOR mismatch).

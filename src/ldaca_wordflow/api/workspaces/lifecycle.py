@@ -19,11 +19,14 @@ from ...core.workspace import workspace_manager
 from ...models import (
     CurrentWorkspaceResponse,
     SetCurrentWorkspaceResponse,
+    WorkspaceActionResponse,
     WorkspaceCreateRequest,
     WorkspaceGraphResponse,
     WorkspaceInfo,
     WorkspaceNodesResponse,
     WorkspaceSummary,
+    WorkspaceTaskStartResponse,
+    WorkspaceUploadResponse,
 )
 from .schema_filter import frontend_node_info
 from .utils import update_workspace
@@ -133,7 +136,7 @@ async def create_workspace(
     return WorkspaceInfo(**workspace_info)
 
 
-@router.delete("/delete")
+@router.delete("/delete", response_model=WorkspaceActionResponse)
 async def delete_workspace(
     workspace_id: str,
     current_user: dict = Depends(get_current_user),
@@ -151,7 +154,7 @@ async def delete_workspace(
     }
 
 
-@router.post("/unload")
+@router.post("/unload", response_model=WorkspaceActionResponse)
 async def unload_workspace(
     save: bool = True,
     current_user: dict = Depends(get_current_user),
@@ -170,7 +173,7 @@ async def unload_workspace(
     }
 
 
-@router.put("/name")
+@router.put("/name", response_model=WorkspaceInfo)
 async def rename_workspace(
     new_name: str,
     current_user: dict = Depends(get_current_user),
@@ -186,7 +189,7 @@ async def rename_workspace(
     return workspace.info_json()
 
 
-@router.put("/description")
+@router.put("/description", response_model=WorkspaceInfo)
 async def update_workspace_description(
     description: str = "",
     current_user: dict = Depends(get_current_user),
@@ -199,7 +202,7 @@ async def update_workspace_description(
     return workspace.info_json()
 
 
-@router.post("/save")
+@router.post("/save", response_model=WorkspaceActionResponse)
 async def save_workspace(
     current_user: dict = Depends(get_current_user),
 ):
@@ -210,7 +213,7 @@ async def save_workspace(
     return {"state": "successful", "message": "Workspace saved"}
 
 
-@router.post("/download")
+@router.post("/download", response_model=WorkspaceTaskStartResponse)
 async def start_workspace_download(
     current_user: dict = Depends(get_current_user),
 ):
@@ -332,7 +335,7 @@ async def download_workspace_artifact(
     )
 
 
-@router.post("/upload")
+@router.post("/upload", response_model=WorkspaceUploadResponse)
 async def upload_workspace_zip(
     file: UploadFile = File(...),
     current_user: dict = Depends(get_current_user),

@@ -592,7 +592,10 @@ async def quotation_detach_options(
     )
 
 
-@router.post("/nodes/{node_id}/quotation/detach")
+@router.post(
+    "/nodes/{node_id}/quotation/detach",
+    response_model=AnalysisTaskActionResponse,
+)
 async def detach_quotation(
     node_id: str,
     request: QuotationDetachRequest,

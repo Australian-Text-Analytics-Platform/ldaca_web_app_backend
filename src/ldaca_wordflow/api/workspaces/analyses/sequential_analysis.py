@@ -28,6 +28,7 @@ from ....core.workspace import workspace_manager
 from ....models import (
     CurrentAnalysisTasksResponse,
     SequentialAnalysisDetachResponse,
+    SequentialAnalysisPreferenceUpdateRequest,
     SequentialAnalysisPreferenceUpdateResponse,
     SequentialAnalysisPreviewResponse,
     SequentialAnalysisRequest,
@@ -742,7 +743,7 @@ async def sequential_analysis_task_result(
 )
 async def update_sequential_analysis_task_result(
     task_id: str,
-    updates: dict | None,
+    updates: SequentialAnalysisPreferenceUpdateRequest | None,
     current_user: dict = Depends(get_current_user),
 ):
     """Persist display-only sequential analysis options on a saved task.
@@ -774,8 +775,8 @@ async def update_sequential_analysis_task_result(
     if not isinstance(chart_type, str) or chart_type not in VALID_CHART_TYPES:
         chart_type = DEFAULT_CHART_TYPE
 
-    if isinstance(updates, dict) and "chart_type" in updates:
-        candidate = updates["chart_type"]
+    if updates is not None and updates.chart_type is not None:
+        candidate = updates.chart_type
         if not isinstance(candidate, str) or candidate not in VALID_CHART_TYPES:
             raise HTTPException(
                 status_code=400,

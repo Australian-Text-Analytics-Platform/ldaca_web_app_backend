@@ -31,6 +31,7 @@ from ....core.workspace import workspace_manager
 from ....models import (
     AnalysisClearResponse,
     CurrentAnalysisTasksResponse,
+    TokenFrequencyPreferenceUpdateRequest,
     TokenFrequencyRequest,
     TokenFrequencyResponse,
 )
@@ -71,7 +72,7 @@ class TokenFrequencyArtifacts:
     statistics_parquet_path: Path | None
 
 
-@router.delete("/token-frequencies")
+@router.delete("/token-frequencies", response_model=AnalysisClearResponse)
 async def clear_token_frequencies(
     current_user=Depends(get_current_user),
 ):
@@ -392,7 +393,7 @@ async def token_frequencies_task_result(
 )
 async def update_token_frequencies_task_result(
     task_id: str,
-    updates: dict | None,
+    updates: TokenFrequencyPreferenceUpdateRequest | None,
     current_user: dict = Depends(get_current_user),
 ):
     """Persist token-frequency preference overrides on an existing task."""
@@ -407,14 +408,15 @@ async def update_token_frequencies_task_result(
 
     request_payload = task.request.model_dump()
 
-    if isinstance(updates, dict):
-        if "token_limit" in updates:
+    if updates is not None:
+        updates_payload = updates.model_dump(exclude_unset=True)
+        if "token_limit" in updates_payload:
             request_payload["token_limit"] = _coerce_limit_value(
-                updates.get("token_limit")
+                updates_payload.get("token_limit")
             )
-        if "stop_words" in updates:
+        if "stop_words" in updates_payload:
             request_payload["stop_words"] = sanitize_stop_words(
-                updates.get("stop_words")
+                updates_payload.get("stop_words")
             )
 
     try:
