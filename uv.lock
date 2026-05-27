@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "ldaca-wordflow"
-version = "0.5.3"
+version = "0.5.5"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
