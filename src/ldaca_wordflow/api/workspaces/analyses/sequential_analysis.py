@@ -25,7 +25,14 @@ from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.workspace import workspace_manager
-from ....models import SequentialAnalysisRequest
+from ....models import (
+    CurrentAnalysisTasksResponse,
+    SequentialAnalysisDetachResponse,
+    SequentialAnalysisPreferenceUpdateResponse,
+    SequentialAnalysisPreviewResponse,
+    SequentialAnalysisRequest,
+    SequentialAnalysisResponse,
+)
 from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
 
@@ -407,7 +414,10 @@ def _run_sequential_analysis(
     return result_df
 
 
-@router.post("/nodes/{node_id}/sequential-analysis/preview")
+@router.post(
+    "/nodes/{node_id}/sequential-analysis/preview",
+    response_model=SequentialAnalysisPreviewResponse,
+)
 async def preview_sequential_analysis(
     node_id: str,
     request: SequentialAnalysisRequest,
@@ -487,7 +497,10 @@ async def preview_sequential_analysis(
         raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
 
 
-@router.post("/nodes/{node_id}/sequential-analysis")
+@router.post(
+    "/nodes/{node_id}/sequential-analysis",
+    response_model=SequentialAnalysisResponse,
+)
 async def run_sequential_analysis(
     node_id: str,
     request: SequentialAnalysisRequest,
@@ -659,7 +672,10 @@ async def run_sequential_analysis(
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
-@router.get("/sequential-analysis/tasks/current")
+@router.get(
+    "/sequential-analysis/tasks/current",
+    response_model=CurrentAnalysisTasksResponse,
+)
 async def sequential_analysis_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -673,7 +689,10 @@ async def sequential_analysis_current_tasks(
     )
 
 
-@router.get("/sequential-analysis/tasks/{task_id}/request")
+@router.get(
+    "/sequential-analysis/tasks/{task_id}/request",
+    response_model=AnalysisSequentialAnalysisRequest,
+)
 async def sequential_analysis_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -691,7 +710,10 @@ async def sequential_analysis_task_request(
     return request.model_dump()
 
 
-@router.get("/sequential-analysis/tasks/{task_id}/result")
+@router.get(
+    "/sequential-analysis/tasks/{task_id}/result",
+    response_model=SequentialAnalysisResponse,
+)
 async def sequential_analysis_task_result(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -714,7 +736,10 @@ async def sequential_analysis_task_result(
     return result.to_json()
 
 
-@router.post("/sequential-analysis/tasks/{task_id}/result")
+@router.post(
+    "/sequential-analysis/tasks/{task_id}/result",
+    response_model=SequentialAnalysisPreferenceUpdateResponse,
+)
 async def update_sequential_analysis_task_result(
     task_id: str,
     updates: dict | None,
@@ -771,7 +796,10 @@ async def update_sequential_analysis_task_result(
     }
 
 
-@router.post("/sequential-analysis/tasks/{task_id}/detach")
+@router.post(
+    "/sequential-analysis/tasks/{task_id}/detach",
+    response_model=SequentialAnalysisDetachResponse,
+)
 async def detach_sequential_analysis_task(
     task_id: str,
     request: SequentialAnalysisDetachRequest,

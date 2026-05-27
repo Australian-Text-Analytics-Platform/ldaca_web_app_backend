@@ -32,12 +32,19 @@ from ....core.auth import get_current_user
 from ....core.i18n import effective_language
 from ....core.workspace import workspace_manager
 from ....models import (
+    AiAnnotationCategoriesResponse,
     AiAnnotationDetachRequest,
+    AiAnnotationDetachResponse,
     AiAnnotationModelsRequest,
+    AiAnnotationModelsResponse,
+    AiAnnotationProvidersResponse,
     AiAnnotationRequest,
     AiAnnotationResponse,
     AiAnnotationResultQuery,
     AiAnnotationSaveRequest,
+    AiAnnotationSaveResponse,
+    AnalysisClearResponse,
+    CurrentAnalysisTasksResponse,
 )
 from ..utils import update_workspace
 from .ai_annotation_core import classify_texts, list_models
@@ -226,7 +233,7 @@ def _distinct_annotation_values(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/ai-annotation/models")
+@router.post("/ai-annotation/models", response_model=AiAnnotationModelsResponse)
 async def get_ai_annotation_models(
     request: AiAnnotationModelsRequest,
     current_user: dict = Depends(get_current_user),
@@ -333,7 +340,7 @@ async def run_ai_annotation(
     return response_data
 
 
-@router.delete("/ai-annotation")
+@router.delete("/ai-annotation", response_model=AnalysisClearResponse)
 async def clear_ai_annotation(
     current_user: dict = Depends(get_current_user),
 ):
@@ -359,7 +366,7 @@ async def clear_ai_annotation(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ai-annotation/tasks/current")
+@router.get("/ai-annotation/tasks/current", response_model=CurrentAnalysisTasksResponse)
 async def ai_annotation_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -373,7 +380,10 @@ async def ai_annotation_current_tasks(
     )
 
 
-@router.get("/ai-annotation/tasks/{task_id}/request")
+@router.get(
+    "/ai-annotation/tasks/{task_id}/request",
+    response_model=AiAnnotationRequest,
+)
 async def ai_annotation_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -387,7 +397,9 @@ async def ai_annotation_task_request(
     return task.request.model_dump()
 
 
-@router.get("/ai-annotation/tasks/{task_id}/result")
+@router.get(
+    "/ai-annotation/tasks/{task_id}/result", response_model=AiAnnotationResponse | None
+)
 async def ai_annotation_task_result(
     task_id: str,
     page: Optional[int] = Query(None),
@@ -414,7 +426,9 @@ async def ai_annotation_task_result(
     )
 
 
-@router.post("/ai-annotation/tasks/{task_id}/result")
+@router.post(
+    "/ai-annotation/tasks/{task_id}/result", response_model=AiAnnotationResponse
+)
 async def ai_annotation_task_result_post(
     task_id: str,
     query: AiAnnotationResultQuery,
@@ -457,7 +471,10 @@ async def ai_annotation_task_result_post(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/nodes/{node_id}/ai-annotation/detach")
+@router.post(
+    "/nodes/{node_id}/ai-annotation/detach",
+    response_model=AiAnnotationDetachResponse,
+)
 async def detach_ai_annotation(
     node_id: str,
     request: AiAnnotationDetachRequest,
@@ -555,7 +572,10 @@ async def detach_ai_annotation(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/nodes/{node_id}/ai-annotation/save")
+@router.post(
+    "/nodes/{node_id}/ai-annotation/save",
+    response_model=AiAnnotationSaveResponse,
+)
 async def save_ai_annotation(
     node_id: str,
     request: AiAnnotationSaveRequest,
@@ -611,7 +631,10 @@ async def save_ai_annotation(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/nodes/{node_id}/ai-annotation/providers")
+@router.get(
+    "/nodes/{node_id}/ai-annotation/providers",
+    response_model=AiAnnotationProvidersResponse,
+)
 async def get_ai_annotation_providers(
     node_id: str,
     annotation_column: str = Query("ai_annotation"),
@@ -629,7 +652,10 @@ async def get_ai_annotation_providers(
     }
 
 
-@router.get("/nodes/{node_id}/ai-annotation/categories")
+@router.get(
+    "/nodes/{node_id}/ai-annotation/categories",
+    response_model=AiAnnotationCategoriesResponse,
+)
 async def get_ai_annotation_categories(
     node_id: str,
     annotation_column: str = Query("ai_annotation"),

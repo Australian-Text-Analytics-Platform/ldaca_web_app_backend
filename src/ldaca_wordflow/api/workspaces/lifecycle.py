@@ -16,7 +16,15 @@ from fastapi.responses import StreamingResponse
 from ...core.auth import get_current_user
 from ...core.utils import generate_workspace_id, validate_workspace_name
 from ...core.workspace import workspace_manager
-from ...models import WorkspaceCreateRequest, WorkspaceInfo, WorkspaceSummary
+from ...models import (
+    CurrentWorkspaceResponse,
+    SetCurrentWorkspaceResponse,
+    WorkspaceCreateRequest,
+    WorkspaceGraphResponse,
+    WorkspaceInfo,
+    WorkspaceNodesResponse,
+    WorkspaceSummary,
+)
 from .schema_filter import frontend_node_info
 from .utils import update_workspace
 
@@ -68,14 +76,14 @@ async def list_workspaces(current_user: dict = Depends(get_current_user)):
     return summaries
 
 
-@router.get("/current")
+@router.get("/current", response_model=CurrentWorkspaceResponse)
 async def get_current_workspace(current_user: dict = Depends(get_current_user)):
     user_id = current_user["id"]
     current_workspace_id = workspace_manager.get_current_workspace_id(user_id)
     return {"id": current_workspace_id}
 
 
-@router.post("/current")
+@router.post("/current", response_model=SetCurrentWorkspaceResponse)
 async def set_current_workspace(
     workspace_id: str | None = None, current_user: dict = Depends(get_current_user)
 ):
@@ -460,7 +468,7 @@ async def upload_workspace_zip(
         raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {exc}")
 
 
-@router.get("/info")
+@router.get("/info", response_model=WorkspaceInfo)
 async def get_workspace_info(
     current_user: dict = Depends(get_current_user),
 ):
@@ -469,7 +477,7 @@ async def get_workspace_info(
     return workspace.info_json()
 
 
-@router.get("/graph")
+@router.get("/graph", response_model=WorkspaceGraphResponse)
 async def get_workspace_graph(
     current_user: dict = Depends(get_current_user),
 ):
@@ -495,7 +503,7 @@ async def get_workspace_graph(
     return graph
 
 
-@router.get("/nodes")
+@router.get("/nodes", response_model=WorkspaceNodesResponse)
 async def get_workspace_nodes(
     current_user: dict = Depends(get_current_user),
 ):

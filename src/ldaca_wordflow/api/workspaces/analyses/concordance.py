@@ -17,6 +17,9 @@ import polars as pl
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from ....analysis.implementations.concordance import (
+    ConcordanceRequest as AnalysisConcordanceRequest,
+)
 from ....analysis.manager import get_task_manager
 from ....analysis.models import AnalysisStatus, AnalysisTask
 from ....analysis.results import GenericAnalysisResult
@@ -25,12 +28,16 @@ from ....core.i18n import effective_language
 from ....core.tokens_cache import hydrate_tokenization_lazyframe
 from ....core.workspace import workspace_manager
 from ....models import (
+    AnalysisTaskActionResponse,
     ConcordanceAnalysisRequest,
+    ConcordanceAnalysisResponse,
     ConcordanceDetachNodeOption,
     ConcordanceDetachOptionsResponse,
     ConcordanceDetachRequest,
+    ConcordanceDispersionBinsResponse,
     ConcordanceDispersionDetachRequest,
     ConcordanceMaterializeRequest,
+    CurrentAnalysisTasksResponse,
 )
 from ..utils import update_workspace
 from .cleanup import clear_previous_completed_analysis_task
@@ -149,7 +156,7 @@ def _build_concordance_task_result(
     return build_concordance_response(user_id, workspace_id, normalized_request), None
 
 
-@router.post("/concordance")
+@router.post("/concordance", response_model=ConcordanceAnalysisResponse)
 async def run_concordance(
     request: ConcordanceAnalysisRequest,
     current_user: dict = Depends(get_current_user),
@@ -193,9 +200,7 @@ async def run_concordance(
             update_workspace(user_id, workspace_id, best_effort=True)
 
     try:
-        from ....analysis.implementations.concordance import ConcordanceRequest
-
-        analysis_request = ConcordanceRequest(
+        analysis_request = AnalysisConcordanceRequest(
             node_ids=request.node_ids,
             node_columns=request.node_columns,
             search_word=request.search_word,
@@ -248,7 +253,7 @@ async def run_concordance(
         raise HTTPException(status_code=500, detail=f"Failed to run concordance: {exc}")
 
 
-@router.get("/concordance/tasks/current")
+@router.get("/concordance/tasks/current", response_model=CurrentAnalysisTasksResponse)
 async def concordance_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -263,7 +268,10 @@ async def concordance_current_tasks(
     )
 
 
-@router.get("/concordance/tasks/{task_id}/request")
+@router.get(
+    "/concordance/tasks/{task_id}/request",
+    response_model=AnalysisConcordanceRequest,
+)
 async def concordance_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -281,7 +289,10 @@ async def concordance_task_request(
     return request.model_dump()
 
 
-@router.get("/concordance/tasks/{task_id}/bins")
+@router.get(
+    "/concordance/tasks/{task_id}/bins",
+    response_model=ConcordanceDispersionBinsResponse,
+)
 async def concordance_task_dispersion_bins(
     task_id: str,
     node_id: str,
@@ -327,7 +338,10 @@ async def concordance_task_dispersion_bins(
     }
 
 
-@router.get("/concordance/tasks/{task_id}/result")
+@router.get(
+    "/concordance/tasks/{task_id}/result",
+    response_model=ConcordanceAnalysisResponse | None,
+)
 async def concordance_task_result(
     task_id: str,
     query: ConcordanceResultQuery = Depends(),
@@ -352,7 +366,10 @@ async def concordance_task_result(
     return result
 
 
-@router.post("/concordance/tasks/{task_id}/result")
+@router.post(
+    "/concordance/tasks/{task_id}/result",
+    response_model=ConcordanceAnalysisResponse | None,
+)
 async def concordance_task_result_post(
     task_id: str,
     query: ConcordanceResultQuery,
@@ -501,7 +518,10 @@ async def detach_concordance(
         )
 
 
-@router.post("/nodes/{node_id}/concordance/dispersion-detach")
+@router.post(
+    "/nodes/{node_id}/concordance/dispersion-detach",
+    response_model=AnalysisTaskActionResponse,
+)
 async def detach_concordance_dispersion(
     node_id: str,
     request: ConcordanceDispersionDetachRequest,
@@ -635,7 +655,10 @@ async def detach_concordance_dispersion(
         )
 
 
-@router.post("/nodes/{node_id}/concordance/materialize")
+@router.post(
+    "/nodes/{node_id}/concordance/materialize",
+    response_model=AnalysisTaskActionResponse,
+)
 async def materialize_concordance(
     node_id: str,
     request: ConcordanceMaterializeRequest,

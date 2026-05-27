@@ -343,6 +343,59 @@ class WorkspaceSummary(BaseModel):
     folder_name: Optional[str] = None
 
 
+class CurrentWorkspaceResponse(BaseModel):
+    id: str | None = None
+
+
+class SetCurrentWorkspaceResponse(BaseModel):
+    state: Literal["successful"]
+    id: str | None = None
+
+
+class DtypeNormalizationChange(BaseModel):
+    column: str
+    from_dtype: str
+    to_dtype: str
+    reason: str
+
+
+class WorkspaceNodeInfo(BaseModel):
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    id: str
+    name: str
+    operation: str | None = None
+    parent_ids: list[str] = Field(default_factory=list)
+    child_ids: list[str] = Field(default_factory=list)
+    document: str | None = None
+    shape: tuple[int | None, int | None] = (None, None)
+    column_schema: dict[str, str] = Field(default_factory=dict, alias="schema")
+    columns: list[str] = Field(default_factory=list)
+    can_undo: bool | None = None
+    can_redo: bool | None = None
+    dtype_normalization: list[DtypeNormalizationChange] | None = None
+    tokenization: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class WorkspaceGraphEdge(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source: str
+    target: str
+    label: str | None = None
+
+
+class WorkspaceGraphResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    nodes: list[WorkspaceNodeInfo]
+    edges: list[WorkspaceGraphEdge]
+
+
+class WorkspaceNodesResponse(BaseModel):
+    nodes: list[WorkspaceNodeInfo]
+
+
 class WorkspaceCreateRequest(BaseModel):
     name: str
     description: Optional[str] = None
@@ -614,10 +667,10 @@ class ConcordanceDetachNodeOption(BaseModel):
 
 
 class ConcordanceDetachOptionsResponse(BaseModel):
-    state: str
+    state: AnalysisTaskState
     message: str
-    data: Dict[str, List[ConcordanceDetachNodeOption]]
-    metadata: Optional[Dict[str, Any]] = None
+    data: Dict[str, List[ConcordanceDetachNodeOption]] | None = None
+    metadata: AnalysisTaskMetadata | None = None
 
 
 # Quotation requests (mirror concordance shape but without search parameters)
@@ -691,10 +744,52 @@ class QuotationDetachNodeOption(BaseModel):
 
 
 class QuotationDetachOptionsResponse(BaseModel):
-    state: str
+    state: AnalysisTaskState
     message: str
-    data: Dict[str, List[QuotationDetachNodeOption]]
-    metadata: Optional[Dict[str, Any]] = None
+    data: Dict[str, List[QuotationDetachNodeOption]] | None = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class QuotationMetadata(BaseModel):
+    quotation_columns: list[str]
+    metadata_columns: list[str]
+    all_columns: list[str]
+
+
+class QuotationAnalysisResponse(BaseModel):
+    data: list[list[dict[str, Any]]]
+    columns: list[str]
+    metadata: QuotationMetadata
+    pagination: SourceRowPagination
+    sorting: AnalysisSorting
+    preferences: dict[str, Any] | None = None
+    task_id: str | None = None
+
+
+class QuotationPreferenceUpdateData(BaseModel):
+    context_length: int | None = None
+
+
+class QuotationPreferenceUpdateResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    data: QuotationPreferenceUpdateData | None = None
+
+
+class AnalysisTaskActionResponse(BaseModel):
+    state: AnalysisTaskState
+    message: str
+    data: None = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class AnalysisClearResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+
+
+class CurrentAnalysisTasksResponse(BaseModel):
+    task_ids: list[str]
 
 
 class QuotationResultQuery(BaseModel):
@@ -777,12 +872,93 @@ class SequentialAnalysisRequest(BaseModel):
     )
 
 
+class SequentialAnalysisResponse(BaseModel):
+    state: AnalysisTaskState
+    data: list[dict[str, Any]] | None = None
+    columns: list[str] | None = None
+    total_records: int | None = None
+    chart_type: Literal["line", "bar", "area"] | None = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class SequentialAnalysisPreviewResponse(BaseModel):
+    state: AnalysisTaskState
+    total_records: int
+    columns: list[str]
+    data: list[dict[str, Any]] | None = None
+    analysis_params: dict[str, Any] | None = None
+
+
+class SequentialAnalysisPreferenceUpdateData(BaseModel):
+    chart_type: Literal["line", "bar", "area"]
+
+
+class SequentialAnalysisPreferenceUpdateResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    data: SequentialAnalysisPreferenceUpdateData
+
+
+class SequentialAnalysisDetachResponse(BaseModel):
+    new_node_id: str
+    new_node_name: str
+
+
 class TextAnalysisInfo(BaseModel):
     document: Optional[str]
     avg_document_length: Optional[float]
     total_documents: int
     vocabulary_size: Optional[int]
     is_text_ready: bool
+
+
+class DefaultStopWordsResponse(BaseModel):
+    stopwords: list[str]
+    error: str | None = None
+
+
+class AiAnnotationDetachData(BaseModel):
+    new_node_name: str
+    record_count: int
+
+
+class AiAnnotationDetachResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    data: AiAnnotationDetachData
+
+
+class AiAnnotationSaveData(BaseModel):
+    annotation_column: str
+    edits_applied: int
+
+
+class AiAnnotationSaveResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    data: AiAnnotationSaveData
+
+
+class TopicModelingEmbeddingCacheMeasurement(BaseModel):
+    bytes: int
+    files: int
+
+
+class TopicModelingEmbeddingCacheSizeResponse(BaseModel):
+    state: Literal["successful"]
+    data: TopicModelingEmbeddingCacheMeasurement
+
+
+class TopicModelingEmbeddingCacheClearData(BaseModel):
+    bytes_freed: int
+    files_removed: int
+    measured_before: TopicModelingEmbeddingCacheMeasurement
+
+
+class TopicModelingEmbeddingCacheClearResponse(BaseModel):
+    state: Literal["successful"]
+    message: str
+    data: TopicModelingEmbeddingCacheClearData
 
 
 # =============================================================================
@@ -899,6 +1075,75 @@ class FilterPreviewResponse(BaseModel):
     pagination: PaginationInfo
 
 
+ColumnScalarValue = str | int | float | bool
+AnalysisTaskState = Literal["pending", "running", "successful", "failed", "cancelled"]
+
+
+class AnalysisTaskMetadata(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    task_id: str | None = None
+
+
+class SourceRowPagination(BaseModel):
+    page: int
+    page_size: int
+    total_source_rows: int
+    total_source_pages: int
+    result_count: int
+    has_next: bool
+    has_prev: bool
+
+
+class AnalysisSorting(BaseModel):
+    sort_by: str | None = None
+    descending: bool
+
+
+class NodeDataSorting(BaseModel):
+    sort_by: str | None = None
+    descending: bool
+
+
+class NodeDataFiltering(BaseModel):
+    column: str | None = None
+    value: str | None = None
+    op: str
+
+
+class NodeDataResponse(BaseModel):
+    data: list[dict[str, Any]]
+    pagination: PaginationInfo
+    columns: list[str]
+    dtypes: dict[str, str]
+    sorting: NodeDataSorting
+    filtering: NodeDataFiltering
+
+
+class NodeQueryPlanResponse(BaseModel):
+    plan: str
+
+
+class NodeShapeResponse(BaseModel):
+    shape: tuple[int | None, int | None]
+
+
+class ColumnUniqueValuesResponse(BaseModel):
+    column_name: str
+    unique_count: int
+    unique_values: list[ColumnScalarValue]
+    has_null: bool
+
+
+class ColumnOperationInfo(BaseModel):
+    method: str
+    label: str
+
+
+class ColumnOperationsResponse(BaseModel):
+    operations: dict[str, list[ColumnOperationInfo]]
+
+
 # =============================================================================
 # POLARS EXPRESSION MODELS
 # =============================================================================
@@ -997,14 +1242,14 @@ class TokenFrequencyNodeResult(BaseModel):
     data: List[TokenFrequencyData]
     columns: List[str] = ["token", "frequency"]
     # Optional metadata (e.g., server-side truncation info)
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: AnalysisTaskMetadata | None = None
 
 
 class TokenFrequencyResponse(BaseModel):
     """Unified response model for token frequency analysis."""
 
-    state: Optional[str] = None  # 'successful', 'failed', 'running'
-    message: str
+    state: AnalysisTaskState | None = None
+    message: str | None = None
     data: Optional[Dict[str, TokenFrequencyNodeResult]] = (
         None  # Maps node_name -> { data: [...], columns: [...] }
     )
@@ -1013,7 +1258,7 @@ class TokenFrequencyResponse(BaseModel):
     )
     token_limit: Optional[int] = None
     analysis_params: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: AnalysisTaskMetadata | None = None
     stop_words: Optional[List[str]] = None
 
 
@@ -1122,9 +1367,9 @@ class AiAnnotationSaveRequest(BaseModel):
 class AiAnnotationNodeResult(BaseModel):
     data: List[Dict[str, Any]]
     columns: List[str]
-    metadata: Optional[Dict[str, Any]] = None
-    pagination: Optional[Dict[str, Any]] = None
-    sorting: Optional[Dict[str, Any]] = None
+    metadata: AnalysisTaskMetadata | None = None
+    pagination: SourceRowPagination | None = None
+    sorting: AnalysisSorting | None = None
 
 
 class AiAnnotationResultQuery(BaseModel):
@@ -1137,12 +1382,50 @@ class AiAnnotationResultQuery(BaseModel):
 
 
 class AiAnnotationResponse(BaseModel):
-    state: str
+    state: AnalysisTaskState
     message: str
     data: Optional[Dict[str, AiAnnotationNodeResult]] = None
     analysis_params: Optional[Dict[str, Any]] = None
     combinable: Optional[bool] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class AiAnnotationModelInfo(BaseModel):
+    id: str
+    name: str
+
+
+class AiAnnotationModelsData(BaseModel):
+    models: list[AiAnnotationModelInfo]
+
+
+class AiAnnotationModelsResponse(BaseModel):
+    state: Literal["successful", "failed"]
+    message: str
+    data: AiAnnotationModelsData
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class AiAnnotationProvidersData(BaseModel):
+    providers: list[str]
+
+
+class AiAnnotationProvidersResponse(BaseModel):
+    state: Literal["successful", "failed"]
+    message: str
+    data: AiAnnotationProvidersData
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class AiAnnotationCategoriesData(BaseModel):
+    categories: list[str]
+
+
+class AiAnnotationCategoriesResponse(BaseModel):
+    state: Literal["successful", "failed"]
+    message: str
+    data: AiAnnotationCategoriesData
+    metadata: AnalysisTaskMetadata | None = None
 
 
 # =============================================================================
@@ -1200,14 +1483,14 @@ class TopicModelingData(BaseModel):
     topics: List[TopicModelingTopic]
     corpus_sizes: List[int]
     per_corpus_topic_counts: Optional[List[Dict[int, int]]] = None
-    meta: Optional[Dict[str, Any]] = None
+    meta: AnalysisTaskMetadata | None = None
 
 
 class TopicModelingResponse(BaseModel):
-    state: str  # 'successful', 'failed', 'running', 'cancelled'
+    state: AnalysisTaskState
     message: str
     data: Optional[TopicModelingData] = None
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: AnalysisTaskMetadata | None = None
 
 
 class TopicMeaningOverrideItem(BaseModel):
@@ -1243,17 +1526,27 @@ class TopicModelingDetachNodeOption(BaseModel):
 
 
 class TopicModelingDetachOptionsResponse(BaseModel):
-    state: str
+    state: AnalysisTaskState
     message: str
-    data: Dict[str, List[TopicModelingDetachNodeOption]]
-    metadata: Optional[Dict[str, Any]] = None
+    data: Dict[str, List[TopicModelingDetachNodeOption]] | None = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class TopicModelingDetachedNode(BaseModel):
+    source_node_id: str
+    new_node_id: str
+    topic_meanings_node_id: str | None = None
+
+
+class TopicModelingDetachData(BaseModel):
+    detached_nodes: list[TopicModelingDetachedNode] = Field(default_factory=list)
 
 
 class TopicModelingDetachResponse(BaseModel):
-    state: str
+    state: AnalysisTaskState
     message: str
-    data: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    data: TopicModelingDetachData | None = None
+    metadata: AnalysisTaskMetadata | None = None
 
 
 # Concordance response models
@@ -1270,23 +1563,39 @@ class ConcordanceMetadata(BaseModel):
 class ConcordanceNodeResult(BaseModel):
     """Per-node concordance payload returned to the frontend."""
 
-    data: List[Dict[str, Any]]
+    data: List[List[Dict[str, Any]]]
     columns: List[str]
     metadata: ConcordanceMetadata
-    total_matches: int
-    pagination: Dict[str, Any]
-    sorting: Dict[str, Any]
+    total_matches: int | None = None
+    pagination: SourceRowPagination
+    sorting: AnalysisSorting
+    materialized: bool | None = None
 
 
 class ConcordanceAnalysisResponse(BaseModel):
     """Unified concordance response for single or multi-node requests."""
 
-    state: str  # 'successful', 'failed', 'running', 'cancelled'
+    state: AnalysisTaskState
     message: str
-    data: Dict[
-        str, Dict[str, Any]
-    ]  # node label -> ConcordanceNodeResult | combined summary
+    data: Dict[str, ConcordanceNodeResult]
     analysis_params: Optional[Dict[str, Any]] = None
+    combinable: bool | None = None
+    preferences: dict[str, Any] | None = None
+    metadata: AnalysisTaskMetadata | None = None
+
+
+class ConcordanceDispersionBinRow(BaseModel):
+    matched_text: str | None = None
+    bin_idx: int | None = None
+    count: int | None = None
+
+
+class ConcordanceDispersionBinsResponse(BaseModel):
+    node_id: str
+    total_hits: int
+    document_column: str | None = None
+    bin_count: int
+    rows: list[ConcordanceDispersionBinRow]
 
 
 # =============================================================================
@@ -1300,10 +1609,10 @@ class ColumnDescribeResponse(BaseModel):
     column_name: str
     count: Optional[int] = None
     null_count: Optional[int] = None
-    mean: Optional[Any] = None  # Can be float (numeric) or str (datetime ISO format)
-    std: Optional[Any] = None  # Can be float (numeric) or None (datetime)
-    min: Optional[Any] = None
-    percentile_25: Optional[Any] = None
-    median: Optional[Any] = None
-    percentile_75: Optional[Any] = None
-    max: Optional[Any] = None
+    mean: ColumnScalarValue | None = None
+    std: ColumnScalarValue | None = None
+    min: ColumnScalarValue | None = None
+    percentile_25: ColumnScalarValue | None = None
+    median: ColumnScalarValue | None = None
+    percentile_75: ColumnScalarValue | None = None
+    max: ColumnScalarValue | None = None

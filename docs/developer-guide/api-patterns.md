@@ -26,6 +26,12 @@ token validation are already handled there.
 
 ## Response Conventions
 
+Routes that return JSON should declare a concrete `response_model`. The frontend
+OpenAPI client is generated from these models, so leaving a route as a bare
+`dict` or `Any` response forces downstream `unknown` types and handwritten
+adapter casts. Keep dynamic row payloads as `dict[str, Any]`, but type the
+envelope, pagination, sorting, metadata, task state, and operation result fields.
+
 Many task and operation routes return a state envelope:
 
 ```json

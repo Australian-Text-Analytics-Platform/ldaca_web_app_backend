@@ -25,6 +25,7 @@ from ...core.auth import get_current_user
 # Note: DocWorkspace API helpers are not used directly in this HTTP layer
 from ...core.utils import get_user_data_folder, load_data_file, normalize_dtypes
 from ...core.workspace import workspace_manager
+from ...models import WorkspaceNodeInfo
 from .schema_filter import frontend_node_info, project_visible
 from .utils import stage_dataframe_as_lazy, update_workspace
 
@@ -266,7 +267,7 @@ async def rename_node_column(
     return frontend_node_info(node)
 
 
-@router.post("/nodes/{node_id}/undo")
+@router.post("/nodes/{node_id}/undo", response_model=WorkspaceNodeInfo)
 async def undo_node_operation(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -290,7 +291,7 @@ async def undo_node_operation(
     return frontend_node_info(node)
 
 
-@router.post("/nodes/{node_id}/redo")
+@router.post("/nodes/{node_id}/redo", response_model=WorkspaceNodeInfo)
 async def redo_node_operation(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -394,7 +395,7 @@ def _configure_numba_threading():
 _configure_numba_threading()
 
 
-@router.post("/nodes")
+@router.post("/nodes", response_model=WorkspaceNodeInfo)
 async def add_node_to_workspace(
     filename: str,
     sheet_name: str | None = Query(

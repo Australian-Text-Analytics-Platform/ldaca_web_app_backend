@@ -28,11 +28,15 @@ from ....core.services.quotation_client import (
 )
 from ....core.workspace import workspace_manager
 from ....models import (
+    AnalysisTaskActionResponse,
+    CurrentAnalysisTasksResponse,
+    QuotationAnalysisResponse,
     QuotationDetachNodeOption,
     QuotationDetachOptionsResponse,
     QuotationDetachRequest,
     QuotationEngineConfig,
     QuotationMaterializeRequest,
+    QuotationPreferenceUpdateResponse,
     QuotationRequest,
     QuotationResultQuery,
 )
@@ -157,7 +161,7 @@ def _collect_non_empty_quotation_corpus(
 router = APIRouter(prefix="/workspaces", tags=["quotation"])
 
 
-@router.get("/quotation/tasks/current")
+@router.get("/quotation/tasks/current", response_model=CurrentAnalysisTasksResponse)
 async def quotation_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -171,7 +175,10 @@ async def quotation_current_tasks(
     )
 
 
-@router.get("/quotation/tasks/{task_id}/request")
+@router.get(
+    "/quotation/tasks/{task_id}/request",
+    response_model=AnalysisQuotationRequest,
+)
 async def quotation_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -189,7 +196,9 @@ async def quotation_task_request(
     return request.model_dump()
 
 
-@router.get("/quotation/tasks/{task_id}/result")
+@router.get(
+    "/quotation/tasks/{task_id}/result", response_model=QuotationAnalysisResponse | None
+)
 async def quotation_task_result(
     task_id: str,
     page: Optional[int] = None,
@@ -252,7 +261,10 @@ async def quotation_task_result(
     return base_result
 
 
-@router.post("/quotation/tasks/{task_id}/result")
+@router.post(
+    "/quotation/tasks/{task_id}/result",
+    response_model=QuotationAnalysisResponse | QuotationPreferenceUpdateResponse,
+)
 async def update_quotation_task_result(
     task_id: str,
     query: QuotationResultQuery,
@@ -390,7 +402,7 @@ async def update_quotation_task_result(
     return updated_result
 
 
-@router.post("/nodes/{node_id}/quotation")
+@router.post("/nodes/{node_id}/quotation", response_model=QuotationAnalysisResponse)
 async def get_quotation(
     node_id: str,
     request: QuotationRequest,
@@ -665,7 +677,9 @@ async def detach_quotation(
         )
 
 
-@router.post("/nodes/{node_id}/quotation/materialize")
+@router.post(
+    "/nodes/{node_id}/quotation/materialize", response_model=AnalysisTaskActionResponse
+)
 async def materialize_quotation(
     node_id: str,
     request: QuotationMaterializeRequest,

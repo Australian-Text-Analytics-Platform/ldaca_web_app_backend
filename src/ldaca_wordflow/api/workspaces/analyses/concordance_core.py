@@ -870,7 +870,7 @@ def collect_interleaved_combined(
     left_all_rows = left_result["data"]
     right_all_rows = right_result["data"]
 
-    all_interleaved: list[dict[str, Any]] = []
+    all_interleaved: list[list[dict[str, Any]]] = []
     li, ri = 0, 0
     use_left = True
     while li < len(left_all_rows) or ri < len(right_all_rows):

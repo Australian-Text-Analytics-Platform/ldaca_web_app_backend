@@ -8,12 +8,14 @@ from importlib import resources
 
 from fastapi import APIRouter
 
+from ..models import DefaultStopWordsResponse
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/text", tags=["text_analysis"])
 
 
-@router.get("/default-stop-words")
+@router.get("/default-stop-words", response_model=DefaultStopWordsResponse)
 async def get_default_stop_words(
     language: str = "english",
     strict: bool = False,

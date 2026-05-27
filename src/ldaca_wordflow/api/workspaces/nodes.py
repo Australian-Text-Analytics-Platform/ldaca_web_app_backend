@@ -30,10 +30,16 @@ from ...core.polars_operations import get_operations_for_dtype
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
+    ColumnDescribeResponse,
+    ColumnOperationsResponse,
+    ColumnUniqueValuesResponse,
     ConcatPreviewRequest,
     ConcatRequest,
     FilterPreviewResponse,
     FilterRequest,
+    NodeDataResponse,
+    NodeQueryPlanResponse,
+    NodeShapeResponse,
     PaginationInfo,
     PolarsExpressionApplyResponse,
     PolarsExpressionContext,
@@ -41,6 +47,7 @@ from ...models import (
     ReplaceApplyResponse,
     ReplaceRequest,
     SliceRequest,
+    WorkspaceNodeInfo,
 )
 from .schema_filter import frontend_node_info, project_visible
 from .utils import update_workspace
@@ -123,6 +130,12 @@ def _resolve_replace_column_name(request: ReplaceRequest) -> str:
 def _is_string_list_dtype(dtype: Any) -> bool:
     """Return True when dtype is exactly a list of strings."""
     return dtype == pl.List(pl.String) or dtype == pl.List(pl.Utf8)
+
+
+def _serialize_column_scalar(value: Any) -> str | int | float | bool:
+    if isinstance(value, str | int | float | bool):
+        return value
+    return str(value)
 
 
 def _make_temporal_literal(value: datetime, column_dtype: Any) -> pl.Expr:
@@ -641,7 +654,7 @@ async def replace_apply(
     )
 
 
-@router.get("/nodes/{node_id}")
+@router.get("/nodes/{node_id}", response_model=WorkspaceNodeInfo)
 async def get_node_info(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -651,7 +664,7 @@ async def get_node_info(
     return frontend_node_info(ws.nodes[node_id])
 
 
-@router.get("/nodes/{node_id}/query-plan")
+@router.get("/nodes/{node_id}/query-plan", response_model=NodeQueryPlanResponse)
 async def get_node_query_plan(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -663,7 +676,7 @@ async def get_node_query_plan(
     return {"plan": plan}
 
 
-@router.get("/nodes/{node_id}/data")
+@router.get("/nodes/{node_id}/data", response_model=NodeDataResponse)
 async def get_node_data(
     node_id: str,
     page: int = 1,
@@ -736,7 +749,7 @@ async def get_node_data(
     }
 
 
-@router.get("/nodes/{node_id}/shape")
+@router.get("/nodes/{node_id}/shape", response_model=NodeShapeResponse)
 async def get_node_shape(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -745,7 +758,10 @@ async def get_node_shape(
     return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
 
 
-@router.get("/nodes/{node_id}/columns/{column_name}/unique")
+@router.get(
+    "/nodes/{node_id}/columns/{column_name}/unique",
+    response_model=ColumnUniqueValuesResponse,
+)
 async def get_column_unique_values(
     node_id: str,
     column_name: str,
@@ -782,7 +798,9 @@ async def get_column_unique_values(
         )
         raw_values = unique_df.get_column(column_name).to_list()
         has_null = any(value is None for value in raw_values)
-        non_null_values = [value for value in raw_values if value is not None]
+        non_null_values = [
+            _serialize_column_scalar(value) for value in raw_values if value is not None
+        ]
         return {
             "column_name": column_name,
             "unique_count": len(raw_values),
@@ -795,15 +813,16 @@ async def get_column_unique_values(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
-@router.get("/nodes/{node_id}/columns/{column_name}/describe")
+@router.get(
+    "/nodes/{node_id}/columns/{column_name}/describe",
+    response_model=ColumnDescribeResponse,
+)
 async def describe_column(
     node_id: str,
     column_name: str,
     current_user: dict = Depends(get_current_user),
 ):
     """Get descriptive statistics for a column using Polars describe with 'nearest' interpolation."""
-    from ...models import ColumnDescribeResponse
-
     user_id = current_user["id"]
 
     try:
@@ -900,7 +919,7 @@ async def update_node_name(
         return {"id": getattr(node, "id", node_id), "name": new_name}
 
 
-@router.post("/nodes/{node_id}/clone")
+@router.post("/nodes/{node_id}/clone", response_model=WorkspaceNodeInfo)
 async def clone_node(
     node_id: str,
     current_user: dict = Depends(get_current_user),
@@ -1399,7 +1418,10 @@ async def join_nodes(
 # =============================================================================
 
 
-@router.get("/nodes/{node_id}/columns/{column_name}/operations")
+@router.get(
+    "/nodes/{node_id}/columns/{column_name}/operations",
+    response_model=ColumnOperationsResponse,
+)
 async def column_operations(
     node_id: str,
     column_name: str,

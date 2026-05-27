@@ -25,11 +25,18 @@ from ....core.utils import get_user_cache_folder
 from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
+    AnalysisClearResponse,
+    AnalysisTaskMetadata,
+    CurrentAnalysisTasksResponse,
     TopicModelingData,
+    TopicModelingDetachData,
+    TopicModelingDetachedNode,
     TopicModelingDetachNodeOption,
     TopicModelingDetachOptionsResponse,
     TopicModelingDetachRequest,
     TopicModelingDetachResponse,
+    TopicModelingEmbeddingCacheClearResponse,
+    TopicModelingEmbeddingCacheSizeResponse,
     TopicModelingRequest,
     TopicModelingResponse,
 )
@@ -55,6 +62,10 @@ def _topic_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _TOPIC_SUBMISSION_LOCKS[key] = lock
     return lock
+
+
+def _task_metadata(task_id: object | None) -> AnalysisTaskMetadata:
+    return AnalysisTaskMetadata(task_id=str(task_id) if task_id is not None else None)
 
 
 def _prepare_topic_artifact_target(user_id: str, workspace_id: str) -> tuple[Path, str]:
@@ -209,7 +220,7 @@ async def _require_completed_topic_task(
     return task
 
 
-@router.delete("/topic-modeling")
+@router.delete("/topic-modeling", response_model=AnalysisClearResponse)
 async def clear_topic_modeling_results(
     current_user: dict = Depends(get_current_user),
 ):
@@ -262,7 +273,10 @@ def _measure_embedding_cache(user_id: str) -> dict:
     return {"bytes": bytes_total, "files": file_count}
 
 
-@router.get("/topic-modeling/embedding-cache/size")
+@router.get(
+    "/topic-modeling/embedding-cache/size",
+    response_model=TopicModelingEmbeddingCacheSizeResponse,
+)
 async def get_topic_modeling_embedding_cache_size(
     current_user: dict = Depends(get_current_user),
 ):
@@ -277,7 +291,10 @@ async def get_topic_modeling_embedding_cache_size(
     }
 
 
-@router.delete("/topic-modeling/embedding-cache")
+@router.delete(
+    "/topic-modeling/embedding-cache",
+    response_model=TopicModelingEmbeddingCacheClearResponse,
+)
 async def clear_topic_modeling_embedding_cache(
     current_user: dict = Depends(get_current_user),
 ):
@@ -382,7 +399,7 @@ async def run_topic_modeling(
                     state="running",
                     message="Topic Modeling analysis already running",
                     data=None,
-                    metadata={"task_id": latest.id if latest else None},
+                    metadata=_task_metadata(latest.id if latest else None),
                 )
         except Exception:
             # Non-fatal: proceed to submit a new task.
@@ -470,11 +487,13 @@ async def run_topic_modeling(
         state="running",
         message="Topic Modeling analysis started",
         data=None,
-        metadata={"task_id": worker_task.id},
+        metadata=_task_metadata(worker_task.id),
     )
 
 
-@router.get("/topic-modeling/tasks/current")
+@router.get(
+    "/topic-modeling/tasks/current", response_model=CurrentAnalysisTasksResponse
+)
 async def topic_modeling_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -488,7 +507,10 @@ async def topic_modeling_current_tasks(
     )
 
 
-@router.get("/topic-modeling/tasks/{task_id}/request")
+@router.get(
+    "/topic-modeling/tasks/{task_id}/request",
+    response_model=AnalysisTopicModelingRequest,
+)
 async def topic_modeling_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -540,7 +562,7 @@ async def topic_modeling_task_result(
             state="running",
             message="Topic Modeling analysis is running",
             data=None,
-            metadata={"task_id": task_id},
+            metadata=_task_metadata(task_id),
         )
 
     if task.status == AnalysisStatus.FAILED:
@@ -548,7 +570,7 @@ async def topic_modeling_task_result(
             state="failed",
             message=(task.error or "Topic Modeling analysis failed"),
             data=None,
-            metadata={"task_id": task_id},
+            metadata=_task_metadata(task_id),
         )
 
     if task.status == AnalysisStatus.COMPLETED and task.result:
@@ -560,14 +582,14 @@ async def topic_modeling_task_result(
             state="successful",
             message="Topic Modeling analysis complete",
             data=result_data,
-            metadata={"task_id": task_id},
+            metadata=_task_metadata(task_id),
         )
 
     return TopicModelingResponse(
         state="failed",
         message="Topic Modeling analysis failed",
         data=None,
-        metadata={"task_id": task_id},
+        metadata=_task_metadata(task_id),
     )
 
 
@@ -699,7 +721,7 @@ async def update_topic_modeling_task_result(
         state="successful",
         message="Topic Modeling analysis updated",
         data=TopicModelingData.model_validate(payload),
-        metadata={"task_id": task_id},
+        metadata=_task_metadata(task_id),
     )
 
 
@@ -782,7 +804,7 @@ async def topic_modeling_detach_options(
         state="successful",
         message="Topic detach options loaded",
         data={"nodes": nodes},
-        metadata={"task_id": task_id},
+        metadata=_task_metadata(task_id),
     )
 
 
@@ -869,7 +891,7 @@ async def detach_topic_modeling(
     if not target_node_ids:
         raise HTTPException(status_code=400, detail="No node IDs provided for detach")
 
-    detached_nodes: list[dict[str, str]] = []
+    detached_nodes: list[TopicModelingDetachedNode] = []
     for node_id in target_node_ids:
         artifact_payload = assignments_by_node_id.get(node_id)
         if not artifact_payload:
@@ -1005,11 +1027,11 @@ async def detach_topic_modeling(
         ws.add_node(meanings_node)
 
         detached_nodes.append(
-            {
-                "source_node_id": node_id,
-                "new_node_id": new_node.id,
-                "topic_meanings_node_id": meanings_node.id,
-            }
+            TopicModelingDetachedNode(
+                source_node_id=node_id,
+                new_node_id=new_node.id,
+                topic_meanings_node_id=meanings_node.id,
+            )
         )
 
     update_workspace(user_id, workspace_id, ws)
@@ -1017,6 +1039,6 @@ async def detach_topic_modeling(
     return TopicModelingDetachResponse(
         state="successful",
         message="Topic detach completed",
-        data={"detached_nodes": detached_nodes},
-        metadata={"task_id": task_id},
+        data=TopicModelingDetachData(detached_nodes=detached_nodes),
+        metadata=_task_metadata(task_id),
     )

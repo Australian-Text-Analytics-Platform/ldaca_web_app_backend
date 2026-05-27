@@ -28,7 +28,12 @@ from ....core.analysis_helpers import sanitize_stop_words
 from ....core.auth import get_current_user
 from ....core.tokens_cache import hydrate_tokenization_lazyframe
 from ....core.workspace import workspace_manager
-from ....models import TokenFrequencyRequest, TokenFrequencyResponse
+from ....models import (
+    AnalysisClearResponse,
+    CurrentAnalysisTasksResponse,
+    TokenFrequencyRequest,
+    TokenFrequencyResponse,
+)
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
@@ -298,7 +303,10 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
     }
 
 
-@router.get("/token-frequencies/tasks/current")
+@router.get(
+    "/token-frequencies/tasks/current",
+    response_model=CurrentAnalysisTasksResponse,
+)
 async def token_frequencies_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
@@ -312,7 +320,10 @@ async def token_frequencies_current_tasks(
     )
 
 
-@router.get("/token-frequencies/tasks/{task_id}/request")
+@router.get(
+    "/token-frequencies/tasks/{task_id}/request",
+    response_model=AnalysisTokenFrequencyRequest,
+)
 async def token_frequencies_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -330,7 +341,10 @@ async def token_frequencies_task_request(
     return request.model_dump()
 
 
-@router.get("/token-frequencies/tasks/{task_id}/result")
+@router.get(
+    "/token-frequencies/tasks/{task_id}/result",
+    response_model=TokenFrequencyResponse | None,
+)
 async def token_frequencies_task_result(
     task_id: str,
     current_user: dict = Depends(get_current_user),
@@ -373,7 +387,9 @@ async def token_frequencies_task_result(
     return _rebuild_token_result(task)
 
 
-@router.post("/token-frequencies/tasks/{task_id}/result")
+@router.post(
+    "/token-frequencies/tasks/{task_id}/result", response_model=AnalysisClearResponse
+)
 async def update_token_frequencies_task_result(
     task_id: str,
     updates: dict | None,
