@@ -3,15 +3,20 @@ from types import ModuleType
 from typing import Any, cast
 
 import polars as pl
-
 from ldaca_wordflow.core.worker_tasks_token import run_token_frequencies_task
 
 
 def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypatch):
     progress_updates: list[tuple[float, str]] = []
+    requested_models: list[str | None] = []
 
     fake_polars_text = cast(Any, ModuleType("polars_text"))
-    fake_polars_text.token_frequencies = lambda series: {"alpha": 3, "beta": 1}
+
+    def fake_token_frequencies(series, model=None):
+        requested_models.append(model)
+        return {"alpha": 3, "beta": 1}
+
+    fake_polars_text.token_frequencies = fake_token_frequencies
     fake_polars_text.token_frequency_stats = lambda left, right: pl.DataFrame(
         {
             "token": ["alpha"],
@@ -48,9 +53,11 @@ def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypat
                 message,
             )
         ),
+        tokenizer_model="jieba",
     )
 
     assert result["state"] == "successful"
+    assert requested_models == ["jieba", "jieba"]
     assert progress_updates[0][1].startswith("Loading token frequency")
     assert any(
         "Preparing text data" in message for _progress, message in progress_updates

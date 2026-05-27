@@ -1429,6 +1429,7 @@ class TokenFrequencyRequest(BaseModel):
     node_columns: Dict[str, str]  # Maps node_id -> column_name
     stop_words: Optional[List[str]] = None
     token_limit: Optional[int] = None
+    tokenizer_model: Optional[str] = None
     # Pydantic v2 model config
     model_config = ConfigDict(
         json_schema_extra={
@@ -1437,6 +1438,7 @@ class TokenFrequencyRequest(BaseModel):
                 "node_columns": {"node1": "text_column", "node2": "content_column"},
                 "stop_words": ["the", "and", "or"],
                 "token_limit": 50,
+                "tokenizer_model": "plain_words_en",
             }
         },
     )

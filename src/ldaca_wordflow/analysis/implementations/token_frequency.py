@@ -33,3 +33,7 @@ class TokenFrequencyRequest(BaseAnalysisRequest):
     token_limit: int | None = Field(
         None, description="Limit on number of tokens returned"
     )
+    tokenizer_model: str | None = Field(
+        None,
+        description="Tokenizer model ID used for raw text token-frequency analysis",
+    )

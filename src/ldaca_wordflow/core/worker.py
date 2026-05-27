@@ -402,6 +402,7 @@ def token_frequencies_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
     node_token_streams: dict[str, str] | None = None,
+    tokenizer_model: str | None = None,
 ) -> dict[str, Any]:
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_token_frequencies_task(
@@ -416,6 +417,7 @@ def token_frequencies_task(
         stop_words=stop_words,
         progress_callback=cb,
         node_token_streams=node_token_streams,
+        tokenizer_model=tokenizer_model,
     )
 
 

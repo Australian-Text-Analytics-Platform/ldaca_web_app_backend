@@ -26,6 +26,7 @@ def run_token_frequencies_task(
     stop_words: list[str] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
     node_token_streams: dict[str, str] | None = None,
+    tokenizer_model: str | None = None,
 ) -> dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
 
@@ -73,6 +74,7 @@ def run_token_frequencies_task(
         )
 
         token_streams = node_token_streams or {}
+        effective_tokenizer_model = (tokenizer_model or "").strip() or "plain_words_en"
         node_ids = list({**node_corpora, **token_streams}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
@@ -126,7 +128,10 @@ def run_token_frequencies_task(
                     "document",
                     [str(v) if v is not None else "" for v in docs],
                 )
-                frequency_results[node_id] = pt.token_frequencies(series)
+                frequency_results[node_id] = pt.token_frequencies(
+                    series,
+                    model=effective_tokenizer_model,
+                )
 
         if len(node_ids) == 2:
             stats_df = pt.token_frequency_stats(
@@ -178,6 +183,7 @@ def run_token_frequencies_task(
             "token_limit": effective_limit,
             "server_limit": server_limit,
             "stop_words": requested_stop_words,
+            "tokenizer_model": effective_tokenizer_model,
         }
 
         result_payload: dict[str, Any] = {
@@ -201,6 +207,7 @@ def run_token_frequencies_task(
                 "token_limit": effective_limit,
                 "server_limit": server_limit,
                 "stop_words": requested_stop_words,
+                "tokenizer_model": effective_tokenizer_model,
                 "node_display_names": {**node_display_names},
             },
             "stop_words": requested_stop_words,

@@ -11,12 +11,16 @@ import polars as pl
 from ldaca_wordflow.core.worker_tasks_token import run_token_frequencies_task
 
 
-def _stub_polars_text(monkeypatch) -> None:
+def _stub_polars_text(monkeypatch) -> list[str | None]:
     """Stub polars_text so this test doesn't depend on the Rust extension."""
     fake = cast(Any, ModuleType("polars_text"))
+    requested_models: list[str | None] = []
 
-    def _token_frequencies(series: pl.Series) -> dict[str, int]:
+    def _token_frequencies(
+        series: pl.Series, model: str | None = None
+    ) -> dict[str, int]:
         # Mimic the raw-text path: naive whitespace split for the test.
+        requested_models.append(model)
         counter: dict[str, int] = {}
         for value in series.to_list():
             for token in (value or "").split():
@@ -26,10 +30,11 @@ def _stub_polars_text(monkeypatch) -> None:
     fake.token_frequencies = _token_frequencies
     fake.token_frequency_stats = lambda *_args, **_kwargs: pl.DataFrame()
     monkeypatch.setitem(sys.modules, "polars_text", fake)
+    return requested_models
 
 
 def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
-    _stub_polars_text(monkeypatch)
+    requested_models = _stub_polars_text(monkeypatch)
 
     result = run_token_frequencies_task(
         configure_worker_environment=lambda: None,
@@ -42,6 +47,7 @@ def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
     )
 
     assert result["state"] == "successful"
+    assert requested_models == ["plain_words_en"]
     parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
     counts = pl.read_parquet(parquet_path).to_dicts()
     counts_map = {row["token"]: row["frequency"] for row in counts}
@@ -50,7 +56,7 @@ def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
 
 def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
     """Two-corpus comparison where one side uses a token stream."""
-    _stub_polars_text(monkeypatch)
+    requested_models = _stub_polars_text(monkeypatch)
 
     stream_path = tmp_path / "tokens-side-stream.parquet"
     pl.DataFrame({"token": ["beta", "gamma", "gamma"]}).write_parquet(stream_path)
@@ -67,6 +73,7 @@ def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
     )
 
     assert result["state"] == "successful"
+    assert requested_models == ["plain_words_en"]
     node_paths = {
         artifact["node_id"]: Path(artifact["token_parquet_path"])
         for artifact in result["artifacts"]["nodes"]
