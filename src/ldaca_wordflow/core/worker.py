@@ -8,6 +8,7 @@ import logging
 import os
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any, Callable, Dict, Optional
 
 from .worker_tasks_concordance import (
@@ -473,7 +474,19 @@ class WorkerTaskManager:
             self.start()
 
         assert self.executor is not None
-        return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
+        try:
+            return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
+        except BrokenProcessPool:
+            # Cancelling a running task SIGTERM-kills its worker process, which
+            # marks the whole shared ProcessPoolExecutor as broken — every later
+            # submit then raises BrokenProcessPool until the backend restarts
+            # (users saw "couldn't run any more concordance searches"). Rebuild
+            # the pool and retry once so subsequent tasks work.
+            logger.warning("Worker pool was broken (likely after a cancel); recreating it")
+            self.shutdown(wait=False)
+            self.start()
+            assert self.executor is not None
+            return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
     def shutdown(self, wait: bool = True, timeout: Optional[float] = None) -> None:
         if self.executor is None:
