@@ -27,6 +27,51 @@ def _build_bundle(manifest: dict[str, Any]) -> bytes:
     return buf.getvalue()
 
 
+def _preview(tool: str) -> dict[str, Any]:
+    match tool:
+        case "concordance":
+            return {
+                "tool": tool,
+                "searchTerm": "love",
+                "totalHits": 42,
+                "materialised": True,
+                "displayColumns": ["doc_id", "matched_text"],
+            }
+        case "quotation":
+            return {
+                "tool": tool,
+                "openPattern": '"',
+                "closePattern": '"',
+                "totalHits": 42,
+                "displayColumns": ["doc_id", "quoted_text"],
+            }
+        case "token_frequencies":
+            return {
+                "tool": tool,
+                "vocabSize": 12,
+                "topToken": "love",
+                "topTokenCount": 42,
+                "tokeniserId": "whitespace",
+            }
+        case "sequential_analysis":
+            return {
+                "tool": tool,
+                "seriesCount": 1,
+                "bucketCount": 12,
+                "chartType": "line",
+            }
+        case "topic_modeling":
+            return {
+                "tool": tool,
+                "numTopics": 3,
+                "vocabSize": 12,
+                "embedder": "test",
+                "wordsPerTopic": 8,
+            }
+        case _:
+            raise ValueError(f"Unsupported snapshot tool fixture: {tool}")
+
+
 def _manifest(
     *,
     tool: str = "concordance",
@@ -54,13 +99,7 @@ def _manifest(
             "canFilterSourceRows": False,
             "canCrossJump": False,
         },
-        "preview": {
-            "tool": tool,
-            "searchTerm": "love",
-            "totalHits": 42,
-            "materialised": True,
-            "displayColumns": ["doc_id", "matched_text"],
-        },
+        "preview": _preview(tool),
         "payloads": [{"kind": "result", "path": "tables/result.parquet"}],
         "node_colors": {"n1": "#aabbcc"},
     }
@@ -107,9 +146,7 @@ async def test_upload_and_list_round_trip(authenticated_client) -> None:
 async def test_upload_writes_sidecars(authenticated_client) -> None:
     """The sidecar manifest + .md exist on disk after upload — that's
     what makes the list endpoint cheap (no zip decode)."""
-    await _upload(
-        authenticated_client, "concordance-foo.ldaca-snapshot", _manifest()
-    )
+    await _upload(authenticated_client, "concordance-foo.ldaca-snapshot", _manifest())
     # Description endpoint serves the .md sidecar; fetching it asserts
     # the sidecar exists (or was lazily regenerated).
     response = await authenticated_client.get(
@@ -236,7 +273,9 @@ async def test_delete_one_removes_all_sidecars(
 @pytest.mark.asyncio
 async def test_list_filters_by_tool(authenticated_client) -> None:
     await _upload(
-        authenticated_client, "concordance-a.ldaca-snapshot", _manifest(tool="concordance")
+        authenticated_client,
+        "concordance-a.ldaca-snapshot",
+        _manifest(tool="concordance"),
     )
     await _upload(
         authenticated_client, "quotation-a.ldaca-snapshot", _manifest(tool="quotation")

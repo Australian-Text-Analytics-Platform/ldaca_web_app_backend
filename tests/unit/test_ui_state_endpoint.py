@@ -12,8 +12,13 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-
 from ldaca_wordflow.api.workspaces import ui_state as ui_state_api
+
+
+def _state(
+    payload: dict[str, dict[str, str]] | None = None,
+) -> ui_state_api.WorkspaceUiState:
+    return ui_state_api.WorkspaceUiState.model_validate(payload or {})
 
 
 class _FakeManager:
@@ -39,7 +44,7 @@ async def test_get_returns_empty_object_when_file_missing(fake_workspace):
     result = await ui_state_api.get_workspace_ui_state(
         workspace_id="ws1", current_user={"id": "u"}
     )
-    assert result == {}
+    assert result == ui_state_api.WorkspaceUiState()
 
 
 @pytest.mark.asyncio
@@ -51,7 +56,7 @@ async def test_get_returns_parsed_contents_when_file_present(fake_workspace):
     result = await ui_state_api.get_workspace_ui_state(
         workspace_id="ws1", current_user={"id": "u"}
     )
-    assert result == payload
+    assert result.model_dump() == payload
 
 
 @pytest.mark.asyncio
@@ -71,7 +76,7 @@ async def test_get_swallows_corrupt_json(fake_workspace):
     result = await ui_state_api.get_workspace_ui_state(
         workspace_id="ws1", current_user={"id": "u"}
     )
-    assert result == {}
+    assert result == ui_state_api.WorkspaceUiState()
 
 
 @pytest.mark.asyncio
@@ -84,16 +89,16 @@ async def test_get_swallows_non_object_json(fake_workspace):
     result = await ui_state_api.get_workspace_ui_state(
         workspace_id="ws1", current_user={"id": "u"}
     )
-    assert result == {}
+    assert result == ui_state_api.WorkspaceUiState()
 
 
 @pytest.mark.asyncio
 async def test_put_writes_file_and_echoes_payload(fake_workspace):
     payload = {"node_colors": {"node-a": "#2563eb", "node-b": "#dc2626"}}
     result = await ui_state_api.put_workspace_ui_state(
-        workspace_id="ws1", payload=payload, current_user={"id": "u"}
+        workspace_id="ws1", payload=_state(payload), current_user={"id": "u"}
     )
-    assert result == payload
+    assert result.model_dump() == payload
     written = (fake_workspace.workspace_dir / "ui_state.json").read_text(
         encoding="utf-8"
     )
@@ -108,7 +113,7 @@ async def test_put_replaces_existing_contents_not_merges(fake_workspace):
     )
     new_payload = {"node_colors": {"new-only": "#2563eb"}}
     await ui_state_api.put_workspace_ui_state(
-        workspace_id="ws1", payload=new_payload, current_user={"id": "u"}
+        workspace_id="ws1", payload=_state(new_payload), current_user={"id": "u"}
     )
     written = (fake_workspace.workspace_dir / "ui_state.json").read_text(
         encoding="utf-8"
@@ -122,7 +127,7 @@ async def test_put_404s_on_unknown_workspace(fake_workspace):
     with pytest.raises(HTTPException) as exc_info:
         await ui_state_api.put_workspace_ui_state(
             workspace_id="does-not-exist",
-            payload={},
+            payload=_state(),
             current_user={"id": "u"},
         )
     assert exc_info.value.status_code == 404
@@ -138,7 +143,7 @@ async def test_put_creates_workspace_dir_if_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_state_api, "workspace_manager", manager)
     await ui_state_api.put_workspace_ui_state(
         workspace_id="ws1",
-        payload={"node_colors": {}},
+        payload=_state(),
         current_user={"id": "u"},
     )
     assert (target / "ui_state.json").exists()

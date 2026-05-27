@@ -360,9 +360,126 @@ class FileInfoResponse(BaseModel):
     file_type: str
 
 
+SnapshotToolKey = Literal[
+    "topic_modeling",
+    "token_frequencies",
+    "sequential_analysis",
+    "concordance",
+    "quotation",
+]
+
+
+class SnapshotCapabilities(BaseModel):
+    canPaginate: bool
+    canSortAndFilterResult: bool
+    canExport: bool
+    canFilterSourceRows: bool
+    canCrossJump: bool
+
+
+class SnapshotPayloadEntryResult(BaseModel):
+    kind: Literal["result"]
+    path: str
+
+
+class SnapshotPayloadEntryDispersionBins(BaseModel):
+    kind: Literal["dispersion-bins"]
+    path: str
+
+
+class SnapshotPayloadEntrySourceProjection(BaseModel):
+    kind: Literal["source-projection"]
+    path: str
+    columns: list[str]
+
+
+class SnapshotPayloadEntrySettings(BaseModel):
+    kind: Literal["settings"]
+    path: str
+
+
+SnapshotPayloadEntry = Union[
+    SnapshotPayloadEntryResult,
+    SnapshotPayloadEntryDispersionBins,
+    SnapshotPayloadEntrySourceProjection,
+    SnapshotPayloadEntrySettings,
+]
+
+
+class ConcordanceSnapshotPreview(BaseModel):
+    tool: Literal["concordance"]
+    searchTerm: str
+    totalHits: int
+    materialised: bool
+    displayColumns: list[str]
+
+
+class QuotationSnapshotPreview(BaseModel):
+    tool: Literal["quotation"]
+    openPattern: str
+    closePattern: str
+    totalHits: int
+    displayColumns: list[str]
+
+
+class TokenFrequenciesSnapshotPreview(BaseModel):
+    tool: Literal["token_frequencies"]
+    vocabSize: int
+    topToken: str
+    topTokenCount: int
+    tokeniserId: str
+
+
+class SequentialAnalysisSnapshotPreview(BaseModel):
+    tool: Literal["sequential_analysis"]
+    seriesCount: int
+    bucketCount: int
+    chartType: str
+
+
+class TopicModelingSnapshotPreview(BaseModel):
+    tool: Literal["topic_modeling"]
+    numTopics: int
+    vocabSize: int
+    embedder: str
+    wordsPerTopic: int
+
+
+SnapshotPreview = Union[
+    ConcordanceSnapshotPreview,
+    QuotationSnapshotPreview,
+    TokenFrequenciesSnapshotPreview,
+    SequentialAnalysisSnapshotPreview,
+    TopicModelingSnapshotPreview,
+]
+
+
+class SnapshotSource(BaseModel):
+    workspace_id: str
+    workspace_name: str
+    node_ids: list[str]
+    node_labels: list[str]
+    per_block_rows: list[int] | None = None
+    total_source_rows: int
+
+
+class SnapshotManifest(BaseModel):
+    schema_version: Literal[1]
+    mode: Literal["demo", "share"]
+    tool: SnapshotToolKey
+    tool_version: str
+    captured_at: str
+    title: str
+    source: SnapshotSource
+    capabilities: SnapshotCapabilities
+    preview: SnapshotPreview
+    payloads: list[SnapshotPayloadEntry]
+    node_colors: dict[str, str]
+
+
 class SnapshotListItem(BaseModel):
     filename: str
-    manifest: dict[str, Any]
+    manifest: SnapshotManifest
     size_bytes: int
 
 
@@ -372,7 +489,7 @@ class SnapshotListResponse(BaseModel):
 
 class SnapshotUploadResponse(BaseModel):
     filename: str
-    manifest: dict[str, Any]
+    manifest: SnapshotManifest
 
 
 class SnapshotDeleteResponse(BaseModel):

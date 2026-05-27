@@ -16,6 +16,7 @@ from typing import IO, Any, cast
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
 # Import API routers
 from .api.admin import router as admin_router
@@ -34,6 +35,10 @@ from .db import cleanup_expired_sessions, init_db
 from .settings import reload_settings, settings
 
 logger = logging.getLogger(__name__)
+
+
+def generate_operation_id(route: APIRoute) -> str:
+    return route.name
 
 
 @asynccontextmanager
@@ -111,6 +116,7 @@ app = FastAPI(
     version="3.0.0",
     description="Multi-user text analysis platform with workspace management and polars-text integration",
     lifespan=lifespan,
+    generate_unique_id_function=generate_operation_id,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",

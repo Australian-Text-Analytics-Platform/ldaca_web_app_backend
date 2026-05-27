@@ -13,6 +13,10 @@ Backend routers should be thin. The normal structure is:
 Avoid putting large business workflows directly inside endpoint functions when
 the logic can live in `core/` or `analysis/`.
 
+FastAPI operation IDs are generated from route function names so the frontend
+hey-api SDK has stable, readable function names. Name new endpoint functions as
+the frontend should import them, and avoid duplicate route names.
+
 ## Authentication
 
 Protected routes should use:
