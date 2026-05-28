@@ -558,6 +558,7 @@ class WorkspaceNodeInfo(BaseModel):
     can_undo: bool | None = None
     can_redo: bool | None = None
     dtype_normalization: list[DtypeNormalizationChange] | None = None
+    tokenizer_models: dict[str, str] = Field(default_factory=dict)
 
 
 class NodeDocumentColumnUpdateRequest(BaseModel):

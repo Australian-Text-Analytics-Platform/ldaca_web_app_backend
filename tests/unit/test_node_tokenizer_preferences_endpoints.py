@@ -46,21 +46,15 @@ async def test_set_node_tokenization_preference_persists_column_metadata(
     )
 
     assert response.status_code == 200
-    tokenization = response.json()["tokenization"]
-    assert (
-        tokenization["document"]["column_name"]
-        == "tokenization.document.native:plain_words_en"
-    )
-    assert tokenization["document"]["model"] == "native:plain_words_en"
-    assert tokenization["document"]["language"] == "en"
+    tokenizer_models = response.json()["tokenizer_models"]
+    assert tokenizer_models["document"] == "native:plain_words_en"
 
     info_response = await authenticated_client.get(
         f"/api/workspaces/nodes/{tiny_node_id}"
     )
     assert info_response.status_code == 200
     assert (
-        info_response.json()["tokenization"]["document"]["model"]
-        == "native:plain_words_en"
+        info_response.json()["tokenizer_models"]["document"] == "native:plain_words_en"
     )
 
 
@@ -76,7 +70,7 @@ async def test_set_node_tokenization_preference_can_clear_column_metadata(
         },
     )
     assert set_response.status_code == 200
-    assert "document" in set_response.json()["tokenization"]
+    assert "document" in set_response.json()["tokenizer_models"]
 
     clear_response = await authenticated_client.put(
         f"/api/workspaces/nodes/{tiny_node_id}/tokenization-preference",
@@ -84,4 +78,4 @@ async def test_set_node_tokenization_preference_can_clear_column_metadata(
     )
 
     assert clear_response.status_code == 200
-    assert "document" not in clear_response.json()["tokenization"]
+    assert "document" not in clear_response.json()["tokenizer_models"]

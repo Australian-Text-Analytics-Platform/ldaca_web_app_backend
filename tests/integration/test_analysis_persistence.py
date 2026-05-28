@@ -1012,17 +1012,15 @@ class TestWorkspaceGraphEnrichment:
         assert response.status_code == 200
         graph_data = response.json()
 
-        # Then: the tokenised node carries `tokenization` metadata.
+        # Then: the tokenised node carries `tokenizer_models` metadata.
         node_entry = next(
             (n for n in graph_data["nodes"] if n.get("id") == tiny_node_id), None
         )
         assert node_entry is not None
-        assert "tokenization" in node_entry
-        tokenization = node_entry["tokenization"]
-        assert len(tokenization) == 1
-        only_meta = tokenization["document"]
-        assert only_meta["column_name"] == tokenization_name
-        assert only_meta["model"] == "huggingface:bert-base-uncased"
+        assert "tokenizer_models" in node_entry
+        tokenizer_models = node_entry["tokenizer_models"]
+        assert len(tokenizer_models) == 1
+        assert tokenizer_models["document"] == "huggingface:bert-base-uncased"
 
 
 @pytest.mark.anyio
