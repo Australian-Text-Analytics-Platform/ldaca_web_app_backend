@@ -4,6 +4,15 @@ Artifact-first implementation:
 - API gathers immutable payload (node corpora) in main process.
 - Worker computes and writes Parquet artifacts.
 - Result endpoint reconstructs response by lazy-scanning artifacts.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Token Frequency analysis endpoints" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers lock per user/workspace, hydrate token inputs, and submit artifact-first work.
+- Result helpers lazy-scan Parquet artifacts, apply requested limits, and synchronize task state.
+- Responses return task metadata, frequency tables, preference updates, or clear-task results.
 """
 
 from __future__ import annotations
@@ -46,6 +55,12 @@ _TOKEN_FREQ_SUBMISSION_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
 
 
 def _token_freq_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock:
+    """Support token-frequency routes with a token freq submission lock helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with a token freq submission lock helper" behavior.
+    """
+
     key = (user_id, workspace_id)
     lock = _TOKEN_FREQ_SUBMISSION_LOCKS.get(key)
     if lock is None:
@@ -61,6 +76,12 @@ MAX_SERVER_TOKEN_LIMIT = 5000
 
 @dataclass(frozen=True)
 class TokenNodeArtifact:
+    """TokenNodeArtifact supports token-frequency routes by modeling token node artifact.
+
+    Used by:
+    - backend API routes because they need this unit's "TokenNodeArtifact supports token-frequency routes by modeling token node artifact" behavior.
+    """
+
     node_id: str
     node_name: str
     token_parquet_path: Path
@@ -68,6 +89,12 @@ class TokenNodeArtifact:
 
 @dataclass(frozen=True)
 class TokenFrequencyArtifacts:
+    """TokenFrequencyArtifacts supports token-frequency routes by modeling token frequency artifacts.
+
+    Used by:
+    - backend API routes because they need this unit's "TokenFrequencyArtifacts supports token-frequency routes by modeling token frequency artifacts" behavior.
+    """
+
     nodes: tuple[TokenNodeArtifact, ...]
     statistics_parquet_path: Path | None
 
@@ -80,6 +107,14 @@ async def clear_token_frequencies(
 
     Mirrors topic-modeling clear behavior by removing the currently tracked
     analysis task link for the token frequency tab.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /token-frequencies route because they need this unit's "Clear Token Frequency analysis state for a workspace" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -102,7 +137,16 @@ async def clear_token_frequencies(
 
 
 def _coerce_limit_value(value: Any) -> int:
-    """Coerce token-limit input to a safe positive integer."""
+    """Coerce token-limit input to a safe positive integer.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Coerce token-limit input to a safe positive integer" behavior.
+    """
     try:
         candidate = int(value)
     except TypeError, ValueError:
@@ -111,6 +155,17 @@ def _coerce_limit_value(value: Any) -> int:
 
 
 def _prepare_token_artifact_target(user_id: str, workspace_id: str) -> tuple[Path, str]:
+    """Prepare token artifact target data consumed by token-frequency routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Prepare token artifact target data consumed by token-frequency routes" behavior.
+    """
+
     workspace_artifacts_dir = workspace_manager.ensure_workspace_artifacts_dir(
         user_id, workspace_id
     )
@@ -121,6 +176,12 @@ def _prepare_token_artifact_target(user_id: str, workspace_id: str) -> tuple[Pat
 
 
 def _task_result_payload(task: AnalysisTask) -> dict:
+    """Support token-frequency routes with a task result payload helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with a task result payload helper" behavior.
+    """
+
     if task.result is None:
         return {}
     payload = task.result.to_json()
@@ -130,6 +191,12 @@ def _task_result_payload(task: AnalysisTask) -> dict:
 
 
 def _invalid_artifact_manifest() -> HTTPException:
+    """Support token-frequency routes with an invalid artifact manifest helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with an invalid artifact manifest helper" behavior.
+    """
+
     return HTTPException(
         status_code=500,
         detail="Token-frequency artifact manifest is invalid",
@@ -137,6 +204,17 @@ def _invalid_artifact_manifest() -> HTTPException:
 
 
 def _node_artifact_from_entry(entry: object) -> TokenNodeArtifact:
+    """Support token-frequency routes with a node artifact from entry helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with a node artifact from entry helper" behavior.
+    """
+
     if not isinstance(entry, dict):
         raise _invalid_artifact_manifest()
 
@@ -156,6 +234,17 @@ def _node_artifact_from_entry(entry: object) -> TokenNodeArtifact:
 def _token_artifacts_from_task(
     task: AnalysisTask,
 ) -> tuple[dict, TokenFrequencyArtifacts]:
+    """Run the token artifacts from task background job submitted by API routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Run the token artifacts from task background job submitted by API routes" behavior.
+    """
+
     payload = _task_result_payload(task)
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
@@ -178,6 +267,12 @@ def _token_artifacts_from_task(
 
 
 def _server_limit(token_limit: int) -> int:
+    """Support token-frequency routes with a server limit helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with a server limit helper" behavior.
+    """
+
     return min(
         max(token_limit * SERVER_LIMIT_MULTIPLIER, DEFAULT_TOKEN_LIMIT),
         MAX_SERVER_TOKEN_LIMIT,
@@ -185,6 +280,17 @@ def _server_limit(token_limit: int) -> int:
 
 
 def _safe_float(value: Any) -> float | str | None:
+    """Create safe float values for token-frequency routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Create safe float values for token-frequency routes" behavior.
+    """
+
     if value is None:
         return None
     try:
@@ -201,6 +307,17 @@ def _safe_float(value: Any) -> float | str | None:
 
 
 def _rebuild_token_result(task: AnalysisTask) -> dict:
+    """Support token-frequency routes with a rebuild token result helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support token-frequency routes with a rebuild token result helper" behavior.
+    """
+
     payload, artifacts = _token_artifacts_from_task(task)
 
     request_payload = task.request.model_dump()
@@ -311,7 +428,16 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
 async def token_frequencies_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for token-frequencies analysis."""
+    """Return current task IDs for token-frequencies analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /token-frequencies/tasks/current route because they need this unit's "Return current task IDs for token-frequencies analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -329,7 +455,16 @@ async def token_frequencies_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for a token-frequencies task."""
+    """Return stored request payload for a token-frequencies task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /token-frequencies/tasks/{task_id}/request route because they need this unit's "Return stored request payload for a token-frequencies task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -350,7 +485,16 @@ async def token_frequencies_task_result(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return normalized token-frequency result payload for one task."""
+    """Return normalized token-frequency result payload for one task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /token-frequencies/tasks/{task_id}/result route because they need this unit's "Return normalized token-frequency result payload for one task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -396,7 +540,16 @@ async def update_token_frequencies_task_result(
     updates: TokenFrequencyPreferenceUpdateRequest | None,
     current_user: dict = Depends(get_current_user),
 ):
-    """Persist token-frequency preference overrides on an existing task."""
+    """Persist token-frequency preference overrides on an existing task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /token-frequencies/tasks/{task_id}/result route because they need this unit's "Persist token-frequency preference overrides on an existing task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -441,7 +594,16 @@ async def calculate_token_frequencies(
     request: TokenFrequencyRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Submit token-frequency analysis as a worker-backed artifact-first task."""
+    """Submit token-frequency analysis as a worker-backed artifact-first task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /token-frequencies route because they need this unit's "Submit token-frequency analysis as a worker-backed artifact-first task" behavior.
+    """
 
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)

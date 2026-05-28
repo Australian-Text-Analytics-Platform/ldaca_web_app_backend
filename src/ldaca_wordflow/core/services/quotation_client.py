@@ -1,4 +1,13 @@
-"""Remote quotation engine client utilities."""
+"""Remote quotation engine client utilities.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
+"""
 
 from __future__ import annotations
 
@@ -23,10 +32,13 @@ class QuotationServiceError(RuntimeError):
     """Raised when remote quotation extraction fails.
 
     Used by:
-    - quotation core/worker paths calling remote extraction
-
+    - quotation core/worker paths calling remote extraction because background jobs need one
+      lifecycle owner for submission, progress, cancellation, and artifact cleanup.
     Why:
     - Provides a domain-specific error type for consistent API translation.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
 
@@ -37,10 +49,13 @@ def normalise_engine_base_url(raw_url: str) -> str:
     and trims redundant segments. Trailing slashes are stripped for consistency.
 
     Used by:
-    - `extract_remote_quotations`
-
+    - `extract_remote_quotations` because startup and shutdown flows need the same
+      initialization and cleanup behavior in packaged and local runs.
     Why:
     - Prevents endpoint concatenation bugs from user-supplied base URLs.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     base = (raw_url or "").strip()
@@ -71,14 +86,17 @@ async def extract_remote_quotations(
     """Call remote quotation extraction API and return decoded JSON payload.
 
     Used by:
-    - `quotation_core.extract_remote_paginated`
-
+    - `quotation_core.extract_remote_paginated` because startup and shutdown flows need the
+      same initialization and cleanup behavior in packaged and local runs.
     Why:
     - Encapsulates transport, timeout, and error normalization for remote engine calls.
 
     Refactor note:
     - If additional remote analysis engines are added, consider a shared HTTP
         client abstraction to consolidate retry/auth/error policy.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     if engine.type is not QuotationEngineType.REMOTE:

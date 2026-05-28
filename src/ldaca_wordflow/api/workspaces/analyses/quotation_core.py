@@ -1,4 +1,13 @@
-"""Core quotation analysis helpers shared by API routes."""
+"""Core quotation analysis helpers shared by API routes.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Core quotation analysis helpers shared by API routes" behavior.
+
+Flow:
+- Quotation routes pass saved requests, extractor rows, and artifact paths into these helpers.
+- Helpers normalize pagination/context settings, compute pages, and build extraction columns.
+- Response builders serialize grouped quotation rows and generated-column metadata for clients.
+"""
 
 from __future__ import annotations
 
@@ -41,9 +50,14 @@ CORE_QUOTATION_COLUMNS = QUOTE_COLUMN_NAMES
 def normalize_context_length(value: Any) -> int:
     """Normalize quote-context length into bounded integer limits.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - quotation request normalization paths
-    - `extract_context_preference`
+    - quotation request normalization paths because they need this unit's "Normalize quote-context length into bounded integer limits" behavior.
+    - `extract_context_preference` because they need this unit's "Normalize quote-context length into bounded integer limits" behavior.
 
     Why:
     - Prevents invalid or oversized context values from destabilizing parsing.
@@ -65,8 +79,13 @@ def normalize_pagination(
 ) -> Tuple[int, int]:
     """Normalize page and page-size inputs for quotation views.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - quotation result endpoints before page computation
+    - quotation result endpoints before page computation because they need this unit's "Normalize page and page-size inputs for quotation views" behavior.
 
     Why:
     - Keeps pagination behavior stable across GET/POST result retrieval flows.
@@ -86,7 +105,7 @@ def extract_context_preference(record_result: Optional[Dict[str, Any]]) -> int:
     """Read preferred context length from a stored quotation payload.
 
     Used by:
-    - quotation result hydration logic
+    - quotation result hydration logic because they need this unit's "Read preferred context length from a stored quotation payload" behavior.
 
     Why:
     - Reuses saved UI preferences when users revisit existing analysis tasks.
@@ -102,8 +121,13 @@ def extract_context_preference(record_result: Optional[Dict[str, Any]]) -> int:
 def to_polars_dataframe(data: Any) -> pl.DataFrame:
     """Convert node data into an eager Polars DataFrame.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `compute_quote_dataframe`
+    - `compute_quote_dataframe` because they need this unit's "Convert node data into an eager Polars DataFrame" behavior.
 
     Why:
     - Enforces strict Polars-only node data contracts for quotation analysis.
@@ -121,8 +145,13 @@ def prepare_documents_payload(
 ) -> Dict[str, Dict[str, Any]]:
     """Build remote-extraction payload documents from a source text column.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `compute_quote_dataframe` for remote quotation engines
+    - `compute_quote_dataframe` for remote quotation engines because they need this unit's "Build remote-extraction payload documents from a source text column" behavior.
 
     Why:
     - Adapts tabular node data into the remote service input contract.
@@ -149,8 +178,13 @@ def stable_document_items(
 ) -> List[Tuple[str, Dict[str, Any]]]:
     """Return deterministically ordered document items for batching.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `batched_documents`
+    - `batched_documents` because they need this unit's "Return deterministically ordered document items for batching" behavior.
 
     Why:
     - Keeps batch ordering reproducible for pagination and debugging.
@@ -158,6 +192,17 @@ def stable_document_items(
     items: List[Tuple[str, Dict[str, Any]]] = list(documents.items())
 
     def _key(pair: Tuple[str, Dict[str, Any]]) -> Tuple[int, Any]:
+        """Support quotation computation helpers with a key helper.
+
+        Steps:
+        - Normalize caller input into the representation this module expects.
+        - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+        - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+        Called by:
+        - The `stable_document_items` local workflow in this module because they need this unit's "Support quotation computation helpers with a key helper" behavior.
+        """
+
         identifier = pair[0]
         try:
             return (0, int(identifier))
@@ -175,8 +220,13 @@ def batched_documents(
 ) -> Iterable[Dict[str, Dict[str, Any]]]:
     """Yield deterministic document chunks for remote extraction.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `extract_remote_paginated`
+    - `extract_remote_paginated` because they need this unit's "Yield deterministic document chunks for remote extraction" behavior.
 
     Why:
     - Splits large requests to honor remote service batch limits.
@@ -200,8 +250,13 @@ async def extract_remote_paginated(
 ) -> Dict[str, Any]:
     """Call remote quotation extraction in batches and merge responses.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `compute_quote_dataframe`
+    - `compute_quote_dataframe` because they need this unit's "Call remote quotation extraction in batches and merge responses" behavior.
 
     Why:
     - Avoids oversized single requests while preserving one combined payload.
@@ -247,7 +302,11 @@ async def extract_remote_paginated(
 
 
 def quotation_groups_via_quote_extractor(df: pl.DataFrame, column: str) -> pl.DataFrame:
-    """Extract quotations using the vendored QuoteExtractor (replaces polars-text)."""
+    """Extract quotations using the vendored QuoteExtractor (replaces polars-text).
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they need this unit's "Extract quotations using the vendored QuoteExtractor (replaces polars-text)" behavior.
+    """
     from ....core.quotation_extractor import quotation_groups_for_dataframe
 
     return quotation_groups_for_dataframe(df, column)
@@ -257,7 +316,16 @@ def remote_payload_to_grouped_dataframe(
     base_df: pl.DataFrame,
     payload: Dict[str, Any],
 ) -> pl.DataFrame:
-    """Attach remote quotation lists to their source rows without exploding."""
+    """Attach remote quotation lists to their source rows without exploding.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Attach remote quotation lists to their source rows without exploding" behavior.
+    """
     results = payload.get("results", []) if isinstance(payload, dict) else []
     quotes_by_identifier: dict[str, list[dict[str, Any]]] = {}
 
@@ -304,7 +372,16 @@ def remote_payload_to_grouped_dataframe(
 
 
 def _project_quotation_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:
-    """Project raw quotation-struct fields into canonical quotation columns."""
+    """Project raw quotation-struct fields into canonical quotation columns.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Project raw quotation-struct fields into canonical quotation columns" behavior.
+    """
     return {
         QUOTE_SPEAKER_COLUMN: raw_hit.get("speaker"),
         QUOTE_SPEAKER_START_IDX_COLUMN: raw_hit.get("speaker_start_idx"),
@@ -323,7 +400,16 @@ def _project_quotation_hit(raw_hit: dict[str, Any]) -> dict[str, Any]:
 
 
 def _quotation_hit_has_content(hit: dict[str, Any]) -> bool:
-    """Return whether a projected quotation hit contains meaningful content."""
+    """Return whether a projected quotation hit contains meaningful content.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return whether a projected quotation hit contains meaningful content" behavior.
+    """
     for key in (QUOTE_QUOTE_COLUMN, QUOTE_SPEAKER_COLUMN, QUOTE_VERB_COLUMN):
         value = hit.get(key)
         if value is None:
@@ -334,6 +420,12 @@ def _quotation_hit_has_content(hit: dict[str, Any]) -> bool:
 
 
 def _quotation_metadata(columns: list[str]) -> dict[str, list[str]]:
+    """Support quotation computation helpers with a quotation metadata helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support quotation computation helpers with a quotation metadata helper" behavior.
+    """
+
     return {
         "quotation_columns": [c for c in columns if c in CORE_QUOTATION_COLUMNS],
         "metadata_columns": [c for c in columns if c not in CORE_QUOTATION_COLUMNS],
@@ -342,6 +434,17 @@ def _quotation_metadata(columns: list[str]) -> dict[str, list[str]]:
 
 
 def _empty_flattened_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame:
+    """Support quotation computation helpers with an empty flattened quotation dataframe helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support quotation computation helpers with an empty flattened quotation dataframe helper" behavior.
+    """
+
     metadata_columns = [
         column for column in result_df.columns if column != QUOTATION_GROUP_COLUMN
     ]
@@ -367,7 +470,16 @@ def _empty_flattened_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFram
 def _serialize_grouped_quotation_rows(
     result_df: pl.DataFrame,
 ) -> tuple[list[list[dict[str, Any]]], list[str]]:
-    """Serialize collected quotation rows into grouped per-document hit lists."""
+    """Serialize collected quotation rows into grouped per-document hit lists.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Serialize collected quotation rows into grouped per-document hit lists" behavior.
+    """
     if result_df.height == 0:
         return [], []
 
@@ -406,7 +518,16 @@ def _serialize_grouped_quotation_rows(
 
 
 def flatten_grouped_quotation_dataframe(result_df: pl.DataFrame) -> pl.DataFrame:
-    """Flatten grouped quotation rows into a detach/export friendly dataframe."""
+    """Flatten grouped quotation rows into a detach/export friendly dataframe.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend tests, core workspace and worker services because they need this unit's "Flatten grouped quotation rows into a detach/export friendly dataframe" behavior.
+    """
     if result_df.height == 0:
         return _empty_flattened_quotation_dataframe(result_df)
 
@@ -452,8 +573,13 @@ async def compute_quote_dataframe(
 ) -> pl.DataFrame:
     """Compute grouped quote rows for one node/column pair.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - quotation API endpoints and on-demand page computation flow
+    - quotation API endpoints and on-demand page computation flow because they need this unit's "Compute grouped quote rows for one node/column pair" behavior.
 
     Why:
     - Abstracts local vs remote extraction behind one shared contract.
@@ -502,6 +628,14 @@ async def compute_on_demand_page(
     Why:
     - Delays expensive quotation extraction to requested slices for responsive
       UI paging while keeping a dense first page via estimation.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes because they need this unit's "Compute one on-demand quotation page from source node data" behavior.
     """
     if materialized_path:
         return await _compute_materialized_quotation_page(
@@ -576,13 +710,33 @@ async def _resolve_quotation_page_size(
     requested: Optional[int],
     compute_quote_dataframe_fn,
 ) -> int:
-    """Return an effective page size, estimating from candidate ladder if needed."""
+    """Return an effective page size, estimating from candidate ladder if needed.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return an effective page size, estimating from candidate ladder if needed" behavior.
+    """
     if requested is not None and int(requested) > 0:
         return int(requested)
 
     from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, TARGET_OCCURRENCES
 
     async def _probe(size: int) -> int:
+        """Probe runtime state used by quotation computation helpers.
+
+        Steps:
+        - Normalize caller input into the representation this module expects.
+        - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+        - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+        Called by:
+        - The `_resolve_quotation_page_size` local workflow in this module because they need this unit's "Probe runtime state used by quotation computation helpers" behavior.
+        """
+
         try:
             slice_df = lazy_df.slice(0, size).collect()
             quote_df = await compute_quote_dataframe_fn(
@@ -615,7 +769,16 @@ async def _compute_materialized_quotation_page(
     sort_by: Optional[str],
     descending: bool,
 ) -> Dict[str, Any]:
-    """Paginate a materialized quotation parquet as one-hit-per-group rows."""
+    """Paginate a materialized quotation parquet as one-hit-per-group rows.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Paginate a materialized quotation parquet as one-hit-per-group rows" behavior.
+    """
     effective_page_size = (
         int(page_size)
         if page_size is not None and int(page_size) > 0

@@ -3,6 +3,13 @@
 Provides per-user in-memory storage for analysis task records.  Each
 ``AnalysisTask`` tracks the ``workspace_id`` it was created for, so
 tasks can be bulk-cleared when a workspace is unloaded.
+
+Used by:
+- Analysis routes, worker result persistence, and backend tests because they need a
+  backend boundary that validates inputs before delegating to workspace or worker state.
+
+Flow: normalize request payloads, update per-user task maps, maintain current-tab
+    pointers, and walk parent-child links for cleanup.
 """
 
 from __future__ import annotations
@@ -21,29 +28,113 @@ _TASK_MANAGER_STORE: dict[str, TaskManagerStore] = {}
 
 
 class TaskManagerStore:
-    """Per-user in-memory storage for analysis task records."""
+    """Per-user in-memory storage for analysis task records.
+
+    Used by:
+    - analysis task helpers because analysis flows need per-user task state to survive
+      across route calls and worker result persistence.
+
+    Flow: normalize request payloads, update per-user task maps, maintain current-tab
+        pointers, and walk parent-child links for cleanup.
+    """
 
     def __init__(self) -> None:
+        """Initialize TaskManagerStore state used by analysis task storage.
+
+        Called by:
+        - `TaskManagerStore` construction in backend services and tests because tests need the
+          same observable contract that production routes and workers rely on.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.tasks: dict[str, AnalysisTask] = {}
         self.current_task_ids: dict[str, str] = {}
 
     def get_task(self, task_id: str) -> AnalysisTask | None:
+        """Run the get task background job submitted by API routes.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return self.tasks.get(task_id)
 
     def save_task(self, task: AnalysisTask) -> None:
+        """Run the save task background job submitted by API routes.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.tasks[task.task_id] = task
 
     def get_all_tasks(self) -> list[AnalysisTask]:
+        """Return all tasks data used by analysis task storage.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return list(self.tasks.values())
 
     def set_current_task(self, tab: str, task_id: str) -> None:
+        """Run the set current task background job submitted by API routes.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.current_task_ids[tab] = task_id
 
     def get_current_task_ids(self, tab: str) -> list[str]:
+        """Return current task ids data used by analysis task storage.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         task_id = self.current_task_ids.get(tab)
         return [task_id] if task_id else []
 
     def clear_task(self, task_id: str) -> None:
+        """Run the clear task background job submitted by API routes.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         task = self.tasks.pop(task_id, None)
         if task is not None and task.parent_task_id:
             parent = self.tasks.get(task.parent_task_id)
@@ -58,6 +149,17 @@ class TaskManagerStore:
                 del self.current_task_ids[tab]
 
     def link_child_task(self, parent_task_id: str, child_task_id: str) -> None:
+        """Run the link child task background job submitted by API routes.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         parent = self.tasks.get(parent_task_id)
         if parent is None:
             return
@@ -68,10 +170,31 @@ class TaskManagerStore:
             parent.child_task_ids.append(child_task_id)
 
     def get_descendant_task_ids(self, task_id: str) -> list[str]:
+        """Return descendant task ids data used by analysis task storage.
+
+        Called by:
+        - `TaskManagerStore` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         descendants: list[str] = []
         visited: set[str] = set()
 
         def visit(parent_id: str) -> None:
+            """Visit task relationships while analysis task storage walks descendants.
+
+            Called by:
+            - The `get_descendant_task_ids` local workflow in this module because the local analysis
+              task state management flow needs this step kept close to the code that consumes it.
+
+            Flow: normalize request payloads, update per-user task maps, maintain current-tab
+                pointers, and walk parent-child links for cleanup.
+            """
+
             parent = self.tasks.get(parent_id)
             child_ids = parent.child_task_ids if parent is not None else []
             if not child_ids:
@@ -92,9 +215,27 @@ class TaskManagerStore:
 
 
 class TaskManager:
-    """Per-user task storage keyed by task_id with per-tab current mapping."""
+    """Per-user task storage keyed by task_id with per-tab current mapping.
+
+    Used by:
+    - analysis task helpers, backend tests, core workspace and worker services because tests
+      need the same observable contract that production routes and workers rely on.
+
+    Flow: normalize request payloads, update per-user task maps, maintain current-tab
+        pointers, and walk parent-child links for cleanup.
+    """
 
     def __init__(self, user_id: str) -> None:
+        """Initialize TaskManager state used by analysis task storage.
+
+        Called by:
+        - `TaskManager` construction in backend services and tests because tests need the same
+          observable contract that production routes and workers rely on.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.user_id = user_id
         if user_id not in _TASK_MANAGER_STORE:
             _TASK_MANAGER_STORE[user_id] = TaskManagerStore()
@@ -108,6 +249,14 @@ class TaskManager:
 
         The current workspace is resolved automatically from
         ``workspace_manager`` so callers don't need to pass it.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
         """
         from ..core.workspace import workspace_manager
 
@@ -126,9 +275,31 @@ class TaskManager:
         return task_id
 
     def get_task(self, task_id: str) -> AnalysisTask | None:
+        """Run the get task background job submitted by API routes.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return self.store.get_task(task_id)
 
     def save_task(self, task: AnalysisTask) -> None:
+        """Run the save task background job submitted by API routes.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.store.save_task(task)
 
     def set_current_task(self, tab: str, task_id: str) -> None:
@@ -140,6 +311,14 @@ class TaskManager:
         caches bounded to "at most one record per tab" — matching the
         frontend's mental model where rerunning a tool replaces the previous
         result rather than accumulating.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
         """
         previous_ids = self.store.get_current_task_ids(tab)
         previous_id = previous_ids[0] if previous_ids else None
@@ -148,9 +327,31 @@ class TaskManager:
         self.store.set_current_task(tab, task_id)
 
     def get_current_task_ids(self, tab: str) -> list[str]:
+        """Return current task ids data used by analysis task storage.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return self.store.get_current_task_ids(tab)
 
     def update_task(self, task_id: str, result: Any) -> None:
+        """Run the update task background job submitted by API routes.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         task = self.store.get_task(task_id)
         if task is None:
             logger.warning("Attempted to update non-existent task %s", task_id)
@@ -162,6 +363,17 @@ class TaskManager:
         logger.info("Analysis task %s completed", task_id)
 
     def clear_task(self, task_id: str) -> None:
+        """Run the clear task background job submitted by API routes.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         task = self.store.get_task(task_id)
         if task is not None:
             from ..core.task_artifacts import cleanup_analysis_task_artifacts
@@ -177,19 +389,61 @@ class TaskManager:
         self.store.clear_task(task_id)
 
     def link_child_task(self, parent_task_id: str, child_task_id: str) -> None:
+        """Run the link child task background job submitted by API routes.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         self.store.link_child_task(parent_task_id, child_task_id)
 
     def get_descendant_task_ids(self, task_id: str) -> list[str]:
+        """Return descendant task ids data used by analysis task storage.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return self.store.get_descendant_task_ids(task_id)
 
     def clear_all(self) -> list[str]:
+        """Clear all state used by analysis task storage.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         to_remove = [task.task_id for task in self.store.get_all_tasks()]
         for task_id in to_remove:
             self.clear_task(task_id)
         return to_remove
 
     def clear_workspace(self, workspace_id: str) -> list[str]:
-        """Clear all tasks belonging to *workspace_id*."""
+        """Clear all tasks belonging to *workspace_id*.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         to_remove = [
             task.task_id
             for task in self.store.get_all_tasks()
@@ -200,11 +454,33 @@ class TaskManager:
         return to_remove
 
     def get_all_tasks(self) -> list[AnalysisTask]:
+        """Return all tasks data used by analysis task storage.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         return self.store.get_all_tasks()
 
     def _normalize_request(
         self, request: BaseAnalysisRequest | dict[str, Any]
     ) -> BaseAnalysisRequest:
+        """Normalize request values before analysis task storage uses them.
+
+        Called by:
+        - `TaskManager` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize request payloads, update per-user task maps, maintain current-tab
+            pointers, and walk parent-child links for cleanup.
+        """
+
         if isinstance(request, BaseAnalysisRequest):
             return request
         return BaseAnalysisRequest.model_validate(request)
@@ -216,5 +492,13 @@ def get_task_manager(user_id: str) -> TaskManager:
     A single user can only have one workspace loaded at a time, so the
     manager is keyed by *user_id* only.  Individual tasks track their
     ``workspace_id`` internally.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: normalize request payloads, update per-user task maps, maintain current-tab
+        pointers, and walk parent-child links for cleanup.
     """
     return TaskManager(user_id)

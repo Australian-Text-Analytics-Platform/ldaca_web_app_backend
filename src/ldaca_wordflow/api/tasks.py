@@ -1,6 +1,14 @@
 """Unified task endpoints.
 
 Provides a single SSE stream and root task operations for Task Center.
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "Unified task endpoints" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the task API prefix.
+- Route handlers resolve the authenticated user's workspace and analysis task managers.
+- SSE and action endpoints list, stream, clear, or cancel task records for Task Center.
 """
 
 from __future__ import annotations
@@ -25,6 +33,17 @@ router = APIRouter(prefix="/tasks", tags=["task_streaming"])
 
 
 def _dedupe_task_ids(task_ids: list[str]) -> list[str]:
+    """Deduplicate task ids values for task routes and event streams.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Deduplicate task ids values for task routes and event streams" behavior.
+    """
+
     seen: set[str] = set()
     deduped: list[str] = []
     for task_id in task_ids:
@@ -39,7 +58,16 @@ def _dedupe_task_ids(task_ids: list[str]) -> list[str]:
 async def list_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """List tasks for current user."""
+    """List tasks for current user.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET / route because they need this unit's "List tasks for current user" behavior.
+    """
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
     tasks = await tm.list(user_id=user_id)
@@ -60,6 +88,14 @@ async def clear_tasks(
     If the task is still running it is cancelled first.  Both the worker
     task manager record and the analysis task manager record (including
     the current-task-id mapping) are removed.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /clear route because they need this unit's "Clear a task and all associated caches by task id" behavior.
     """
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
@@ -132,6 +168,14 @@ async def cancel_task(
 
     Unlike ``/tasks/clear``, the task record is kept so the user can see the
     cancelled state in the task list and explicitly clear it afterwards.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /cancel route because they need this unit's "Stop a running task and mark it as cancelled" behavior.
     """
     user_id = current_user["id"]
     tm = workspace_manager.get_task_manager(user_id)
@@ -154,6 +198,14 @@ async def _get_stream_user(
     Accepts token from the ``Authorization`` header (fetch clients) or a
     ``token`` query parameter (native ``EventSource`` clients that cannot
     set custom HTTP headers).
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve auth for the SSE stream endpoint" behavior.
     """
     if not authorization and token:
         authorization = f"Bearer {token}"
@@ -176,10 +228,29 @@ async def stream_tasks(
         Refactor note:
         - Nested helper closures inside endpoint are sizeable; extraction to a small
             streaming service object could improve testability.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /stream route because they need this unit's "Unified SSE stream for task center" behavior.
     """
     user_id = current_user["id"]
 
     async def event_generator():
+        """Support task routes and event streams with an event generator helper.
+
+        Steps:
+        - Normalize caller input into the representation this module expects.
+        - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+        - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+        Called by:
+        - The `stream_tasks` local workflow in this module because they need this unit's "Support task routes and event streams with an event generator helper" behavior.
+        """
+
         tm = workspace_manager.get_task_manager(user_id)
         queue = await tm.subscribe(user_id)
 

@@ -9,6 +9,14 @@ the full polars method-chaining API (``pl.col("x").str.starts_with("y")``).
 
 Raises :class:`PolarsExprValidationError` with a descriptive message on any
 disallowed construct so the API can return a clear 400 response.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+    families, and reject unsupported operations before execution.
 """
 
 from __future__ import annotations
@@ -25,14 +33,32 @@ __all__ = [
 
 @dataclass(frozen=True, slots=True)
 class ValidationResult:
-    """Result of validating a polars expression code string."""
+    """Result of validating a polars expression code string.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
 
     mode: str  # "eval" or "assign"
     alias: str | None = None  # target name when mode == "assign"
 
 
 class PolarsExprValidationError(ValueError):
-    """Raised when expression code contains disallowed constructs."""
+    """Raised when expression code contains disallowed constructs.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
 
 
 _ALLOWED_NAMES = frozenset({"pl", "True", "False", "None"})
@@ -128,6 +154,14 @@ def validate_polars_expr_code(code: str) -> ValidationResult:
 
     Raises:
         PolarsExprValidationError: if the code contains disallowed constructs.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
     """
     code = code.strip()
     if not code:

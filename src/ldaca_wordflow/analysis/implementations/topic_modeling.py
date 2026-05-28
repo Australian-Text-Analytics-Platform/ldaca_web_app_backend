@@ -1,10 +1,13 @@
 """Topic-modeling analysis request schema module.
 
 Used by:
-- topic-modeling routes and worker task request validation
-
+- topic-modeling routes and worker task request validation because they need a backend
+  boundary that validates inputs before delegating to workspace or worker state.
 Why:
 - Keeps topic-modeling specific input contract centralized.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from typing import Literal
@@ -15,15 +18,16 @@ from ..models import BaseAnalysisRequest
 
 
 class TopicModelingRequest(BaseAnalysisRequest):
-    """
-    Request model for topic-modeling analysis.
+    """Request model for topic-modeling analysis.
 
     Used by:
-    - topic-modeling run/update endpoints
-
+    - topic-modeling run/update endpoints because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
     Why:
     - Validates node selection and clustering configuration inputs.
 
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     node_ids: list[str] = Field(..., description="List of node IDs to analyze")

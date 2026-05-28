@@ -4,6 +4,14 @@ Each entry is a mapping from *namespace* (``""`` for top-level methods,
 ``"str"`` for ``.str.*``, etc.) to a list of ``(method_name, label)``
 tuples.  The frontend uses this to populate the operation-picker popup
 in the Create tab, filtered by column dtype.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+    families, and reject unsupported operations before execution.
 """
 
 from __future__ import annotations
@@ -14,6 +22,16 @@ import polars as pl
 
 
 class OperationInfo(TypedDict):
+    """OperationInfo supports Polars operation cataloguing by modeling operation info.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
+
     method: str
     label: str
 
@@ -24,6 +42,16 @@ _op = OperationInfo
 
 
 def _ops(*pairs: tuple[str, str]) -> list[OperationInfo]:
+    """Support Polars operation cataloguing with an ops helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
+
     return [_op(method=m, label=l) for m, l in pairs]
 
 
@@ -131,7 +159,15 @@ _DTYPE_FAMILY_MAP: dict[type, str] = {
 
 
 def dtype_to_family(dtype: pl.DataType) -> str:
-    """Map a concrete Polars dtype to a family key used by *OPERATIONS_BY_DTYPE*."""
+    """Map a concrete Polars dtype to a family key used by *OPERATIONS_BY_DTYPE*.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
     base = type(dtype)
     if base in _DTYPE_FAMILY_MAP:
         return _DTYPE_FAMILY_MAP[base]
@@ -141,6 +177,14 @@ def dtype_to_family(dtype: pl.DataType) -> str:
 
 
 def get_operations_for_dtype(dtype: pl.DataType) -> OperationsByNamespace:
-    """Return the operation registry for the given Polars dtype."""
+    """Return the operation registry for the given Polars dtype.
+
+    Used by:
+    - backend API routes because they need a backend boundary that validates inputs before
+      delegating to workspace or worker state.
+
+    Flow: validate requested expression or dtype metadata, map Polars concepts to API-safe
+        families, and reject unsupported operations before execution.
+    """
     family = dtype_to_family(dtype)
     return OPERATIONS_BY_DTYPE.get(family, OPERATIONS_BY_DTYPE["string"])

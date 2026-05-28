@@ -6,6 +6,14 @@ Design Goals:
 * Switching workspaces always saves & unloads the previous one before loading the next.
 * Business logic remains in docworkspace.Workspace / Node; this is only orchestration.
 * Backward compatibility deliberately dropped.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+    cleanup, and return stable workspace metadata to callers.
 """
 
 import json
@@ -30,9 +38,27 @@ logger = logging.getLogger(__name__)
 
 
 class WorkspaceManager:
-    """Single-workspace-per-user in-memory manager."""
+    """Single-workspace-per-user in-memory manager.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
 
     def __init__(self) -> None:
+        """Initialize WorkspaceManager state used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` construction in backend services and tests because tests need the
+          same observable contract that production routes and workers rely on.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         self._current: dict[str, dict[str, Any]] = {}
         # Per-user task managers (single channel per user, not serialized)
         self._task_managers: dict[str, Any] = {}
@@ -41,22 +67,73 @@ class WorkspaceManager:
 
     # ---------------- Core helpers ----------------
     def _path_key(self, user_id: str, workspace_id: str) -> tuple[str, str]:
+        """Support workspace persistence and selection with a path key helper.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         return (user_id, workspace_id)
 
     def _get_cached_path(self, user_id: str, workspace_id: str) -> Path | None:
+        """Return cached path data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         return self._paths.get(self._path_key(user_id, workspace_id))
 
     def _set_cached_path(self, user_id: str, workspace_id: str, path: Path) -> None:
+        """Store cached path data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         self._paths[self._path_key(user_id, workspace_id)] = path
 
     def _clear_user_cached_paths(self, user_id: str) -> None:
-        """Remove all cached workspace-folder mappings for a user."""
+        """Remove all cached workspace-folder mappings for a user.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         keys = [key for key in self._paths.keys() if key[0] == user_id]
         for key in keys:
             self._paths.pop(key, None)
 
     def _refresh_user_workspace_paths(self, user_id: str) -> None:
-        """Actively rescan user workspace folders and rebuild id->path cache."""
+        """Actively rescan user workspace folders and rebuild id->path cache.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         self._clear_user_cached_paths(user_id)
         user_folder = get_user_workspace_folder(user_id)
         if not user_folder.exists():
@@ -81,13 +158,33 @@ class WorkspaceManager:
                 self._set_cached_path(user_id, wid, workspace_dir)
 
     def _get_indexed_path(self, user_id: str, workspace_id: str) -> Path | None:
-        """Get workspace folder from cache only (no active directory scans)."""
+        """Get workspace folder from cache only (no active directory scans).
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         cached = self._get_cached_path(user_id, workspace_id)
         if cached and cached.exists():
             return cached
         return None
 
     def _attach_workspace_dir(self, workspace: Workspace, path: Path) -> None:
+        """Support workspace persistence and selection with an attach workspace dir helper.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         try:
             setattr(workspace, "ws_root_dir", path)
         except Exception as exc:
@@ -100,6 +197,14 @@ class WorkspaceManager:
 
         Artifact files are transient analysis outputs and are intentionally kept
         outside workspace payload files while still colocated with workspace data.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         return workspace_dir / "data" / "artifacts"
 
@@ -109,10 +214,13 @@ class WorkspaceManager:
         """Resolve or allocate on-disk folder for a workspace id/name.
 
         Used by:
-        - workspace persistence operations
-
+        - workspace persistence operations because workspace flows need user-scoped paths,
+          nodes, artifacts, and task state to stay synchronized.
         Why:
         - Keeps workspace folder naming consistent and discoverable on disk.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         cached = self._get_indexed_path(user_id, workspace_id)
         if cached and cached.exists():
@@ -127,18 +235,51 @@ class WorkspaceManager:
 
     # ---------------- Public API ----------------
     def get_current_workspace_id(self, user_id: str) -> str | None:
+        """Return current workspace id data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         entry = self._current.get(user_id)
         if not entry:
             return None
         return entry.get("wid")
 
     def get_current_workspace(self, user_id: str) -> Any | None:
+        """Return current workspace data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         entry = self._current.get(user_id)
         if not entry:
             return None
         return entry.get("workspace")
 
     def set_current_workspace(self, user_id: str, workspace_id: str | None) -> bool:
+        """Store current workspace data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         if workspace_id is None:
             self.unload_workspace(user_id, save=True)
             return True
@@ -196,6 +337,17 @@ class WorkspaceManager:
         return True
 
     def list_user_workspaces_summaries(self, user_id: str) -> list[dict[str, Any]]:
+        """Support workspace persistence and selection with a list user workspaces summaries helper.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         summaries: list[dict[str, Any]] = []
         # Active refresh point: called when Data Loader opens and when user presses refresh.
         self._refresh_user_workspace_paths(user_id)
@@ -207,6 +359,16 @@ class WorkspaceManager:
         ]
 
         def _workspace_size_bytes(workspace_dir: Path) -> int:
+            """Support workspace persistence and selection with a workspace size bytes helper.
+
+            Called by:
+            - The `list_user_workspaces_summaries` local workflow in this module because workspace
+              flows need user-scoped paths, nodes, artifacts, and task state to stay synchronized.
+
+            Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+                cleanup, and return stable workspace metadata to callers.
+            """
+
             total = 0
             for file_path in workspace_dir.rglob("*"):
                 if not file_path.is_file():
@@ -242,6 +404,17 @@ class WorkspaceManager:
         return summaries
 
     def delete_workspace(self, user_id: str, workspace_id: str) -> bool:
+        """Delete workspace resources used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         cid = self.get_current_workspace_id(user_id)
         cws = self.get_current_workspace(user_id)
         if cid is not None and cws is not None and cid == workspace_id:
@@ -273,8 +446,8 @@ class WorkspaceManager:
         """Return or create worker-task manager bound to user.
 
         Used by:
-        - task endpoints and analysis routes submitting background work
-
+        - task endpoints and analysis routes submitting background work because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
                 Why:
                 - Uses one unified task channel per user while retaining workspace
                     filtering at API/query level via task metadata.
@@ -282,6 +455,9 @@ class WorkspaceManager:
         Refactor note:
         - Lazy import avoids cycles but obscures typing; introducing a protocol or
             factory module could reduce import indirection.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         from ldaca_wordflow.core.worker_task_manager import WorkerTaskManager
 
@@ -292,6 +468,17 @@ class WorkspaceManager:
         return tm
 
     def get_workspace_dir(self, user_id: str, workspace_id: str) -> Path | None:
+        """Return workspace dir data used by workspace persistence and selection.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
+
         cached = self._get_indexed_path(user_id, workspace_id)
         if cached is None:
             self._refresh_user_workspace_paths(user_id)
@@ -307,7 +494,16 @@ class WorkspaceManager:
     def get_workspace_artifacts_dir(
         self, user_id: str, workspace_id: str
     ) -> Path | None:
-        """Get workspace analysis artifact directory path (without creating it)."""
+        """Get workspace analysis artifact directory path (without creating it).
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         workspace_dir = self.get_workspace_dir(user_id, workspace_id)
         if workspace_dir is None:
             return None
@@ -320,6 +516,14 @@ class WorkspaceManager:
 
         Called on workspace load/switch to guarantee a dedicated transient
         artifact location exists for background analysis tasks.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         artifact_dir = self.get_workspace_artifacts_dir(user_id, workspace_id)
         if artifact_dir is None:
@@ -331,6 +535,14 @@ class WorkspaceManager:
         """Delete workspace analysis artifact directory if it exists.
 
         Called on workspace unload to remove transient analysis artifacts.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         artifact_dir = self.get_workspace_artifacts_dir(user_id, workspace_id)
         if artifact_dir is None or not artifact_dir.exists():
@@ -347,10 +559,13 @@ class WorkspaceManager:
         """Unload current workspace object from memory, optionally persisting first.
 
         Used by:
-        - lifecycle unload/switch operations
-
+        - lifecycle unload/switch operations because workspace flows need user-scoped paths,
+          nodes, artifacts, and task state to stay synchronized.
         Why:
         - Enforces one-active-workspace-per-user memory policy.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         cid = self.get_current_workspace_id(user_id)
         cws = self.get_current_workspace(user_id)
@@ -389,6 +604,14 @@ class WorkspaceManager:
         manager, TaskInfo records in the worker manager) leak across workspace
         switches and cause UI state from the previous workspace to hydrate on
         the next one.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
         """
         try:
             from ..analysis.manager import get_task_manager as _get_analysis_tm
@@ -420,7 +643,16 @@ class WorkspaceManager:
             logger.debug("Failed to schedule worker task cleanup on unload: %s", exc)
 
     async def clear_workspace_tasks(self, user_id: str, workspace_id: str) -> None:
-        """Await task cleanup for a workspace."""
+        """Await task cleanup for a workspace.
+
+        Called by:
+        - `WorkspaceManager` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         try:
             from ..analysis.manager import get_task_manager as _get_analysis_tm
 

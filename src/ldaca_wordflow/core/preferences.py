@@ -1,4 +1,13 @@
-"""Load and save user preferences as a JSON file on disk."""
+"""Load and save user preferences as a JSON file on disk.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
+"""
 
 from __future__ import annotations
 
@@ -15,13 +24,31 @@ PREFERENCES_FILENAME = "preferences.json"
 
 
 def _preferences_path(user_id: str) -> Path:
+    """Support user preference persistence with a preferences path helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     user_root = get_user_data_folder(user_id).parent
     return user_root / PREFERENCES_FILENAME
 
 
 def load_preferences(user_id: str) -> UserPreferences:
     """Read preferences from disk, returning validated defaults when the file is
-    missing or malformed."""
+    missing or malformed.
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     path = _preferences_path(user_id)
     if not path.exists():
         return UserPreferences().validated()
@@ -36,7 +63,15 @@ def load_preferences(user_id: str) -> UserPreferences:
 
 
 def save_preferences(user_id: str, prefs: UserPreferences) -> UserPreferences:
-    """Validate and atomically write preferences to disk. Returns the saved copy."""
+    """Validate and atomically write preferences to disk. Returns the saved copy.
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     clean = prefs.validated()
     path = _preferences_path(user_id)
     tmp = path.with_suffix(".tmp")
@@ -48,7 +83,15 @@ def save_preferences(user_id: str, prefs: UserPreferences) -> UserPreferences:
 def merge_preferences(
     current: UserPreferences, update: UserPreferencesUpdate
 ) -> UserPreferences:
-    """Apply a partial update on top of current preferences."""
+    """Apply a partial update on top of current preferences.
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     overrides: dict[str, object] = {}
     if update.hidden_views is not None:
         overrides["hidden_views"] = update.hidden_views

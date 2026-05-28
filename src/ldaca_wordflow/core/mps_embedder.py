@@ -12,6 +12,14 @@ running in CI, Linux/Windows).
 The `.provider` attribute is "MPS" so the embedding cache uses a separate
 Parquet file from the ONNX provider paths — different float paths, different
 cache.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -26,7 +34,15 @@ logger = logging.getLogger(__name__)
 
 
 def is_mps_available() -> bool:
-    """Return True if PyTorch MPS backend is usable (Apple Silicon only)."""
+    """Return True if PyTorch MPS backend is usable (Apple Silicon only).
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     try:
         import torch
 
@@ -40,6 +56,13 @@ def get_active_provider_id() -> str:
     """Return the provider ID string that _get_embedder will use.
 
     Used by the embedding-cache clear endpoint so it clears the right file.
+
+    Used by:
+    - backend tests because tests need the same observable contract that production routes
+      and workers rely on.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     if is_mps_available():
         return "MPS"
@@ -54,11 +77,28 @@ class MpsEmbedder:
     Drop-in replacement for OnnxEmbedder.  Implements the same
     `.encode(sentences)` interface so it can be passed as BERTopic's
     `embedding_model=` argument.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     provider: str = "MPS"
 
     def __init__(self, model_id: str, *, revision: str | None = None) -> None:
+        """Initialize MpsEmbedder state used by Metal-backed embedding inference.
+
+        Called by:
+        - `MpsEmbedder` construction in backend services and tests because tests need the same
+          observable contract that production routes and workers rely on.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         import torch
         from sentence_transformers import SentenceTransformer
 
@@ -83,6 +123,14 @@ class MpsEmbedder:
 
         Delegates to SentenceTransformer.encode with normalize_embeddings=True
         to match the OnnxEmbedder output shape and scale.
+
+        Called by:
+        - `MpsEmbedder` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
         """
         return self._model.encode(
             sentences,
@@ -95,4 +143,15 @@ class MpsEmbedder:
     def from_pretrained(
         cls, model_id: str, *, revision: str | None = None
     ) -> "MpsEmbedder":
+        """Support Metal-backed embedding inference with a from pretrained helper.
+
+        Called by:
+        - `MpsEmbedder` instances owned by backend services, routes, and tests because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         return cls(model_id, revision=revision)

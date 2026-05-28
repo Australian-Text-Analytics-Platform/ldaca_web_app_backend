@@ -1,8 +1,16 @@
-"""
-Refactored workspace API endpoints - thin HTTP layer over DocWorkspace.
+"""Refactored workspace API endpoints - thin HTTP layer over DocWorkspace.
 
 These endpoints are now simple HTTP wrappers around DocWorkspace methods.
 All business logic is handled by the DocWorkspace library itself.
+
+Used by:
+- FastAPI workspace routers, frontend workspace features, and backend tests because they need this unit's "Refactored workspace API endpoints - thin HTTP layer over DocWorkspace" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers resolve the current workspace/node and keep business logic in DocWorkspace or helpers.
+- Export and mutation endpoints materialize only at artifact or response boundaries.
+- Responses return node metadata, files, exports, or HTTP errors for invalid workspace state.
 """
 
 import importlib
@@ -78,13 +86,23 @@ EXPORT_FORMAT_SPECS: dict[str, dict[str, str | None]] = {
 
 
 def _stringify_value_for_csv(value: object) -> str | None:
+    """Support workspace base routes with a stringify value for csv helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace base routes with a stringify value for csv helper" behavior.
+    """
+
     if isinstance(value, pl.Series):
         return str(value.to_list())
     return None if value is None else str(value)
 
 
 def _stringify_lazyframe_for_csv(data: pl.LazyFrame) -> pl.LazyFrame:
-    """Convert every column to string for CSV exports only."""
+    """Convert every column to string for CSV exports only.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Convert every column to string for CSV exports only" behavior.
+    """
     return data.select(
         pl.col(column_name)
         .map_elements(_stringify_value_for_csv, return_dtype=pl.String)
@@ -94,7 +112,16 @@ def _stringify_lazyframe_for_csv(data: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def _prepare_dataframe_for_excel(data: pl.DataFrame) -> pl.DataFrame:
-    """Drop timezone metadata from datetime columns because Excel cannot store it."""
+    """Drop timezone metadata from datetime columns because Excel cannot store it.
+
+    Steps:
+    - Inspect collected DataFrame schema for timezone-aware datetime columns.
+    - Build replacement expressions that preserve values while removing timezone metadata.
+    - Return the original DataFrame unchanged when no Excel-incompatible columns exist.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Drop timezone metadata from datetime columns because Excel cannot store it" behavior.
+    """
     timezone_aware_datetime_columns = [
         pl.col(column_name).dt.replace_time_zone(None).alias(column_name)
         for column_name, dtype in data.schema.items()
@@ -107,6 +134,12 @@ def _prepare_dataframe_for_excel(data: pl.DataFrame) -> pl.DataFrame:
 
 
 def _sanitize_export_label(value: str | None, fallback: str) -> str:
+    """Support workspace base routes with a sanitize export label helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace base routes with a sanitize export label helper" behavior.
+    """
+
     cleaned = "".join(
         "_" if (ord(ch) < 32 or ch in '<>:"/\\|?*') else ch
         for ch in (value or fallback).strip()
@@ -115,6 +148,12 @@ def _sanitize_export_label(value: str | None, fallback: str) -> str:
 
 
 def _allocate_export_path(export_dir: Path, stem: str, extension: str) -> Path:
+    """Support workspace base routes with an allocate export path helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace base routes with an allocate export path helper" behavior.
+    """
+
     candidate = export_dir / f"{stem}.{extension}"
     suffix = 1
     while candidate.exists():
@@ -124,6 +163,17 @@ def _allocate_export_path(export_dir: Path, stem: str, extension: str) -> Path:
 
 
 def _cleanup_export_dir(export_dir: Path) -> None:
+    """Support workspace base routes with a cleanup export dir helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace base routes with a cleanup export dir helper" behavior.
+    """
+
     try:
         shutil.rmtree(export_dir)
     except OSError as exc:
@@ -140,6 +190,17 @@ def _export_node_artifact(
 ) -> tuple[str, Path]:
     # Token columns are hydrated only inside analysis paths. Export the node's
     # physical data unchanged.
+    """Support workspace base routes with an export node artifact helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace base routes with an export node artifact helper" behavior.
+    """
+
     data = project_visible(node.data)
 
     spec = EXPORT_FORMAT_SPECS[fmt]
@@ -226,7 +287,16 @@ async def delete_node_column(
     column_name: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Delete a column from a node by delegating to DocWorkspace Node.drop."""
+    """Delete a column from a node by delegating to DocWorkspace Node.drop.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /nodes/{node_id}/columns/{column_name} route because they need this unit's "Delete a column from a node by delegating to DocWorkspace Node.drop" behavior.
+    """
 
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -250,7 +320,16 @@ async def rename_node_column(
     payload: RenameColumnRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Rename a column by delegating to DocWorkspace Node.rename."""
+    """Rename a column by delegating to DocWorkspace Node.rename.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI PUT /nodes/{node_id}/columns/{column_name} route because they need this unit's "Rename a column by delegating to DocWorkspace Node.rename" behavior.
+    """
 
     user_id = current_user["id"]
     new_name = payload.new_name
@@ -274,7 +353,16 @@ async def undo_node_operation(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Undo the latest in-memory execution plan change for a node."""
+    """Undo the latest in-memory execution plan change for a node.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/undo route because they need this unit's "Undo the latest in-memory execution plan change for a node" behavior.
+    """
 
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -298,7 +386,16 @@ async def redo_node_operation(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Redo the latest undone in-memory execution plan change for a node."""
+    """Redo the latest undone in-memory execution plan change for a node.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/redo route because they need this unit's "Redo the latest undone in-memory execution plan change for a node" behavior.
+    """
 
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -323,8 +420,13 @@ async def redo_node_operation(
 def _configure_numba_threading():
     """Configure process-wide Numba threading defaults with safe fallbacks.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - module import side effect in `base.py`
+    - module import side effect in `base.py` because they need this unit's "Configure process-wide Numba threading defaults with safe fallbacks" behavior.
 
     Why:
     - Reduces runtime instability from incompatible threading backends.
@@ -417,6 +519,14 @@ async def add_node_to_workspace(
     Files are eagerly loaded into a Polars DataFrame, persisted as parquet under the workspace's `data/` folder,
     and then reloaded as a LazyFrame. This separates bulk data from `metadata.json` while keeping
     lazy processing semantics.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes route because they need this unit's "Add a data file as a new node to workspace" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -520,8 +630,7 @@ async def cast_node(
     cast_data: CastNodeRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """
-    Cast a single column data type in a node using Polars casting methods (in-place operation).
+    """Cast a single column data type in a node using Polars casting methods (in-place operation).
 
     Args:
         workspace_id: The workspace identifier
@@ -534,6 +643,14 @@ async def cast_node(
 
     Returns:
         Dictionary with the updated node information after casting
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/cast route because they need this unit's "Cast a single column data type in a node using Polars casting methods (in-place operation)" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -715,6 +832,14 @@ async def export_nodes(
 
     If multiple node_ids are provided, a ZIP archive is returned.
     Supported formats: csv, json, parquet, ipc, ndjson.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /export route because they need this unit's "Export one or more workspace nodes as downloadable file(s)" behavior.
     """
     import zipfile
 
@@ -742,6 +867,12 @@ async def export_nodes(
         raise HTTPException(status_code=400, detail="No node_ids provided")
 
     def build_timestamp_fragment() -> str:
+        """Build timestamp fragment values used by workspace base routes.
+
+        Called by:
+        - The `export_nodes` local workflow in this module because they need this unit's "Build timestamp fragment values used by workspace base routes" behavior.
+        """
+
         now = datetime.now()
         return (
             f"{now.month:02d}-{now.day:02d}_"

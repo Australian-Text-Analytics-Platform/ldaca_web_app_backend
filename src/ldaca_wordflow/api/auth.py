@@ -1,5 +1,12 @@
-"""
-Unified authentication endpoints following Single Source of Truth principle
+"""Unified authentication endpoints following Single Source of Truth principle
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "Unified authentication endpoints following Single Source of Truth principle" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the auth API prefix.
+- Route handlers resolve single-user or multi-user credentials through core auth helpers.
+- Responses return the canonical identity/session payload the frontend uses at startup.
 """
 
 import logging
@@ -36,8 +43,13 @@ async def get_auth_info(authorization: str | None = Header(None)):
     - In multi-user mode with valid token: authenticated=True with user info
     - In multi-user mode without token: authenticated=False with available auth methods
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend app bootstrap auth probe
+    - frontend app bootstrap auth probe because they need this unit's "Main auth endpoint - tells frontend everything it needs to know" behavior.
 
     Why:
     - Provides one canonical auth capability + identity payload per startup.
@@ -104,6 +116,14 @@ async def google_auth(payload: GoogleIn):
     Used by the frontend Google sign-in flow (JSON body variant). Delegates
     the verification + provisioning logic to :func:`_verify_and_create_session`
     and shapes the response into ``GoogleOut``.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /google route because they need this unit's "Authenticate user via Google OAuth and create app session tokens" behavior.
     """
     result = await _verify_and_create_session(payload.id_token)
     user = result["user"]
@@ -129,6 +149,14 @@ async def _verify_and_create_session(credential: str) -> dict:
 
     Shared by both the JSON API (``google_auth``) and the redirect callback
     (``google_auth_callback``).
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Verify a Google ID token and provision a local user session" behavior.
     """
     if not settings.multi_user:
         raise HTTPException(
@@ -182,6 +210,14 @@ async def google_auth_callback(
     user authenticates on Google's consent page (``ux_mode: 'redirect'``).
     We verify the token, create/find the local user, issue a session, and
     redirect back to the SPA with the access token in the URL fragment.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /google/callback route because they need this unit's "Handle the Google Identity Services redirect callback" behavior.
     """
     if g_csrf_token:
         cookie_token = request.cookies.get("g_csrf_token")
@@ -203,7 +239,16 @@ _cilogon_config_cache: dict | None = None
 
 
 async def _get_cilogon_config() -> dict:
-    """Fetch (and cache for the process lifetime) the CILogon discovery document."""
+    """Fetch (and cache for the process lifetime) the CILogon discovery document.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Fetch (and cache for the process lifetime) the CILogon discovery document" behavior.
+    """
     global _cilogon_config_cache
     if _cilogon_config_cache is not None:
         return _cilogon_config_cache
@@ -215,7 +260,11 @@ async def _get_cilogon_config() -> dict:
 
 
 def _cilogon_redirect_uri(request: Request) -> str:
-    """Return the registered callback URL, falling back to auto-detection."""
+    """Return the registered callback URL, falling back to auto-detection.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return the registered callback URL, falling back to auto-detection" behavior.
+    """
     if settings.cilogon_redirect_uri:
         return settings.cilogon_redirect_uri
     # Auto-detect: scheme + host + /api/auth/cilogon/callback
@@ -236,6 +285,14 @@ async def cilogon_login(request: Request):
     Generates a random ``state`` for CSRF protection (stored as a short-lived
     cookie), builds the OIDC authorization URL from the discovery document,
     and redirects the user to CILogon to authenticate.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /cilogon/login route because they need this unit's "Redirect the browser to the CILogon authorization endpoint" behavior.
     """
     if not settings.multi_user:
         raise HTTPException(400, "CILogon not available in single-user mode")
@@ -282,6 +339,14 @@ async def cilogon_callback(
     ``state``, exchange the authorization code for tokens, fetch the user's
     profile from the userinfo endpoint, provision a local session, and
     redirect back to the SPA with the access token in the URL query string.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /cilogon/callback route because they need this unit's "Handle the CILogon authorization code callback" behavior.
     """
     if error:
         detail = error_description or error
@@ -384,8 +449,13 @@ async def cilogon_callback(
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Return normalized current user profile fields.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend profile/session widgets
+    - frontend profile/session widgets because they need this unit's "Return normalized current user profile fields" behavior.
 
     Why:
     - Provides stable user response shape independent of DB row types.
@@ -414,8 +484,13 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 async def logout(current_user: dict = Depends(get_current_user)):
     """Logout current user session (multi-user) or no-op (single-user).
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend sign-out action
+    - frontend sign-out action because they need this unit's "Logout current user session (multi-user) or no-op (single-user)" behavior.
 
     Why:
     - Keeps logout behavior mode-aware while preserving shared endpoint contract.
@@ -432,8 +507,13 @@ async def logout(current_user: dict = Depends(get_current_user)):
 async def auth_status(current_user: dict = Depends(get_current_user)):
     """Return minimal authenticated status payload.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - lightweight frontend auth status checks
+    - lightweight frontend auth status checks because they need this unit's "Return minimal authenticated status payload" behavior.
 
     Why:
     - Allows cheap auth verification without full `get_auth_info` metadata.
@@ -458,8 +538,13 @@ async def auth_status(current_user: dict = Depends(get_current_user)):
 async def auth_health():
     """Return authentication subsystem readiness metadata.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - health/status probes and diagnostics pages
+    - health/status probes and diagnostics pages because they need this unit's "Return authentication subsystem readiness metadata" behavior.
 
     Why:
     - Exposes auth mode and endpoint availability without authentication.

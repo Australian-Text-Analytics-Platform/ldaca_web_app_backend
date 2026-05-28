@@ -1,4 +1,13 @@
-"""Shared utility helpers for workspace API modules."""
+"""Shared utility helpers for workspace API modules.
+
+Used by:
+- FastAPI workspace routers, frontend workspace features, and backend tests because they need this unit's "Shared utility helpers for workspace API modules" behavior.
+
+Flow:
+- Workspace and analysis routes call these helpers for shared persistence and artifact staging.
+- Helpers sanitize names, allocate workspace data paths, scan Parquet lazily, and sync task state.
+- Callers receive saved workspace paths, staged LazyFrames, or consistent HTTP errors.
+"""
 
 import logging
 import re
@@ -17,12 +26,29 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_workspace_data_stem(name: str) -> str:
+    """Create safe workspace data stem values for workspace file utilities.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Create safe workspace data stem values for workspace file utilities" behavior.
+    """
+
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("._") or "data"
 
 
 def _allocate_workspace_data_path(
     workspace_dir: Path, *, stem: str, suffix: str = ".parquet"
 ) -> Path:
+    """Support workspace file utilities with an allocate workspace data path helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace file utilities with an allocate workspace data path helper" behavior.
+    """
+
     data_dir = workspace_dir / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -35,6 +61,17 @@ def _allocate_workspace_data_path(
 
 
 def _scan_workspace_parquet(parquet_path: Path):
+    """Support workspace file utilities with a scan workspace parquet helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace file utilities with a scan workspace parquet helper" behavior.
+    """
+
     absolute_path = Path(parquet_path).resolve()
     try:
         lazy_data: Any = pl.scan_parquet(absolute_path)
@@ -55,8 +92,13 @@ def update_workspace(
 ) -> Path | None:
     """Persist workspace metadata/path updates through one shared code path.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - workspace lifecycle, node, and analysis endpoints after mutations
+    - workspace lifecycle, node, and analysis endpoints after mutations because they need this unit's "Persist workspace metadata/path updates through one shared code path" behavior.
 
     Why:
     - Removes repeated save/update boilerplate from route handlers.
@@ -99,8 +141,13 @@ async def ensure_task_synced(
         If the in-memory task is 'running', this checks the worker
     status and updates the in-memory task if the worker has completed (success/fail).
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
         Used by:
-        - analysis task-result endpoints that bridge memory store and worker store
+        - analysis task-result endpoints that bridge memory store and worker store because they need this unit's "Sync the in-memory task status with the backend worker task manager" behavior.
 
         Why:
         - Keeps in-memory task records consistent with worker completion.
@@ -149,7 +196,7 @@ def success(data=None, message: str = "ok", state: str = "successful", **extra):
     """Build a standardized success payload.
 
     Used by:
-    - workspace API handlers returning `{state,message,data}` contracts
+    - workspace API handlers returning `{state,message,data}` contracts because they need this unit's "Build a standardized success payload" behavior.
 
     Why:
     - Keeps response assembly lightweight; serialization is handled by FastAPI.
@@ -164,7 +211,7 @@ def running(message: str = "running", metadata: dict | None = None):
     """Shortcut for standardized in-progress response payloads.
 
     Used by:
-    - task-producing endpoints that return pre-completion status
+    - task-producing endpoints that return pre-completion status because they need this unit's "Shortcut for standardized in-progress response payloads" behavior.
 
     Why:
     - Aligns `running` responses with the same schema as `success`.
@@ -175,8 +222,13 @@ def running(message: str = "running", metadata: dict | None = None):
 def failed(message: str, error: Any = None, status_code: int = 400):
     """Raise a structured HTTP error payload.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - workspace routes and helpers for uniform error surfaces
+    - workspace routes and helpers for uniform error surfaces because they need this unit's "Raise a structured HTTP error payload" behavior.
 
     Why:
     - Consolidates API error formatting in one helper.
@@ -197,6 +249,14 @@ def stage_dataframe_as_lazy(
 
     This mirrors the lazy serialize/reload pattern used by the base add-node endpoint
     so that detached/derived nodes remain portable and lazy by default.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Persist a dataframe to parquet under the workspace and reload as LazyFrame" behavior.
     """
     parquet_path = _allocate_workspace_data_path(
         workspace_dir,
@@ -231,6 +291,14 @@ def stage_parquet_artifact_as_lazy(
     Before attaching a derived node to the workspace, the main process must copy
     that parquet into durable workspace storage so the node survives artifact
     cleanup on unload.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes because they need this unit's "Copy a temporary parquet artifact into workspace data and reload lazily" behavior.
     """
 
     source_path = Path(artifact_path)

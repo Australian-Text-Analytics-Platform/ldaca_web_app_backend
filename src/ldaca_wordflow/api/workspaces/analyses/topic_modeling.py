@@ -1,4 +1,14 @@
-"""Topic Modeling analysis endpoints (background-task based)."""
+"""Topic Modeling analysis endpoints (background-task based).
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Topic Modeling analysis endpoints (background-task based)" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers lock per user/workspace, validate language/node state, and submit topic tasks.
+- Helpers read artifacts, reaggregate topics, manage embedding cache state, and detach columns.
+- Responses return topic data, task metadata, cache summaries, or saved workspace updates.
+"""
 
 from __future__ import annotations
 
@@ -57,6 +67,12 @@ _TOPIC_SUBMISSION_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
 
 
 def _topic_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock:
+    """Support topic-modeling routes with a topic submission lock helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a topic submission lock helper" behavior.
+    """
+
     key = (user_id, workspace_id)
     lock = _TOPIC_SUBMISSION_LOCKS.get(key)
     if lock is None:
@@ -66,10 +82,27 @@ def _topic_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock:
 
 
 def _task_metadata(task_id: object | None) -> AnalysisTaskMetadata:
+    """Support topic-modeling routes with a task metadata helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a task metadata helper" behavior.
+    """
+
     return AnalysisTaskMetadata(task_id=str(task_id) if task_id is not None else None)
 
 
 def _prepare_topic_artifact_target(user_id: str, workspace_id: str) -> tuple[Path, str]:
+    """Prepare topic artifact target data consumed by topic-modeling routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Prepare topic artifact target data consumed by topic-modeling routes" behavior.
+    """
+
     workspace_artifacts_dir = workspace_manager.ensure_workspace_artifacts_dir(
         user_id, workspace_id
     )
@@ -80,6 +113,12 @@ def _prepare_topic_artifact_target(user_id: str, workspace_id: str) -> tuple[Pat
 
 
 def _task_result_payload(task: AnalysisTask) -> dict:
+    """Support topic-modeling routes with a task result payload helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a task result payload helper" behavior.
+    """
+
     if task.result is None:
         return {}
     payload = task.result.to_json()
@@ -89,6 +128,17 @@ def _task_result_payload(task: AnalysisTask) -> dict:
 
 
 def _topic_artifacts_from_task(task: AnalysisTask) -> dict:
+    """Run the topic artifacts from task background job submitted by API routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Run the topic artifacts from task background job submitted by API routes" behavior.
+    """
+
     payload = _task_result_payload(task)
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
@@ -107,6 +157,17 @@ def _topic_artifacts_from_task(task: AnalysisTask) -> dict:
 
 
 def _task_request_payload(task: AnalysisTask) -> dict[str, object]:
+    """Support topic-modeling routes with a task request payload helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a task request payload helper" behavior.
+    """
+
     request = task.request
     if request is None:
         return {}
@@ -122,6 +183,12 @@ def _task_request_payload(task: AnalysisTask) -> dict[str, object]:
 
 
 def _format_sampling_scalar(value: float | int) -> str:
+    """Format sampling scalar values for topic-modeling routes responses.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Format sampling scalar values for topic-modeling routes responses" behavior.
+    """
+
     return str(value).replace(".", "_")
 
 
@@ -131,6 +198,17 @@ def _build_sampling_auto_node_name(
     sample_fraction: float,
     random_seed: int | None,
 ) -> str:
+    """Build sampling auto node name values used by topic-modeling routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build sampling auto node name values used by topic-modeling routes" behavior.
+    """
+
     sample_token = f"fr_{_format_sampling_scalar(sample_fraction)}"
     seed_token = (
         f"_rs_{random_seed}"
@@ -144,6 +222,17 @@ def _topic_sampling_details_for_node(
     task: AnalysisTask,
     node_id: str,
 ) -> tuple[float | None, int]:
+    """Support topic-modeling routes with a topic sampling details for node helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a topic sampling details for node helper" behavior.
+    """
+
     request_payload = _task_request_payload(task)
     random_seed = request_payload.get("random_seed")
     if isinstance(random_seed, bool):
@@ -191,6 +280,17 @@ def _default_topic_detach_node_name(
     artifact_payload: dict,
     node_id: str,
 ) -> str:
+    """Support topic-modeling routes with a default topic detach node name helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support topic-modeling routes with a default topic detach node name helper" behavior.
+    """
+
     raw_base_name = str(artifact_payload.get("node_name") or node_id).strip() or "node"
     base_name = f"{raw_base_name}_topic"
     sample_fraction, seed = _topic_sampling_details_for_node(task, node_id)
@@ -208,6 +308,17 @@ async def _require_completed_topic_task(
     workspace_id: str,
     task_id: str,
 ) -> AnalysisTask:
+    """Run the require completed topic task background job submitted by API routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Run the require completed topic task background job submitted by API routes" behavior.
+    """
+
     task = await ensure_task_synced(
         user_id, workspace_id, task_id, get_task_manager(user_id)
     )
@@ -227,8 +338,13 @@ async def clear_topic_modeling_results(
 ):
     """Clear stored topic-modeling task state for a workspace.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend clear action: `DELETE /workspaces/{id}/topic-modeling`
+    - Frontend clear action: `DELETE /workspaces/{id}/topic-modeling` because they need this unit's "Clear stored topic-modeling task state for a workspace" behavior.
 
     Why:
     - Removes stale result/task pointers before reruns and keeps UI state
@@ -255,13 +371,26 @@ async def clear_topic_modeling_results(
 
 
 def _embedding_cache_dirs(user_id: str) -> list[Path]:
-    """Return the embedding-cache directory if it currently exists."""
+    """Return the embedding-cache directory if it currently exists.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return the embedding-cache directory if it currently exists" behavior.
+    """
     cache_dir = get_user_cache_folder(user_id) / "embeddings"
     return [cache_dir] if cache_dir.exists() and cache_dir.is_dir() else []
 
 
 def _measure_embedding_cache(user_id: str) -> dict:
-    """Compute total size and file count across embedding-cache files."""
+    """Compute total size and file count across embedding-cache files.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Compute total size and file count across embedding-cache files" behavior.
+    """
     bytes_total = 0
     file_count = 0
     for cache_dir in _embedding_cache_dirs(user_id):
@@ -285,6 +414,14 @@ async def get_topic_modeling_embedding_cache_size(
 
     Used by the frontend Clear-cache confirmation dialog so the user can see
     "X MB will be freed" before they confirm.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /topic-modeling/embedding-cache/size route because they need this unit's "Report current embedding-cache size and file count for the user" behavior.
     """
     return {
         "state": "successful",
@@ -305,6 +442,14 @@ async def clear_topic_modeling_embedding_cache(
     Returns total bytes and file count freed so the UI can confirm the
     reclaim. Clearing forces the next topic-modelling run to re-encode all
     documents from scratch.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /topic-modeling/embedding-cache route because they need this unit's "Delete every DuckDB entry in the user's embedding cache" behavior.
     """
     user_id = current_user["id"]
     measured = _measure_embedding_cache(user_id)
@@ -338,8 +483,13 @@ async def run_topic_modeling(
 ):
     """Submit topic-modeling analysis as a worker-backed background task.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend run route: `POST /workspaces/{id}/topic-modeling`
+    - Frontend run route: `POST /workspaces/{id}/topic-modeling` because they need this unit's "Submit topic-modeling analysis as a worker-backed background task" behavior.
 
     Why:
     - Offloads heavy modeling work to worker processes and returns `task_id`
@@ -488,7 +638,16 @@ async def run_topic_modeling(
 async def topic_modeling_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for topic-modeling analysis."""
+    """Return current task IDs for topic-modeling analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /topic-modeling/tasks/current route because they need this unit's "Return current task IDs for topic-modeling analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -506,7 +665,16 @@ async def topic_modeling_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for a topic-modeling task."""
+    """Return stored request payload for a topic-modeling task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /topic-modeling/tasks/{task_id}/request route because they need this unit's "Return stored request payload for a topic-modeling task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -529,8 +697,13 @@ async def topic_modeling_task_result(
 ):
     """Return current status or final payload for a topic-modeling task.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend polling route:
+    - Frontend polling route: because they need this unit's "Return current status or final payload for a topic-modeling task" behavior.
         `GET /workspaces/{id}/topic-modeling/tasks/{task_id}/result`
 
     Why:
@@ -593,7 +766,16 @@ async def update_topic_modeling_task_result(
     updates: TopicModelingResultUpdateRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Re-aggregate a completed exact topic-modeling task without refitting."""
+    """Re-aggregate a completed exact topic-modeling task without refitting.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /topic-modeling/tasks/{task_id}/result route because they need this unit's "Re-aggregate a completed exact topic-modeling task without refitting" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -717,8 +899,13 @@ async def update_topic_modeling_task_result(
 def _resolve_topic_column_name(base_name: str, existing_columns: set[str]) -> str:
     """Return a unique output column name for detached topic data.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `detach_topic_modeling`
+    - `detach_topic_modeling` because they need this unit's "Return a unique output column name for detached topic data" behavior.
 
     Why:
     - Prevents overwriting source columns when attaching generated topic labels.
@@ -742,8 +929,13 @@ async def topic_modeling_detach_options(
 ):
     """List detachable node/column options for a completed topic task.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend detach-options route:
+    - Frontend detach-options route: because they need this unit's "List detachable node/column options for a completed topic task" behavior.
         `GET /workspaces/{id}/topic-modeling/tasks/{task_id}/detach-options`
 
     Why:
@@ -808,8 +1000,13 @@ async def detach_topic_modeling(
 ):
     """Create detached nodes from artifact-backed topic-modeling outputs.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend detach route:
+    - Frontend detach route: because they need this unit's "Create detached nodes from artifact-backed topic-modeling outputs" behavior.
         `POST /workspaces/{id}/topic-modeling/tasks/{task_id}/detach`
 
         Why:

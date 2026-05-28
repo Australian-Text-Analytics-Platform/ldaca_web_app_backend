@@ -1,4 +1,13 @@
-"""Workspace download (ZIP packaging) worker task implementation."""
+"""Workspace download (ZIP packaging) worker task implementation.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+    artifacts, and return import records for the caller to attach.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 def _safe_download_name(name: str) -> str:
+    """Create safe download name values for workspace download worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
     return cleaned or "workspace"
 
@@ -28,11 +47,15 @@ def run_workspace_download_task(
     """Package a persisted workspace folder into a ZIP artifact.
 
     Used by:
-    - ``TASK_REGISTRY["workspace_download"]`` via ``WorkerTaskManager.submit_task``
-
+    - ``TASK_REGISTRY["workspace_download"]`` via ``WorkerTaskManager.submit_task`` because
+      background jobs need one lifecycle owner for submission, progress, cancellation, and
+      artifact cleanup.
     Why:
     - Moves potentially slow ZIP compression off the request thread so the UI
       can track progress through the Task Center.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
     """
     configure_worker_environment()
 

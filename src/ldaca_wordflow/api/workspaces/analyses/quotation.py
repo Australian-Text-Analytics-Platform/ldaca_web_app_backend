@@ -1,4 +1,14 @@
-"""Quotation analysis endpoints with on-demand paginated result retrieval."""
+"""Quotation analysis endpoints with on-demand paginated result retrieval.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Quotation analysis endpoints with on-demand paginated result retrieval" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers gate language support, validate quotation requests, and manage current task state.
+- Helpers submit extraction work, read on-demand result pages, and attach/detach generated columns.
+- Responses return task metadata, quotation pages, preference updates, or saved workspace changes.
+"""
 
 from __future__ import annotations
 
@@ -72,6 +82,14 @@ def _enforce_quotation_language_gate(request_language: Optional[str], node: Any)
 
     Returns the resolved language string for downstream telemetry/logging.
     Raises ``HTTPException(400)`` with a typed-error payload on rejection.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve effective language and reject anything other than English" behavior.
     """
     language = effective_language(request_language, node)
     try:
@@ -103,7 +121,16 @@ async def _compute_on_demand_page(
     descending: bool,
     materialized_path: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Compute paged quotation payloads via shared quotation-core helper."""
+    """Compute paged quotation payloads via shared quotation-core helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Compute paged quotation payloads via shared quotation-core helper" behavior.
+    """
     compute_quote_dataframe_fn = partial(
         qcore.compute_quote_dataframe,
         extract_remote_fn=extract_remote_quotations,
@@ -129,6 +156,17 @@ def _collect_non_empty_quotation_corpus(
     document_column: str,
     extra_columns: list[str],
 ) -> tuple[list[str], dict[str, list], dict[str, Any]]:
+    """Collect non empty quotation corpus data for quotation analysis routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Collect non empty quotation corpus data for quotation analysis routes" behavior.
+    """
+
     corpus_df = cast(
         pl.DataFrame,
         node_data.select(
@@ -164,7 +202,16 @@ router = APIRouter(prefix="/workspaces", tags=["quotation"])
 async def quotation_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for quotation analysis."""
+    """Return current task IDs for quotation analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /quotation/tasks/current route because they need this unit's "Return current task IDs for quotation analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -182,7 +229,16 @@ async def quotation_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for a quotation task."""
+    """Return stored request payload for a quotation task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /quotation/tasks/{task_id}/request route because they need this unit's "Return stored request payload for a quotation task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -208,8 +264,13 @@ async def quotation_task_result(
 ):
     """Return stored quotation result, optionally recomputed for new page params.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend polling route for quotation result panels
+    - frontend polling route for quotation result panels because they need this unit's "Return stored quotation result, optionally recomputed for new page params" behavior.
 
     Why:
     - Supports cheap preference-only reads and on-demand page recomputation.
@@ -271,8 +332,13 @@ async def update_quotation_task_result(
 ):
     """Persist quotation display preferences and optional page overrides.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend preference updates for context length/sort/page controls
+    - frontend preference updates for context length/sort/page controls because they need this unit's "Persist quotation display preferences and optional page overrides" behavior.
 
     Why:
     - Lets UI tune quotation presentation without rerunning analysis creation.
@@ -409,8 +475,13 @@ async def get_quotation(
 ):
     """Run quotation extraction on selected node and store latest task payload.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend quotation run/search action
+    - frontend quotation run/search action because they need this unit's "Run quotation extraction on selected node and store latest task payload" behavior.
 
     Why:
     - Produces immediate result payload and persists it as current quotation task.
@@ -534,8 +605,13 @@ async def quotation_detach_options(
 ):
     """Return detachable quotation columns for one node.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend quotation detach dialog
+    - Frontend quotation detach dialog because they need this unit's "Return detachable quotation columns for one node" behavior.
 
     Why:
     - Keeps mandatory generated quotation columns and optional source columns
@@ -596,8 +672,13 @@ async def detach_quotation(
 ):
     """Submit background task to detach quotations into a new workspace node.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend quotation detach action
+    - frontend quotation detach action because they need this unit's "Submit background task to detach quotations into a new workspace node" behavior.
 
     Why:
     - Offloads potentially expensive extraction/materialization to worker tasks.
@@ -686,6 +767,14 @@ async def materialize_quotation(
     Unlike detach, this does not add a node to the workspace. On completion the
     parent quotation analysis task's `materialized_path` is updated so subsequent
     pagination and detach reuse the cached parquet.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/quotation/materialize route because they need this unit's "Submit a background task that writes the full flattened quotation parquet" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)

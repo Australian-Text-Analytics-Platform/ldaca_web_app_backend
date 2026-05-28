@@ -1,6 +1,15 @@
 """Node operation endpoints extracted from base.py.
 
 Maintains identical routes and behavior to preserve backward compatibility.
+
+Used by:
+- FastAPI workspace routers, frontend workspace features, and backend tests because they need this unit's "Node operation endpoints extracted from base.py" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers resolve the current workspace and target node before building Polars operations.
+- Helpers validate expressions, filters, replacements, tokenization, and schema information.
+- Responses return node rows, metadata, shapes, operation previews, or persisted workspace updates.
 """
 
 from __future__ import annotations
@@ -70,8 +79,13 @@ ISO_PATTERN = re.compile(
 def _parse_temporal(value: Any) -> Any:
     """Parse ISO-like datetime strings into `datetime` objects when possible.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `_build_filter_expression`
+    - `_build_filter_expression` because they need this unit's "Parse ISO-like datetime strings into `datetime` objects when possible" behavior.
 
     Why:
     - Enables temporal comparisons in filter operators.
@@ -93,8 +107,13 @@ def _parse_temporal(value: Any) -> Any:
 def _coerce_scalar(value: Any) -> Any:
     """Coerce string scalars into bool/int/float when safe.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `_build_filter_expression`
+    - `_build_filter_expression` because they need this unit's "Coerce string scalars into bool/int/float when safe" behavior.
 
     Why:
     - Keeps query payload values aligned with Polars expression expectations.
@@ -114,6 +133,12 @@ def _coerce_scalar(value: Any) -> Any:
 
 
 def _sanitize_column_alias(label: str) -> str:
+    """Support workspace node routes with a sanitize column alias helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace node routes with a sanitize column alias helper" behavior.
+    """
+
     sanitized = re.sub(r"\s+", " ", label or "").strip()
     if not sanitized:
         return "computed_column"
@@ -124,8 +149,8 @@ def _resolve_replace_column_name(request: ReplaceRequest) -> str:
     """Resolve final output column name for replace operations.
 
     Used by:
-    - `replace_preview`
-    - `replace_apply`
+    - `replace_preview` because they need this unit's "Resolve final output column name for replace operations" behavior.
+    - `replace_apply` because they need this unit's "Resolve final output column name for replace operations" behavior.
 
     Why:
     - Keeps overwrite-vs-new-column behavior consistent across both routes.
@@ -135,11 +160,21 @@ def _resolve_replace_column_name(request: ReplaceRequest) -> str:
 
 
 def _is_string_list_dtype(dtype: Any) -> bool:
-    """Return True when dtype is exactly a list of strings."""
+    """Return True when dtype is exactly a list of strings.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return True when dtype is exactly a list of strings" behavior.
+    """
     return dtype == pl.List(pl.String) or dtype == pl.List(pl.Utf8)
 
 
 def _serialize_column_scalar(value: Any) -> str | int | float | bool:
+    """Support workspace node routes with a serialize column scalar helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support workspace node routes with a serialize column scalar helper" behavior.
+    """
+
     if isinstance(value, str | int | float | bool):
         return value
     return str(value)
@@ -157,6 +192,14 @@ def _make_temporal_literal(value: datetime, column_dtype: Any) -> pl.Expr:
 
     Casting the literal to the column's exact dtype keeps the comparison
     valid in both tz-naive-column and tz-aware-column cases.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build a polars literal that matches the column's datetime dtype" behavior.
     """
     if isinstance(column_dtype, pl.Datetime):
         column_tz = getattr(column_dtype, "time_zone", None)
@@ -180,6 +223,17 @@ def _build_filter_expression(
     request: FilterRequest,
     column_dtypes: dict[str, Any] | None = None,
 ) -> pl.Expr:
+    """Build filter expression values used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build filter expression values used by workspace node routes" behavior.
+    """
+
     logic = (request.logic or "and").lower()
     filter_expr = None
     schema_map = column_dtypes or {}
@@ -326,6 +380,17 @@ def _build_filter_expression(
 
 
 def _require_current_workspace(user_id: str) -> Workspace:
+    """Resolve required current workspace state for workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve required current workspace state for workspace node routes" behavior.
+    """
+
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -333,6 +398,17 @@ def _require_current_workspace(user_id: str) -> Workspace:
 
 
 def _require_current_workspace_id(user_id: str) -> str:
+    """Resolve required current workspace id state for workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve required current workspace id state for workspace node routes" behavior.
+    """
+
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -340,6 +416,17 @@ def _require_current_workspace_id(user_id: str) -> str:
 
 
 def _normalise_iso6391_language_code(code: str | None) -> str | None:
+    """Normalize iso6391 language code values before workspace node routes uses them.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize iso6391 language code values before workspace node routes uses them" behavior.
+    """
+
     if code is None:
         return None
     trimmed = code.strip().lower()
@@ -355,6 +442,17 @@ def _normalise_iso6391_language_code(code: str | None) -> str | None:
 
 
 def _validate_existing_column(node: Node, column_name: str) -> None:
+    """Validate existing column inputs before workspace node routes proceeds.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Validate existing column inputs before workspace node routes proceeds" behavior.
+    """
+
     schema_names = node.data.collect_schema().names()
     if column_name not in schema_names:
         raise HTTPException(
@@ -370,7 +468,16 @@ def _propagated_tokenization(
     parents: "Node | list[Node]",
     result_lf: pl.LazyFrame,
 ) -> dict[str, Any]:
-    """Return parent tokenization metadata whose source column survived."""
+    """Return parent tokenization metadata whose source column survived.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return parent tokenization metadata whose source column survived" behavior.
+    """
     if isinstance(parents, list):
         sources = parents
     else:
@@ -404,6 +511,17 @@ def _build_slice_or_sample_lazy(
     node_name: str,
     request: SliceRequest,
 ) -> tuple[pl.LazyFrame, str, str]:
+    """Build slice or sample lazy values used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build slice or sample lazy values used by workspace node routes" behavior.
+    """
+
     if request.mode == "shuffle":
         seed_args = (
             f", seed={request.random_seed}" if request.random_seed is not None else ""
@@ -458,6 +576,17 @@ def _build_slice_or_sample_lazy(
 
 
 def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
+    """Return concat nodes data used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return concat nodes data used by workspace node routes" behavior.
+    """
+
     if not node_ids:
         raise HTTPException(
             status_code=400, detail="At least two node IDs are required"
@@ -488,6 +617,17 @@ def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
 def _extract_lazy_schema(
     lazy_frame: pl.LazyFrame,
 ) -> tuple[list[str], dict[str, str]]:
+    """Extract lazy schema values used by workspace node routes.
+
+    Steps:
+    - Collect only the LazyFrame schema so endpoint callers avoid collecting row data.
+    - Preserve column order from the schema mapping.
+    - Stringify dtypes for JSON responses and generated frontend models.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Extract lazy schema values used by workspace node routes" behavior.
+    """
+
     schema_dict = dict(lazy_frame.collect_schema().items())
     columns = list(schema_dict.keys())
     dtypes = {col: str(dtype) for col, dtype in schema_dict.items()}
@@ -495,6 +635,17 @@ def _extract_lazy_schema(
 
 
 def _build_replace_expression(request: ReplaceRequest) -> tuple[str, pl.Expr]:
+    """Build replace expression values used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build replace expression values used by workspace node routes" behavior.
+    """
+
     source_column = request.source_column.strip()
     column_name = _resolve_replace_column_name(request)
 
@@ -521,6 +672,17 @@ def _build_replace_expression(request: ReplaceRequest) -> tuple[str, pl.Expr]:
 def _validate_and_align_concat_nodes(
     nodes: list[Node],
 ) -> tuple[list[pl.LazyFrame], list[str], dict[str, str]]:
+    """Validate and align concat nodes inputs before workspace node routes proceeds.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Validate and align concat nodes inputs before workspace node routes proceeds" behavior.
+    """
+
     lazy_frames: list[pl.LazyFrame] = [node.data for node in nodes]
     base_columns, base_dtypes = _extract_lazy_schema(lazy_frames[0])
     if not base_columns:
@@ -570,6 +732,17 @@ def _validate_and_align_concat_nodes(
 def _calculate_concat_row_count(
     aligned_frames: list[pl.LazyFrame],
 ) -> int | None:
+    """Calculate concat row count values used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Calculate concat row count values used by workspace node routes" behavior.
+    """
+
     total = 0
     for lazy_frame in aligned_frames:
         try:
@@ -584,6 +757,17 @@ def _calculate_concat_row_count(
 
 
 def _derive_concat_node_name(nodes: list[Node], desired_name: str | None) -> str:
+    """Derive concat node name values used by workspace node routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Derive concat node name values used by workspace node routes" behavior.
+    """
+
     if desired_name:
         return desired_name
     labels = [node.name for node in nodes]
@@ -607,6 +791,17 @@ async def replace_preview(
     page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle replace preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/replace/preview route because they need this unit's "Handle replace preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     lazy_data = workspace.nodes[node_id].data
@@ -661,6 +856,17 @@ async def replace_apply(
     request: ReplaceRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle replace apply API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/replace route because they need this unit's "Handle replace apply API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -699,6 +905,17 @@ async def replace_apply(
 async def get_tokenizer_models(
     _current_user: dict = Depends(get_current_user),
 ):
+    """Return get tokenizer models API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /tokenizer-models route because they need this unit's "Return get tokenizer models API requests for workspace node routes" behavior.
+    """
+
     return {"models": predefined_model_records()}
 
 
@@ -707,6 +924,17 @@ async def get_node_info(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Return get node info API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id} route because they need this unit's "Return get node info API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
     return frontend_node_info(ws.nodes[node_id])
@@ -718,6 +946,17 @@ async def set_node_document_column(
     request: NodeDocumentColumnUpdateRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Update set node document column API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI PUT /nodes/{node_id}/document-column route because they need this unit's "Update set node document column API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace_id = _require_current_workspace_id(user_id)
     ws = _require_current_workspace(user_id)
@@ -742,6 +981,17 @@ async def set_node_tokenization_preference(
     request: NodeTokenizationPreferenceRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Update set node tokenization preference API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI PUT /nodes/{node_id}/tokenization-preference route because they need this unit's "Update set node tokenization preference API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace_id = _require_current_workspace_id(user_id)
     ws = _require_current_workspace(user_id)
@@ -779,6 +1029,17 @@ async def get_node_query_plan(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Return get node query plan API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/query-plan route because they need this unit's "Return get node query plan API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
     lazyframe = ws.nodes[node_id].data
@@ -798,6 +1059,17 @@ async def get_node_data(
     filter_op: str = "contains",
     current_user: dict = Depends(get_current_user),
 ):
+    """Return get node data API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/data route because they need this unit's "Return get node data API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     # Token columns are hydrated only inside analysis paths. The data view reads
     # the node's physical columns unchanged.
@@ -864,6 +1136,17 @@ async def get_node_shape(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Return get node shape API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/shape route because they need this unit's "Return get node shape API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     return {"shape": _require_current_workspace(user_id).nodes[node_id].shape}
 
@@ -877,6 +1160,17 @@ async def get_column_unique_values(
     column_name: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Return get column unique values API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/columns/{column_name}/unique route because they need this unit's "Return get column unique values API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     try:
         lazyframe = _require_current_workspace(user_id).nodes[node_id].data
@@ -932,7 +1226,16 @@ async def describe_column(
     column_name: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Get descriptive statistics for a column using Polars describe with 'nearest' interpolation."""
+    """Get descriptive statistics for a column using Polars describe with 'nearest' interpolation.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/columns/{column_name}/describe route because they need this unit's "Get descriptive statistics for a column using Polars describe with 'nearest' interpolation" behavior.
+    """
     user_id = current_user["id"]
 
     try:
@@ -956,6 +1259,17 @@ async def describe_column(
                 desc_dict[stat_name] = row[column_name]
 
         def serialize_value(val):
+            """Support workspace node routes with a serialize value helper.
+
+            Steps:
+            - Normalize caller input into the representation this module expects.
+            - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+            - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+            Called by:
+            - The `describe_column` local workflow in this module because they need this unit's "Support workspace node routes with a serialize value helper" behavior.
+            """
+
             if val is None:
                 return None
             if isinstance(val, datetime):
@@ -999,6 +1313,17 @@ async def describe_column(
 
 @router.delete("/nodes/{node_id}", response_model=NodeActionResponse)
 async def delete_node(node_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete delete node API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /nodes/{node_id} route because they need this unit's "Delete delete node API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -1016,6 +1341,17 @@ async def update_node_name(
     new_name: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Update update node name API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI PUT /nodes/{node_id}/name route because they need this unit's "Update update node name API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -1034,12 +1370,34 @@ async def clone_node(
     node_id: str,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle clone node API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/clone route because they need this unit's "Handle clone node API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
     node = workspace.nodes[node_id]
 
     def _unique_clone_name(original: str) -> str:
+        """Support workspace node routes with an unique clone name helper.
+
+        Steps:
+        - Normalize caller input into the representation this module expects.
+        - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+        - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+        Called by:
+        - The `clone_node` local workflow in this module because they need this unit's "Support workspace node routes with an unique clone name helper" behavior.
+        """
+
         base = original or node_id
         candidate = f"{base}_clone"
         existing = {getattr(n, "name", None) for n in workspace.nodes.values()}
@@ -1081,6 +1439,17 @@ async def filter_node(
     request: FilterRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle filter node API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/filter route because they need this unit's "Handle filter node API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -1114,6 +1483,17 @@ async def filter_preview(
     page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ) -> FilterPreviewResponse:
+    """Handle filter preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/filter/preview route because they need this unit's "Handle filter preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     lazy_data = workspace.nodes[node_id].data
@@ -1178,6 +1558,17 @@ async def slice_node(
     request: SliceRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle slice node API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/slice route because they need this unit's "Handle slice node API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -1212,6 +1603,17 @@ async def slice_preview(
     page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ) -> FilterPreviewResponse:
+    """Handle slice preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/slice/preview route because they need this unit's "Handle slice preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
 
@@ -1269,6 +1671,17 @@ async def concat_nodes_preview(
     page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle concat nodes preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/concat/preview route because they need this unit's "Handle concat nodes preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     try:
         nodes = _get_concat_nodes(user_id, request.node_ids)
@@ -1336,6 +1749,17 @@ async def concat_nodes(
     request: ConcatRequest,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle concat nodes API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/concat route because they need this unit's "Handle concat nodes API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     try:
         nodes = _get_concat_nodes(user_id, request.node_ids)
@@ -1382,6 +1806,17 @@ async def join_nodes_preview(
     page_size: int = Query(10, ge=1, le=200),
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle join nodes preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/join/preview route because they need this unit's "Handle join nodes preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     left_node = workspace.nodes[left_node_id]
@@ -1478,6 +1913,17 @@ async def join_nodes(
     new_node_name: str | None = None,
     current_user: dict = Depends(get_current_user),
 ):
+    """Handle join nodes API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/join route because they need this unit's "Handle join nodes API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id
@@ -1537,7 +1983,16 @@ async def column_operations(
     column_name: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return available no-arg Polars operations for a column, filtered by dtype."""
+    """Return available no-arg Polars operations for a column, filtered by dtype.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/columns/{column_name}/operations route because they need this unit's "Return available no-arg Polars operations for a column, filtered by dtype" behavior.
+    """
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
     node = ws.nodes[node_id]
@@ -1554,7 +2009,16 @@ async def column_operations(
 
 
 def _split_top_level_commas(code: str) -> list[str]:
-    """Split *code* at commas that are not inside parentheses, brackets, braces, or strings."""
+    """Split *code* at commas that are not inside parentheses, brackets, braces, or strings.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Split *code* at commas that are not inside parentheses, brackets, braces, or strings" behavior.
+    """
     segments: list[str] = []
     depth = 0
     current: list[str] = []
@@ -1604,6 +2068,14 @@ def _exec_polars_expr(code: str) -> list[pl.Expr]:
     * Plain expression: ``pl.col("a")``
     * Assignment: ``name = pl.col("a")`` → ``pl.col("a").alias(name)``
     * Mixed: ``pl.col("a"), b = pl.col("x")``
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Execute polars expression code string(s) and return resulting pl.Expr(s)" behavior.
     """
     segments = _split_top_level_commas(code.strip())
     if not segments:
@@ -1637,7 +2109,16 @@ def _apply_expression_context(
     lazy: pl.LazyFrame,
     request: PolarsExpressionRequest,
 ) -> pl.LazyFrame:
-    """Apply the requested polars context + expressions to a LazyFrame."""
+    """Apply the requested polars context + expressions to a LazyFrame.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Apply the requested polars context + expressions to a LazyFrame" behavior.
+    """
     context = request.context
     items = request.expressions
 
@@ -1681,6 +2162,17 @@ async def polars_expression_preview(
     page_size: int = Query(10, ge=1, le=500),
     current_user: dict = Depends(get_current_user),
 ) -> FilterPreviewResponse:
+    """Handle polars expression preview API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/expression/preview route because they need this unit's "Handle polars expression preview API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     lazy_data = workspace.nodes[node_id].data
@@ -1730,6 +2222,17 @@ async def polars_expression_apply(
     request: PolarsExpressionRequest,
     current_user: dict = Depends(get_current_user),
 ) -> PolarsExpressionApplyResponse:
+    """Handle polars expression apply API requests for workspace node routes.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/expression/apply route because they need this unit's "Handle polars expression apply API requests for workspace node routes" behavior.
+    """
+
     user_id = current_user["id"]
     workspace = _require_current_workspace(user_id)
     workspace_id = workspace.id

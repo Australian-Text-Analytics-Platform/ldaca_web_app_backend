@@ -1,4 +1,13 @@
-"""Worker implementations for concordance background tasks."""
+"""Worker implementations for concordance background tasks.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+    parquet artifacts, and return metadata that the manager can serialize.
+"""
 
 from __future__ import annotations
 
@@ -51,7 +60,15 @@ def _build_concordance_occurrence_dataframe(
     extra_columns_dtypes: dict[str, Any] | None = None,
     language: str | None = None,
 ):
-    """Compute flattened occurrence rows for one corpus. Returns (df, output_columns)."""
+    """Compute flattened occurrence rows for one corpus. Returns (df, output_columns).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
+    """
     import polars as pl
     import polars_text as pt
 
@@ -142,6 +159,13 @@ def _build_tokens_concordance_occurrence_dataframe(
     column for the registered source/model) for exact token equality with
     ``search_word``, then reuses
     :func:`build_token_hit` to construct each row.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
     """
     import polars as pl
 
@@ -266,6 +290,13 @@ def run_concordance_detach_task(
     Fast path: when `materialized_path` points to an existing parquet (previously
     written by `run_concordance_materialize_task`), skip extraction and wrap the
     parquet as the detached node. Otherwise perform full concordance extraction.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
     """
     configure_worker_environment()
 
@@ -458,6 +489,13 @@ def _aggregate_hits_per_document(
     whose ``CONC_matched_text`` is in the set — the "legend filter" semantic
     from the chart. Set ``match_case_insensitive=True`` to lowercase both
     sides before comparison (mirrors the chart's ``lowercaseMatches`` toggle).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
     """
     import polars as pl
 
@@ -622,6 +660,13 @@ def run_concordance_dispersion_detach_task(
     `materialized_path` is provided; otherwise computes hits from the full
     source corpus. Always drops left/right context and start/end indices —
     callers consume `CONC_extraction` plus the List<T> aggregates.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
     """
     configure_worker_environment()
 
@@ -818,6 +863,13 @@ def run_concordance_materialize_task(
 
     Unlike detach, no Node is produced. The cached parquet is recorded on the
     parent analysis task so subsequent pagination and detach can reuse it.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: load text or token inputs, derive concordance rows or dispersion bins, persist
+        parquet artifacts, and return metadata that the manager can serialize.
     """
     configure_worker_environment()
 

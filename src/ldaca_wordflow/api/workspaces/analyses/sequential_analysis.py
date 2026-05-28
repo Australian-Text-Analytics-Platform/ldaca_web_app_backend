@@ -3,6 +3,15 @@
 Exposes updated paths:
     POST /workspaces/{workspace_id}/nodes/{node_id}/sequential-analysis
     POST /workspaces/{workspace_id}/sequential-analysis/tasks/{task_id}/result
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Sequential Analysis endpoints extracted from monolithic base module" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers validate temporal columns, chart preferences, grouping, and detach requests.
+- Helpers submit or read sequential analysis tasks and preserve selected visible-group state.
+- Responses return previews, task results, preference updates, or detached-node metadata.
 """
 
 from __future__ import annotations
@@ -58,21 +67,50 @@ _CUSTOM_UNIT_SPEC: dict[str, tuple[str, str]] = {
 
 
 class SelectedPeriod(BaseModel):
+    """API schema used by routes and generated clients for selected period.
+
+    Used by:
+    - backend API routes because they need this unit's "API schema used by routes and generated clients for selected period" behavior.
+    """
+
     period_start: Any
     period_end: Any
 
 
 class VisibleGroupSelection(BaseModel):
+    """API schema used by routes and generated clients for visible group selection.
+
+    Used by:
+    - backend API routes because they need this unit's "API schema used by routes and generated clients for visible group selection" behavior.
+    """
+
     values: dict[str, Any]
 
 
 class SequentialAnalysisDetachRequest(BaseModel):
+    """Request schema used by API routes and generated clients for sequential analysis detach request.
+
+    Used by:
+    - backend API routes because they need this unit's "Request schema used by API routes and generated clients for sequential analysis detach request" behavior.
+    """
+
     selected_periods: list[SelectedPeriod]
     visible_groups: list[VisibleGroupSelection] | None = None
     new_node_name: str
 
 
 def _coerce_period_bound(value: Any, *, column_type: str, time_dtype: Any) -> Any:
+    """Coerce period bound values into the shape expected by sequential-analysis routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Coerce period bound values into the shape expected by sequential-analysis routes" behavior.
+    """
+
     if column_type == "numeric":
         try:
             return float(value)
@@ -110,6 +148,17 @@ def _build_group_filter_expression(
     schema: Any,
     case_sensitive: bool,
 ) -> pl.Expr | None:
+    """Build group filter expression values used by sequential-analysis routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build group filter expression values used by sequential-analysis routes" behavior.
+    """
+
     if not visible_groups:
         return None
 
@@ -147,6 +196,17 @@ def _build_group_filter_expression(
 
 
 def _get_active_workspace(user_id: str) -> tuple[str, Any]:
+    """Return active workspace data used by sequential-analysis routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return active workspace data used by sequential-analysis routes" behavior.
+    """
+
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
@@ -155,6 +215,17 @@ def _get_active_workspace(user_id: str) -> tuple[str, Any]:
 
 
 def _normalize_type_name(value: object | None) -> str | None:
+    """Normalize type name values before sequential-analysis routes uses them.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize type name values before sequential-analysis routes uses them" behavior.
+    """
+
     if value is None:
         return None
     text = str(value).lower()
@@ -172,6 +243,17 @@ def _normalize_type_name(value: object | None) -> str | None:
 
 
 def _column_type_lookup(schema: Any) -> dict[str, str]:
+    """Support sequential-analysis routes with a column type lookup helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support sequential-analysis routes with a column type lookup helper" behavior.
+    """
+
     lookup: dict[str, str] = {}
     for name, raw in zip(schema.names(), schema.dtypes()):
         if not isinstance(name, str):
@@ -203,8 +285,13 @@ def _run_sequential_analysis(
 ) -> pl.DataFrame:
     """Pure-Polars implementation of sequential analysis.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `run_sequential_analysis`
+    - `run_sequential_analysis` because they need this unit's "Pure-Polars implementation of sequential analysis" behavior.
 
     Why:
     - Keeps binning/grouping logic independent from route orchestration.
@@ -379,6 +466,12 @@ def _run_sequential_analysis(
         )
 
         def _format_numeric(value: Optional[float]) -> Optional[str]:
+            """Format numeric values for sequential-analysis routes responses.
+
+            Called by:
+            - The `_run_sequential_analysis` local workflow in this module because they need this unit's "Format numeric values for sequential-analysis routes responses" behavior.
+            """
+
             if value is None:
                 return None
             return format(value, ".6g")
@@ -431,10 +524,15 @@ async def preview_sequential_analysis(
     """Run the aggregation server-side but skip task registration and
     conflict checks.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Trends snapshot-capture dialog ("Verify actual row count") —
+    - Trends snapshot-capture dialog ("Verify actual row count") — because they need this unit's "Run the aggregation server-side but skip task registration and" behavior.
       ``include_data=false`` returns just the row count.
-    - Trends snapshot capture itself — ``include_data=true`` returns
+    - Trends snapshot capture itself — ``include_data=true`` returns because they need this unit's "Run the aggregation server-side but skip task registration and" behavior.
       the full result (matching the regular endpoint's payload shape)
       without disturbing the live task store. The captured rows ship
       verbatim into the snapshot bundle.
@@ -509,8 +607,13 @@ async def run_sequential_analysis(
 ):
     """Run sequential analysis for one node and persist/update task payload.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend sequential-analysis run action
+    - frontend sequential-analysis run action because they need this unit's "Run sequential analysis for one node and persist/update task payload" behavior.
 
     Why:
     - Produces aggregated time-series counts and stores them as current task data.
@@ -680,7 +783,16 @@ async def run_sequential_analysis(
 async def sequential_analysis_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for sequential-analysis."""
+    """Return current task IDs for sequential-analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /sequential-analysis/tasks/current route because they need this unit's "Return current task IDs for sequential-analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -698,7 +810,16 @@ async def sequential_analysis_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for a sequential-analysis task."""
+    """Return stored request payload for a sequential-analysis task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /sequential-analysis/tasks/{task_id}/request route because they need this unit's "Return stored request payload for a sequential-analysis task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -719,7 +840,16 @@ async def sequential_analysis_task_result(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored result payload for a sequential-analysis task."""
+    """Return stored result payload for a sequential-analysis task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /sequential-analysis/tasks/{task_id}/result route because they need this unit's "Return stored result payload for a sequential-analysis task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -748,8 +878,13 @@ async def update_sequential_analysis_task_result(
 ):
     """Persist display-only sequential analysis options on a saved task.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend chart-type preference updates
+    - frontend chart-type preference updates because they need this unit's "Persist display-only sequential analysis options on a saved task" behavior.
 
     Why:
     - Avoids recomputation when only chart presentation changes.
@@ -806,7 +941,16 @@ async def detach_sequential_analysis_task(
     request: SequentialAnalysisDetachRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a filtered child node from selected sequential-analysis periods."""
+    """Create a filtered child node from selected sequential-analysis periods.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /sequential-analysis/tasks/{task_id}/detach route because they need this unit's "Create a filtered child node from selected sequential-analysis periods" behavior.
+    """
     user_id = current_user["id"]
     workspace_id, ws = _get_active_workspace(user_id)
 

@@ -1,4 +1,13 @@
-"""LDaCA import worker task implementation."""
+"""LDaCA import worker task implementation.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+    artifacts, and return import records for the caller to attach.
+"""
 
 from __future__ import annotations
 
@@ -25,7 +34,15 @@ logger = logging.getLogger(__name__)
 
 
 def _sanitize_name(name: str) -> str:
-    """Sanitize a corpus name for use as a folder/file name."""
+    """Sanitize a corpus name for use as a folder/file name.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
     import re
 
     sanitized = re.sub(r"[^\w.~-]", "_", name)
@@ -34,6 +51,16 @@ def _sanitize_name(name: str) -> str:
 
 
 def _metadata_name(metadata: dict[str, Any], fallback: str) -> str:
+    """Support LDaCA import worker tasks with a metadata name helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     entities = metadata.get("@graph", [])
     root = next(
         (
@@ -54,6 +81,16 @@ def _metadata_name(metadata: dict[str, Any], fallback: str) -> str:
 
 
 def _as_list(value: Any) -> list[Any]:
+    """Support LDaCA import worker tasks with an as list helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     if value is None:
         return []
     if isinstance(value, list):
@@ -62,6 +99,16 @@ def _as_list(value: Any) -> list[Any]:
 
 
 def _reference_id(value: Any) -> str | None:
+    """Support LDaCA import worker tasks with a reference id helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     normalized = jsonld_value(value)
     if isinstance(normalized, list):
         normalized = next((item for item in normalized if item), None)
@@ -69,6 +116,16 @@ def _reference_id(value: Any) -> str | None:
 
 
 def _first_string(value: Any) -> str | None:
+    """Support LDaCA import worker tasks with a first string helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     normalized = jsonld_value(value)
     if isinstance(normalized, list):
         normalized = next((item for item in normalized if item), None)
@@ -76,6 +133,16 @@ def _first_string(value: Any) -> str | None:
 
 
 def _content_size(value: Any) -> int | None:
+    """Support LDaCA import worker tasks with a content size helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     normalized = _first_string(value)
     if normalized is None:
         return None
@@ -86,6 +153,16 @@ def _content_size(value: Any) -> int | None:
 
 
 def _file_path_from_id(file_id: str) -> str | None:
+    """Support LDaCA import worker tasks with a file path from id helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     parsed = urlparse(file_id)
     query_path = parse_qs(parsed.query).get("path")
     if query_path:
@@ -96,11 +173,31 @@ def _file_path_from_id(file_id: str) -> str | None:
 
 
 def _is_file_entity(entity: dict[str, Any]) -> bool:
+    """Check whether file entity applies for LDaCA import worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     types = {str(item) for item in _as_list(jsonld_value(entity.get("@type")))}
     return "File" in types
 
 
 def _is_text_plain_entity(entity: dict[str, Any]) -> bool:
+    """Check whether text plain entity applies for LDaCA import worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     encodings = {
         str(item).lower()
         for item in _as_list(jsonld_value(entity.get("encodingFormat")))
@@ -109,6 +206,16 @@ def _is_text_plain_entity(entity: dict[str, Any]) -> bool:
 
 
 def _select_text_documents(metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    """Support LDaCA import worker tasks with a select text documents helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     entities = {
         entity.get("@id"): entity
         for entity in metadata.get("@graph", [])
@@ -155,12 +262,32 @@ def _select_text_documents(metadata: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _load_rocrate_tabulator_class() -> type[Any]:
+    """Load rocrate tabulator class data for LDaCA import worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     from rocrate_tabular.tabulator import ROCrateTabulator
 
     return ROCrateTabulator
 
 
 def _select_output_table(config: dict[str, Any]) -> str:
+    """Support LDaCA import worker tasks with a select output table helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     tables = config.get("tables", {})
     for table_name in ("RepositoryObject", "CreativeWork", "File"):
         if table_name in tables:
@@ -169,10 +296,30 @@ def _select_output_table(config: dict[str, Any]) -> str:
 
 
 def _quote_sql_identifier(identifier: str) -> str:
+    """Support LDaCA import worker tasks with a quote sql identifier helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     return '"' + identifier.replace('"', '""') + '"'
 
 
 def _write_table_to_parquet(db_file: Path, table_name: str, parquet_path: Path) -> None:
+    """Write table to parquet output for LDaCA import worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     import polars as pl
 
     query = f"SELECT * FROM {_quote_sql_identifier(table_name)}"
@@ -186,6 +333,16 @@ def _write_documents_to_parquet(
     downloaded_texts: dict[str, str],
     parquet_path: Path,
 ) -> None:
+    """Write documents to parquet output for LDaCA import worker tasks.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
+    """
+
     import polars as pl
 
     rows = [
@@ -212,6 +369,13 @@ def run_ldaca_import_task(
     Creates a per-corpus folder under ``LDaCA/`` containing:
     - ``<corpus_name>.parquet`` — the tabulated text data
     - ``README.md`` — corpus metadata from ``get_corpus_info()``
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: validate remote or RO-Crate metadata, choose safe output paths, write workspace
+        artifacts, and return import records for the caller to attach.
     """
     configure_worker_environment()
 

@@ -1,4 +1,14 @@
-"""Process-pool worker facade and task registry."""
+"""Process-pool worker facade and task registry.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: configure the child-process environment, delegate to the registered task
+    implementation, translate progress callbacks, and keep pool lifecycle concerns
+    outside API routes.
+"""
 
 from __future__ import annotations
 
@@ -31,10 +41,32 @@ def _build_progress_callback(
     progress_queue: Any | None,
     progress_callback: Callable[[float, str], None] | None,
 ) -> Callable[[float, str], None] | None:
+    """Build progress callback values used by background worker process orchestration.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     if progress_queue is None and progress_callback is None:
         return None
 
     def _cb(progress: float, message: str) -> None:
+        """Support background worker process orchestration with a cb helper.
+
+        Called by:
+        - The `_build_progress_callback` local workflow in this module because background jobs
+          need one lifecycle owner for submission, progress, cancellation, and artifact cleanup.
+
+        Flow: configure the child-process environment, delegate to the registered task
+            implementation, translate progress callbacks, and keep pool lifecycle concerns
+            outside API routes.
+        """
+
         payload = {
             "progress": float(progress),
             "message": str(message),
@@ -66,7 +98,16 @@ def _build_progress_callback(
 
 
 def _configure_worker_environment() -> None:
-    """Initialize worker process runtime environment."""
+    """Initialize worker process runtime environment.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     # Numba threading layer selection: prefer Intel TBB when installed (fastest
@@ -103,6 +144,17 @@ def ldaca_import_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the ldaca import task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_ldaca_import_task(
         _configure_worker_environment,
@@ -122,6 +174,17 @@ def workspace_download_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the workspace download task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_workspace_download_task(
         _configure_worker_environment,
@@ -155,6 +218,17 @@ def concordance_detach_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the concordance detach task background job submitted by API routes.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_detach_task(
         _configure_worker_environment,
@@ -207,6 +281,17 @@ def concordance_dispersion_detach_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the concordance dispersion detach task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_dispersion_detach_task(
         _configure_worker_environment,
@@ -259,6 +344,17 @@ def concordance_materialize_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the concordance materialize task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_concordance_materialize_task(
         _configure_worker_environment,
@@ -300,6 +396,17 @@ def quotation_detach_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the quotation detach task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_quotation_detach_task(
         _configure_worker_environment,
@@ -333,6 +440,17 @@ def quotation_materialize_task(
     progress_callback: Callable[[float, str], None] | None = None,
     progress_queue: Any | None = None,
 ) -> dict[str, Any]:
+    """Run the quotation materialize task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_quotation_materialize_task(
         _configure_worker_environment,
@@ -368,6 +486,17 @@ def topic_modeling_task(
     topic_size_value: int | None = 25,
     language: str | None = None,
 ) -> dict[str, Any]:
+    """Run the topic modeling task background job submitted by API routes.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_topic_modeling_task(
         configure_worker_environment=_configure_worker_environment,
@@ -405,6 +534,17 @@ def token_frequencies_task(
     tokenizer_model: str | None = None,
     node_tokenizer_models: dict[str, str] | None = None,
 ) -> dict[str, Any]:
+    """Run the token frequencies task background job submitted by API routes.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     cb = _build_progress_callback(progress_queue, progress_callback)
     return run_token_frequencies_task(
         configure_worker_environment=_configure_worker_environment,
@@ -428,6 +568,14 @@ def _pid_reporting_wrapper(task_func: Any, **kwargs: Any) -> Any:
 
     Sends the worker's own PID as the first message on the progress queue so
     the main process can terminate it if the user requests cancellation.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
     """
     pq = kwargs.get("progress_queue")
     if pq is not None:
@@ -454,6 +602,17 @@ _worker_pool: WorkerTaskManager | None = None
 
 
 def get_worker_pool(max_workers: int = 2) -> "WorkerTaskManager":
+    """Return worker pool data used by background worker process orchestration.
+
+    Used by:
+    - FastAPI application startup, core workspace and worker services because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
+
     global _worker_pool
     if _worker_pool is None:
         _worker_pool = WorkerTaskManager(max_workers=max_workers)
@@ -461,19 +620,63 @@ def get_worker_pool(max_workers: int = 2) -> "WorkerTaskManager":
 
 
 class WorkerTaskManager:
-    """Simple process-pool task manager for CPU-heavy operations."""
+    """Simple process-pool task manager for CPU-heavy operations.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: configure the child-process environment, delegate to the registered task
+        implementation, translate progress callbacks, and keep pool lifecycle concerns
+        outside API routes.
+    """
 
     def __init__(self, max_workers: int = 2):
+        """Initialize WorkerTaskManager state used by background worker process orchestration.
+
+        Called by:
+        - `WorkerTaskManager` construction in backend services and tests because tests need the
+          same observable contract that production routes and workers rely on.
+
+        Flow: configure the child-process environment, delegate to the registered task
+            implementation, translate progress callbacks, and keep pool lifecycle concerns
+            outside API routes.
+        """
+
         self.max_workers = max_workers
         self.executor: ProcessPoolExecutor | None = None
         self.is_running = False
 
     def start(self) -> None:
+        """Start WorkerTaskManager resources used by background worker process orchestration.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: configure the child-process environment, delegate to the registered task
+            implementation, translate progress callbacks, and keep pool lifecycle concerns
+            outside API routes.
+        """
+
         if self.executor is None:
             self.executor = ProcessPoolExecutor(max_workers=self.max_workers)
         self.is_running = True
 
     def submit_task(self, task_func: Any, **kwargs: Any) -> Future:
+        """Submit background work to the pool used by task routes.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: configure the child-process environment, delegate to the registered task
+            implementation, translate progress callbacks, and keep pool lifecycle concerns
+            outside API routes.
+        """
+
         if self.executor is None:
             self.start()
 
@@ -481,6 +684,18 @@ class WorkerTaskManager:
         return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
     def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
+        """Shutdown WorkerTaskManager resources used by background worker process orchestration.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: configure the child-process environment, delegate to the registered task
+            implementation, translate progress callbacks, and keep pool lifecycle concerns
+            outside API routes.
+        """
+
         if self.executor is None:
             self.is_running = False
             return

@@ -1,3 +1,14 @@
+"""Runtime configuration routes used by the frontend settings flow.
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "Runtime configuration routes used by the frontend settings flow" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the config API prefix.
+- Route handlers read or update runtime settings through the shared settings module.
+- Responses return generated config models so clients can refresh their runtime assumptions.
+"""
+
 import logging
 import os
 from pathlib import Path
@@ -13,12 +24,24 @@ router = APIRouter(prefix="/config", tags=["configuration"])
 
 
 class ConfigResponse(BaseModel):
+    """Response schema used by config routes and generated API clients.
+
+    Used by:
+    - backend API routes because they need this unit's "Response schema used by config routes and generated API clients" behavior.
+    """
+
     data_root: str
     multi_user_mode: bool
     google_client_id: str = ""
 
 
 class ConfigUpdate(BaseModel):
+    """Request schema used when the frontend updates runtime data-root settings.
+
+    Used by:
+    - backend API routes because they need this unit's "Request schema used when the frontend updates runtime data-root settings" behavior.
+    """
+
     data_root: str
 
 
@@ -26,8 +49,13 @@ class ConfigUpdate(BaseModel):
 async def get_config():
     """Return currently effective runtime configuration values.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend settings/config panels and OAuth client bootstrap
+    - frontend settings/config panels and OAuth client bootstrap because they need this unit's "Return currently effective runtime configuration values" behavior.
 
     Why:
     - Exposes backend mode, storage root, and Google OAuth client ID so the
@@ -44,8 +72,13 @@ async def get_config():
 async def update_config(config: ConfigUpdate):
     """Update in-memory runtime configuration values.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend config edit flow
+    - frontend config edit flow because they need this unit's "Update in-memory runtime configuration values" behavior.
 
     Why:
     - Allows runtime overrides without process restart.

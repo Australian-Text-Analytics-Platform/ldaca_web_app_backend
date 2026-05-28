@@ -1,4 +1,13 @@
-"""Utilities for searching and importing LDaCA records through the Oni API."""
+"""Utilities for searching and importing LDaCA records through the Oni API.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+    existing HTTP errors when remote calls fail.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +20,16 @@ import httpx
 
 
 class OniSearchMethod(StrEnum):
-    """Supported LDaCA Data Portal search modes."""
+    """Supported LDaCA Data Portal search modes.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
 
     IDENTIFIER = "identifier"
     KEYWORD = "keyword"
@@ -42,7 +60,15 @@ DEFAULT_SEARCH_FIELDS = ["name.@value", "description.@value", "_text", "@id"]
 
 
 def extract_ldaca_identifier(value: str) -> str | None:
-    """Extract an ARCP identifier from a raw id or LDaCA portal URL."""
+    """Extract an ARCP identifier from a raw id or LDaCA portal URL.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
     candidate = value.strip()
     if not candidate:
         return None
@@ -59,7 +85,15 @@ def extract_ldaca_identifier(value: str) -> str | None:
 
 
 def jsonld_value(value: Any) -> Any:
-    """Normalize common JSON-LD value/id containers from Oni search results."""
+    """Normalize common JSON-LD value/id containers from Oni search results.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
     if isinstance(value, list):
         normalized = [jsonld_value(item) for item in value]
         return normalized[0] if len(normalized) == 1 else normalized
@@ -72,18 +106,58 @@ def jsonld_value(value: Any) -> Any:
 
 
 def _bounded_page_size(limit: int) -> int:
+    """Support ONI API integration with a bounded page size helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     return min(max(limit, 1), 100)
 
 
 def _bounded_offset(offset: int) -> int:
+    """Support ONI API integration with a bounded offset helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     return max(offset, 0)
 
 
 def _is_identifier_method(method: OniSearchMethod) -> bool:
+    """Check whether identifier method applies for ONI API integration.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     return method in {OniSearchMethod.IDENTIFIER, OniSearchMethod.ID}
 
 
 def _is_keyword_method(method: OniSearchMethod) -> bool:
+    """Check whether keyword method applies for ONI API integration.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     return method in {OniSearchMethod.KEYWORD, OniSearchMethod.STRING}
 
 
@@ -94,7 +168,15 @@ def build_search_body(
     limit: int,
     offset: int,
 ) -> dict[str, Any]:
-    """Build the OpenSearch request body used by the Oni items index."""
+    """Build the OpenSearch request body used by the Oni items index.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
     search_query = query.strip()
     body: dict[str, Any] = {
         "size": _bounded_page_size(limit),
@@ -152,6 +234,16 @@ def build_search_body(
 
 
 def _string_list(value: Any) -> list[str]:
+    """Support ONI API integration with a string list helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     normalized = jsonld_value(value)
     if normalized is None:
         return []
@@ -161,11 +253,31 @@ def _string_list(value: Any) -> list[str]:
 
 
 def _first_string(value: Any) -> str | None:
+    """Support ONI API integration with a first string helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     values = _string_list(value)
     return values[0] if values else None
 
 
 def _unique_strings(*values: Any) -> list[str]:
+    """Support ONI API integration with an unique strings helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     seen: set[str] = set()
     results: list[str] = []
     for value in values:
@@ -177,6 +289,16 @@ def _unique_strings(*values: Any) -> list[str]:
 
 
 def _summary_to_result(summary: dict[str, Any]) -> dict[str, Any]:
+    """Support ONI API integration with a summary to result helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     crate_id = summary.get("crateId") or _first_string(summary.get("_crateId"))
     result_id = summary.get("@id") or crate_id or summary.get("id")
     title = (
@@ -207,12 +329,31 @@ def _summary_to_result(summary: dict[str, Any]) -> dict[str, Any]:
 
 
 def _hit_to_result(hit: dict[str, Any]) -> dict[str, Any]:
+    """Support ONI API integration with a hit to result helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
+
     source = hit.get("_source", {})
     return _summary_to_result({"@id": source.get("@id"), **source})
 
 
 class OniClient:
-    """Small async client for the LDaCA Data Portal Oni API."""
+    """Small async client for the LDaCA Data Portal Oni API.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+        existing HTTP errors when remote calls fail.
+    """
 
     def __init__(
         self,
@@ -221,6 +362,16 @@ class OniClient:
         token: str | None = None,
         timeout: float = 30.0,
     ) -> None:
+        """Initialize OniClient state used by ONI API integration.
+
+        Called by:
+        - `OniClient` construction in backend services and tests because tests need the same
+          observable contract that production routes and workers rely on.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         self.base_url = base_url.rstrip("/")
         self.token = token
         self.timeout = timeout
@@ -229,6 +380,16 @@ class OniClient:
     def from_settings(
         cls, app_settings: Any, *, token: str | None = None
     ) -> "OniClient":
+        """Support ONI API integration with a from settings helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         return cls(
             base_url=app_settings.ldaca_oni_api_base_url,
             token=token if token is not None else app_settings.ldaca_oni_api_token,
@@ -236,6 +397,16 @@ class OniClient:
         )
 
     def _headers(self) -> dict[str, str]:
+        """Support ONI API integration with a headers helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         if not self.token:
             return {}
         return {"Authorization": f"Bearer {self.token}"}
@@ -248,6 +419,16 @@ class OniClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        """Support ONI API integration with a request json helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         async with httpx.AsyncClient(
             base_url=self.base_url,
             headers=self._headers(),
@@ -264,6 +445,16 @@ class OniClient:
         return response.json()
 
     async def get_object(self, identifier: str) -> dict[str, Any] | None:
+        """Return object data used by ONI API integration.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         try:
             data = await self._request_json("GET", "/object", params={"id": identifier})
         except httpx.HTTPStatusError as exc:
@@ -275,6 +466,16 @@ class OniClient:
         return data
 
     async def get_metadata(self, identifier: str) -> dict[str, Any]:
+        """Return metadata data used by ONI API integration.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         return await self._request_json(
             "GET", "/object/meta", params={"id": identifier}
         )
@@ -286,6 +487,16 @@ class OniClient:
         *,
         concurrency: int = 8,
     ) -> dict[str, str]:
+        """Support ONI API integration with a download object texts helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         semaphore = asyncio.Semaphore(concurrency)
 
         async with httpx.AsyncClient(
@@ -296,6 +507,16 @@ class OniClient:
         ) as client:
 
             async def fetch(path: str) -> tuple[str, str]:
+                """Support ONI API integration with a fetch helper.
+
+                Called by:
+                - The `download_object_texts` local workflow in this module because the local ONI portal
+                  request normalization flow needs this step kept close to the code that consumes it.
+
+                Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+                    existing HTTP errors when remote calls fail.
+                """
+
                 async with semaphore:
                     response = await client.get(
                         "/object/open",
@@ -315,6 +536,16 @@ class OniClient:
         limit: int,
         offset: int,
     ) -> list[dict[str, Any]]:
+        """Support ONI API integration with a search helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         if _is_identifier_method(method):
             identifier = extract_ldaca_identifier(query)
             if identifier:
@@ -329,6 +560,16 @@ class OniClient:
     async def featured_collections(
         self, collection_ids: list[str]
     ) -> list[dict[str, Any]]:
+        """Support ONI API integration with a featured collections helper.
+
+        Called by:
+        - `OniClient` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: bound request parameters, build ONI payloads, normalize JSON-LD values, and raise
+            existing HTTP errors when remote calls fail.
+        """
+
         results: list[dict[str, Any]] = []
         for collection_id in collection_ids:
             summary = await self.get_object(collection_id)

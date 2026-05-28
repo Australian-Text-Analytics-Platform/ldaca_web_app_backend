@@ -1,4 +1,12 @@
-"""Analysis data models."""
+"""Analysis data models.
+
+Used by:
+- Analysis routes, worker result persistence, and backend tests because they need a
+  backend boundary that validates inputs before delegating to workspace or worker state.
+
+Flow: validate task or result payload fields, update terminal state, and serialize
+    nested values into JSON-safe structures.
+"""
 
 from __future__ import annotations
 
@@ -15,11 +23,15 @@ class AnalysisStatus(str, Enum):
     """Lifecycle states for analysis tasks.
 
     Used by:
-    - `AnalysisTask`
-    - analysis/task APIs and worker sync helpers
-
+    - `AnalysisTask` because callers need the shared analysis task/result serialization rule
+      in one place instead of duplicating it.
+    - analysis/task APIs and worker sync helpers because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
     Why:
     - Keeps task status values consistent across storage and API responses.
+
+    Flow: validate task or result payload fields, update terminal state, and serialize
+        nested values into JSON-safe structures.
     """
 
     PENDING = "pending"
@@ -30,7 +42,15 @@ class AnalysisStatus(str, Enum):
 
 
 class BaseAnalysisRequest(BaseModel):
-    """Base request model for all analyses."""
+    """Base request model for all analyses.
+
+    Used by:
+    - analysis task helpers, backend request/response models, backend tests because they
+      need a stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate task or result payload fields, update terminal state, and serialize
+        nested values into JSON-safe structures.
+    """
 
     model_config = ConfigDict(extra="allow")
     # Additional common fields can go here
@@ -41,7 +61,15 @@ TResult = TypeVar("TResult", bound=BaseAnalysisResult)
 
 
 class AnalysisTask(BaseModel, Generic[TRequest, TResult]):
-    """Container for a single analysis task."""
+    """Container for a single analysis task.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend tests because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate task or result payload fields, update terminal state, and serialize
+        nested values into JSON-safe structures.
+    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -61,11 +89,15 @@ class AnalysisTask(BaseModel, Generic[TRequest, TResult]):
         """Mark task completed and attach result payload.
 
         Used by:
-        - `analysis.manager.TaskManager.update_task`
-        - worker sync paths that finalize memory tasks
-
+        - `analysis.manager.TaskManager.update_task` because analysis flows need per-user task
+          state to survive across route calls and worker result persistence.
+        - worker sync paths that finalize memory tasks because background jobs need one
+          lifecycle owner for submission, progress, cancellation, and artifact cleanup.
         Why:
         - Provides one canonical status transition to `COMPLETED`.
+
+        Flow: validate task or result payload fields, update terminal state, and serialize
+            nested values into JSON-safe structures.
         """
         self.result = result
         self.status = AnalysisStatus.COMPLETED
@@ -75,10 +107,13 @@ class AnalysisTask(BaseModel, Generic[TRequest, TResult]):
         """Mark task failed with error details.
 
         Used by:
-        - worker sync and error propagation paths
-
+        - worker sync and error propagation paths because background jobs need one lifecycle
+          owner for submission, progress, cancellation, and artifact cleanup.
         Why:
         - Standardizes failure transition metadata for UI/task APIs.
+
+        Flow: validate task or result payload fields, update terminal state, and serialize
+            nested values into JSON-safe structures.
         """
         self.error = error
         self.status = AnalysisStatus.FAILED

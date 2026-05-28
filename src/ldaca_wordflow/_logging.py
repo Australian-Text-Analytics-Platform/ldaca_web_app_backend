@@ -6,6 +6,13 @@ Provides:
 - Per-module loggers via ``logging.getLogger(__name__)``
 - ``setup_logging()`` to configure the root ``ldaca_wordflow`` logger
 - ``setup_file_logging()`` for TeeOutput-based log capture in packaged builds
+
+Used by:
+- Backend package imports, application startup, and backend tests because tests need the
+  same observable contract that production routes and workers rely on.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 import logging
@@ -23,9 +30,28 @@ _logging_configured = False
 
 
 class _StructuredFormatter(logging.Formatter):
-    """Emit log records as structured JSON lines for machine consumption."""
+    """Emit log records as structured JSON lines for machine consumption.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
+        """Format log records for packaged-runtime logging setup.
+
+        Called by:
+        - `_StructuredFormatter` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         import json
 
         payload = {
@@ -42,9 +68,27 @@ class _StructuredFormatter(logging.Formatter):
 
 
 class _ConsoleFormatter(logging.Formatter):
-    """Human-readable console format: ``TIMESTAMP LEVEL [logger] message``."""
+    """Human-readable console format: ``TIMESTAMP LEVEL [logger] message``.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     def __init__(self) -> None:
+        """Initialize _ConsoleFormatter state used by packaged-runtime logging setup.
+
+        Called by:
+        - `_ConsoleFormatter` construction in backend services and tests because tests need the
+          same observable contract that production routes and workers rely on.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         super().__init__(
             fmt="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
@@ -60,6 +104,14 @@ def setup_logging(*, level: str | int | None = None) -> None:
         level: Explicit log level override.  When ``None`` the level is read
             from ``settings.log_level`` (env ``LOG_LEVEL``), defaulting to
             ``INFO``.
+
+    Used by:
+    - FastAPI application startup, backend package imports, local helpers in this module
+      because they need a backend boundary that validates inputs before delegating to
+      workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     global _logging_configured
     if _logging_configured:
@@ -116,13 +168,40 @@ class TeeOutput:
 
     Handles Windows console UnicodeEncodeError by replacing
     problematic characters with ASCII equivalents.
+
+    Used by:
+    - local helpers in this module because the local shared backend behavior flow needs this
+      step kept close to the code that consumes it.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     def __init__(self, file_obj: IO[str], original: IO[str]):
+        """Initialize TeeOutput state used by packaged-runtime logging setup.
+
+        Called by:
+        - `TeeOutput` construction in backend services and tests because tests need the same
+          observable contract that production routes and workers rely on.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         self.file = file_obj
         self.original = original
 
     def write(self, data: str) -> int:
+        """Forward captured stream text into packaged-runtime logging setup.
+
+        Called by:
+        - `TeeOutput` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         try:
             self.original.write(data)
             self.original.flush()
@@ -136,11 +215,31 @@ class TeeOutput:
         return len(data)
 
     def flush(self) -> None:
+        """Satisfy stream consumers that flush captured packaged-runtime logging setup output.
+
+        Called by:
+        - `TeeOutput` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         self.original.flush()
         if self.file:
             self.file.flush()
 
     def isatty(self) -> bool:
+        """Report terminal capability for stream consumers using packaged-runtime logging setup.
+
+        Called by:
+        - `TeeOutput` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         return False
 
 
@@ -153,6 +252,14 @@ def setup_file_logging(prefix: str) -> IO[str] | None:
 
     Returns the opened log file handle (caller should close it on shutdown),
     or ``None`` when file logging is not applicable.
+
+    Used by:
+    - FastAPI application startup, backend package imports, local helpers in this module
+      because they need a backend boundary that validates inputs before delegating to
+      workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     logger = logging.getLogger(PACKAGE_LOGGER_NAME)
 

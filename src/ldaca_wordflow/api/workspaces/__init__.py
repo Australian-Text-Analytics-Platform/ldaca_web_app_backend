@@ -4,10 +4,15 @@ Exports a single FastAPI `router` that combines core workspace endpoints
 (`base.py`) and modular analysis endpoints under `analyses/`.
 
 Used by:
-- `main.py` router registration
+- `main.py` router registration because they need this unit's "Unified workspaces API package" behavior.
 
 Why:
 - Keeps workspace endpoint composition centralized.
+
+Flow:
+- Create the package-level workspace router consumed by `main.py`.
+- Include lifecycle, node, base, analysis, and UI-state subrouters in one place.
+- Re-export the workspace manager so existing tests can patch the historical path.
 
 Refactor note:
 - Router includes are manually enumerated; if module count grows, consider

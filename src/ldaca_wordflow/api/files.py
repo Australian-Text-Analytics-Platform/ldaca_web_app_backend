@@ -1,4 +1,14 @@
-"""File management endpoints."""
+"""File management endpoints.
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "File management endpoints" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the files API prefix.
+- Route handlers validate user paths, uploads, downloads, and remote import requests.
+- Helpers delegate filesystem, sample-data, Oni, and workspace updates to core services.
+- Responses return file trees, previews, task handles, or streamed file content.
+"""
 
 import hashlib
 import logging
@@ -81,10 +91,22 @@ DemoSnapshotStatus = Literal["downloaded", "not_downloaded", "conflict"]
 
 
 def _normalise_ldaca_api_token(api_token: str | None) -> str | None:
+    """Normalize ldaca api token values before file-management routes uses them.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize ldaca api token values before file-management routes uses them" behavior.
+    """
+
     return api_token.strip() if api_token and api_token.strip() else None
 
 
 def _ldaca_oni_client(api_token: str | None) -> OniClient:
+    """Support file-management routes with a ldaca oni client helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support file-management routes with a ldaca oni client helper" behavior.
+    """
+
     return OniClient.from_settings(
         settings, token=_normalise_ldaca_api_token(api_token)
     )
@@ -93,6 +115,17 @@ def _ldaca_oni_client(api_token: str | None) -> OniClient:
 def _normalise_oni_results(
     records: Sequence[Mapping[str, Any]],
 ) -> list[OniSearchResult]:
+    """Normalize oni results values before file-management routes uses them.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize oni results values before file-management routes uses them" behavior.
+    """
+
     return [
         OniSearchResult.model_validate(
             {
@@ -110,7 +143,16 @@ async def list_ldaca_featured_collections(
     current_user: dict = Depends(get_current_user),
     ldaca_api_token: Annotated[str | None, Header(alias=LDACA_API_TOKEN_HEADER)] = None,
 ):
-    """Return staff-picked LDaCA collections for the import dialog."""
+    """Return staff-picked LDaCA collections for the import dialog.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /ldaca/featured route because they need this unit's "Return staff-picked LDaCA collections for the import dialog" behavior.
+    """
     del current_user
     client = _ldaca_oni_client(ldaca_api_token)
     data = _normalise_oni_results(
@@ -131,7 +173,16 @@ async def search_ldaca_collections(
     current_user: dict = Depends(get_current_user),
     ldaca_api_token: Annotated[str | None, Header(alias=LDACA_API_TOKEN_HEADER)] = None,
 ):
-    """Search LDaCA records through the backend ONI proxy."""
+    """Search LDaCA records through the backend ONI proxy.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /ldaca/search route because they need this unit's "Search LDaCA records through the backend ONI proxy" behavior.
+    """
     del current_user
     try:
         method = OniSearchMethod(request.method)
@@ -159,8 +210,13 @@ async def search_ldaca_collections(
 def _delete_parent_folder_if_redundant(file_path: Path, data_folder: Path) -> None:
     """Delete the file's parent folder when it becomes empty or README-only.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `delete_file`
+    - `delete_file` because they need this unit's "Delete the file's parent folder when it becomes empty or README-only" behavior.
 
     Why:
     - Imported datasets often live in their own wrapper folder with a data file
@@ -192,17 +248,34 @@ def _delete_parent_folder_if_redundant(file_path: Path, data_folder: Path) -> No
 
 
 def _relative_path_for_api(path: Path) -> str:
-    """Normalize relative paths for API responses using forward slashes."""
+    """Normalize relative paths for API responses using forward slashes.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize relative paths for API responses using forward slashes" behavior.
+    """
     return path.as_posix()
 
 
 def _visible_entry_names(names: list[str]) -> list[str]:
-    """Return sorted non-hidden directory entries."""
+    """Return sorted non-hidden directory entries.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return sorted non-hidden directory entries" behavior.
+    """
     return sorted(name for name in names if not name.startswith("."))
 
 
 def _build_file_tree(data_folder: Path) -> list[dict[str, Any]]:
-    """Build a nested file tree rooted at the user's data directory."""
+    """Build a nested file tree rooted at the user's data directory.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build a nested file tree rooted at the user's data directory" behavior.
+    """
     root_children: list[dict[str, Any]] = []
     directory_nodes: dict[str, dict[str, Any]] = {"": {"children": root_children}}
 
@@ -248,7 +321,16 @@ def _build_file_tree(data_folder: Path) -> list[dict[str, Any]]:
 
 
 def _resolve_user_file_path(relative_path: str, data_folder: Path) -> Path:
-    """Resolve and validate an API-supplied path inside the user's data folder."""
+    """Resolve and validate an API-supplied path inside the user's data folder.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve and validate an API-supplied path inside the user's data folder" behavior.
+    """
     file_path = data_folder / relative_path
     if not validate_file_path(file_path, data_folder):
         raise HTTPException(status_code=400, detail="Invalid file path")
@@ -261,8 +343,13 @@ def _lazy_scan(file_path, file_type: str) -> pl.LazyFrame:
     Prefers scan_* readers to avoid loading the whole file into memory.
     Falls back to eager read + .lazy() for formats without a native scanner.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `unified_file_preview`
+    - `unified_file_preview` because they need this unit's "Return a Polars LazyFrame for the given file if possible" behavior.
 
     Why:
     - Keeps preview path memory-efficient for large tabular files.
@@ -300,8 +387,13 @@ def _lazy_scan(file_path, file_type: str) -> pl.LazyFrame:
 def _get_supported_types_by_extension(file_type: str) -> list[str]:
     """Return supported backend data representations by file extension.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `unified_file_preview`
+    - `unified_file_preview` because they need this unit's "Return supported backend data representations by file extension" behavior.
 
     Why:
     - Exposes deterministic frontend capability hints per file type.
@@ -327,7 +419,7 @@ def _read_excel_sheet(file_path: Path, sheet_name: str) -> pl.DataFrame:
     """Read one Excel sheet as eager Polars DataFrame.
 
     Used by:
-    - `unified_file_preview`
+    - `unified_file_preview` because they need this unit's "Read one Excel sheet as eager Polars DataFrame" behavior.
 
     Why:
     - Isolates sheet-level reads for preview pagination.
@@ -342,9 +434,14 @@ def _coerce_excel_result_to_dataframe(
 ) -> pl.DataFrame:
     """Normalize Polars Excel reads into a single DataFrame.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `_read_excel_sheet`
-    - `unified_file_preview`
+    - `_read_excel_sheet` because they need this unit's "Normalize Polars Excel reads into a single DataFrame" behavior.
+    - `unified_file_preview` because they need this unit's "Normalize Polars Excel reads into a single DataFrame" behavior.
 
     Why:
     - Depending on Polars version/options, `read_excel` may return either a
@@ -372,8 +469,13 @@ def _coerce_excel_result_to_dataframe(
 def _list_excel_sheet_names(file_path: Path) -> list[str]:
     """Return workbook sheet names in a Polars-version-tolerant way.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `unified_file_preview`
+    - `unified_file_preview` because they need this unit's "Return workbook sheet names in a Polars-version-tolerant way" behavior.
 
     Why:
     - Some Polars versions return a dict for `sheet_id=None`, while others may
@@ -432,8 +534,13 @@ def _list_excel_sheet_names(file_path: Path) -> list[str]:
 async def get_user_files(current_user: dict = Depends(get_current_user)):
     """List user-visible files as a nested tree.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend file browser panel
+    - frontend file browser panel because they need this unit's "List user-visible files as a nested tree" behavior.
 
     Why:
     - The frontend consumes the directory structure directly instead of
@@ -449,7 +556,16 @@ async def create_folder(
     request: CreateFolderRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Create a folder inside the user's data directory."""
+    """Create a folder inside the user's data directory.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /folders route because they need this unit's "Create a folder inside the user's data directory" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
 
@@ -496,7 +612,16 @@ async def move_file(
     request: MoveFileRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Move a file into another directory inside the user's data folder."""
+    """Move a file into another directory inside the user's data folder.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /move route because they need this unit's "Move a file into another directory inside the user's data folder" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
 
@@ -543,7 +668,16 @@ async def move_file(
 
 @router.post("/upload", response_model=FileUploadResponse)
 async def upload_file(file: UploadFile, current_user: dict = Depends(get_current_user)):
-    """Upload file to user's data folder"""
+    """Upload file to user's data folder
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /upload route because they need this unit's "Upload file to user's data folder" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
 
@@ -576,7 +710,16 @@ async def upload_file(file: UploadFile, current_user: dict = Depends(get_current
 
 @router.delete("/{filename:path}", response_model=MessageResponse)
 async def delete_file(filename: str, current_user: dict = Depends(get_current_user)):
-    """Delete user's file"""
+    """Delete user's file
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /{filename:path} route because they need this unit's "Delete user's file" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
     file_path = data_folder / filename
@@ -598,7 +741,16 @@ async def delete_file(filename: str, current_user: dict = Depends(get_current_us
 def _compute_collection_status(
     col: dict, target_dir: Path
 ) -> SampleDataCollectionStatus:
-    """Return status string for a single catalogue collection."""
+    """Return status string for a single catalogue collection.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return status string for a single catalogue collection" behavior.
+    """
     files = col.get("files", [])
     if not files:
         return "not_downloaded"
@@ -620,7 +772,16 @@ def _compute_collection_status(
 async def get_sample_data_catalogue(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return the sample data catalogue augmented with per-collection status."""
+    """Return the sample data catalogue augmented with per-collection status.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /sample-data/catalogue route because they need this unit's "Return the sample data catalogue augmented with per-collection status" behavior.
+    """
     import httpx
 
     from ..settings import settings
@@ -677,6 +838,14 @@ async def get_sample_data_readme(
     """Proxy a README.md from the remote sample data repository.
 
     Only .md files are permitted; path traversal is rejected.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /sample-data/readme route because they need this unit's "Proxy a README.md from the remote sample data repository" behavior.
     """
     from pathlib import PurePosixPath
 
@@ -721,6 +890,14 @@ async def import_sample_data(
 
     If request.collection_ids is non-empty, only those collections are downloaded
     remotely. An empty list means "download all non-bundled collections" (default).
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /import-sample-data route because they need this unit's "Import (or re-import) sample data for the current user on demand" behavior.
     """
     from ..settings import settings
 
@@ -768,7 +945,16 @@ _DEMO_SNAPSHOT_REMOTE_DIR = "demo_snapshots"
 def _compute_demo_snapshot_status(
     entry: dict, snapshots_dir: Path
 ) -> DemoSnapshotStatus:
-    """Return ``downloaded`` / ``conflict`` / ``not_downloaded`` for one entry."""
+    """Return ``downloaded`` / ``conflict`` / ``not_downloaded`` for one entry.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return ``downloaded`` / ``conflict`` / ``not_downloaded`` for one entry" behavior.
+    """
     filename = entry.get("filename") or ""
     expected_sha256 = entry.get("sha256") or ""
     if not filename:
@@ -803,6 +989,14 @@ async def get_demo_snapshots_catalogue(
     frontend tab can render an empty-state instead of erroring out — the
     sample-data repo can ship without the demo-snapshots block until
     bundles are authored.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /demo-snapshots/catalogue route because they need this unit's "Return the demo-snapshot catalogue, augmented with per-bundle status" behavior.
     """
     import httpx
 
@@ -883,6 +1077,14 @@ async def import_demo_snapshots(
     ``failed`` so a partial run still reports what landed and what didn't.
     The user's own snapshot saves are never touched unless explicitly
     opted in via ``replace_ids``.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /import-demo-snapshots route because they need this unit's "Download selected demo-snapshot bundles into the user's snapshot folder" behavior.
     """
     from pathlib import PurePosixPath
 
@@ -1082,8 +1284,13 @@ async def import_ldaca_dataset(
 ):
     """Submit background task to import LDaCA dataset from URL.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend dataset import action
+    - frontend dataset import action because they need this unit's "Submit background task to import LDaCA dataset from URL" behavior.
 
     Why:
     - Runs network/download/import pipeline outside request-response lifecycle.
@@ -1116,8 +1323,13 @@ async def import_ldaca_dataset(
 async def list_files_tasks(current_user: dict = Depends(get_current_user)):
     """List file-import worker tasks exposed via the files API.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend import-task status polling
+    - frontend import-task status polling because they need this unit's "List file-import worker tasks exposed via the files API" behavior.
 
     Why:
         - Exposes file-import task status via explicit task types.
@@ -1145,8 +1357,13 @@ async def clear_files_tasks(
 ):
     """Clear persisted file-import task records.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend task-list cleanup actions
+    - frontend task-list cleanup actions because they need this unit's "Clear persisted file-import task records" behavior.
 
     Why:
     - Removes completed/failed import task clutter while keeping artifacts.
@@ -1182,8 +1399,13 @@ async def unified_file_preview(
     - Provides preview data (first few rows or page slice).
     - For Excel files, returns sheet_names and supports selecting sheet via payload.sheet_name.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - frontend file preview modal/table
+    - frontend file preview modal/table because they need this unit's "Unified file preview endpoint" behavior.
 
     Why:
     - Provides one format-aware preview API for heterogeneous file types.
@@ -1287,7 +1509,16 @@ async def unified_file_preview(
 
 @router.get("/{filename:path}/info", response_model=FileInfoResponse)
 async def get_file_info(filename: str, current_user: dict = Depends(get_current_user)):
-    """Get detailed file information"""
+    """Get detailed file information
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /{filename:path}/info route because they need this unit's "Get detailed file information" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
     file_path = data_folder / filename
@@ -1318,7 +1549,16 @@ async def get_raw_file(
     path: str = Query(..., description="Path relative to the user's data directory"),
     current_user: dict = Depends(get_current_user),
 ):
-    """Return raw UTF-8 text content for a file inside the user's data folder."""
+    """Return raw UTF-8 text content for a file inside the user's data folder.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /raw route because they need this unit's "Return raw UTF-8 text content for a file inside the user's data folder" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
     file_path = _resolve_user_file_path(path, data_folder)
@@ -1345,7 +1585,16 @@ async def get_raw_file(
 # "/{filename:path}/preview" and "/{filename:path}/info" are matched first.
 @router.get("/{filename:path}")
 async def download_file(filename: str, current_user: dict = Depends(get_current_user)):
-    """Download user's file"""
+    """Download user's file
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /{filename:path} route because they need this unit's "Download user's file" behavior.
+    """
     user_id = current_user["id"]
     data_folder = get_user_data_folder(user_id)
     file_path = data_folder / filename
@@ -1360,6 +1609,17 @@ async def download_file(filename: str, current_user: dict = Depends(get_current_
         raise HTTPException(status_code=404, detail=f"File {filename} not found")
 
     def iterfile():
+        """Support file-management routes with an iterfile helper.
+
+        Steps:
+        - Normalize caller input into the representation this module expects.
+        - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+        - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+        Called by:
+        - The `download_file` local workflow in this module because they need this unit's "Support file-management routes with an iterfile helper" behavior.
+        """
+
         with open(file_path, mode="rb") as file_like:
             yield from file_like
 

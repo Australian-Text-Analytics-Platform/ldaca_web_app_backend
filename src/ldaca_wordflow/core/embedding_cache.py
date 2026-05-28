@@ -1,4 +1,13 @@
-"""DuckDB-backed embedding cache keyed by stable document hashes."""
+"""DuckDB-backed embedding cache keyed by stable document hashes.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+    embeddings transactionally, and ignore corrupt entries without failing the worker.
+"""
 
 from __future__ import annotations
 
@@ -19,24 +28,71 @@ EMBEDDINGS_CACHE_FILENAME = "embeddings.duckdb"
 
 
 def _safe_name(value: str) -> str:
-    """Turn an arbitrary string into a safe cache key component."""
+    """Turn an arbitrary string into a safe cache key component.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+        embeddings transactionally, and ignore corrupt entries without failing the worker.
+    """
     return re.sub(r"[^a-zA-Z0-9_-]", "_", value)
 
 
 def _hash_doc(doc: str) -> bytes:
+    """Support embedding cache persistence with a hash doc helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+        embeddings transactionally, and ignore corrupt entries without failing the worker.
+    """
+
     return hashlib.sha256(doc.encode("utf-8")).digest()
 
 
 class EmbeddingCache:
-    """Read/write embedding cache backed by one DuckDB file per user cache dir."""
+    """Read/write embedding cache backed by one DuckDB file per user cache dir.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+        embeddings transactionally, and ignore corrupt entries without failing the worker.
+    """
 
     def __init__(self, cache_dir: Path, model_id: str, provider_id: str) -> None:
+        """Initialize EmbeddingCache state used by embedding cache persistence.
+
+        Called by:
+        - `EmbeddingCache` construction in backend services and tests because tests need the
+          same observable contract that production routes and workers rely on.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
+
         cache_dir.mkdir(parents=True, exist_ok=True)
         self._path = cache_dir / EMBEDDINGS_CACHE_FILENAME
         self._model_id = _safe_name(model_id)
         self._provider_id = _safe_name(provider_id)
 
     def _connect(self):
+        """Support embedding cache persistence with a connect helper.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
+
         import duckdb
 
         conn = duckdb.connect(str(self._path))
@@ -45,6 +101,16 @@ class EmbeddingCache:
 
     @staticmethod
     def _ensure_schema(conn) -> None:
+        """Support embedding cache persistence with an ensure schema helper.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a stable JSON contract shared by route handlers, generated clients, and tests.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
+
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS embedding_cache (
@@ -68,7 +134,16 @@ class EmbeddingCache:
         )
 
     def lookup(self, docs: list[str]) -> tuple["np.ndarray", list[int]]:
-        """Return cached embeddings and indices that still need encoding."""
+        """Return cached embeddings and indices that still need encoding.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
         import numpy as np
 
         hashes = [_hash_doc(doc).hex() for doc in docs]
@@ -123,7 +198,16 @@ class EmbeddingCache:
         return result, missing
 
     def store(self, docs: list[str], embeddings: "np.ndarray") -> None:
-        """Store embeddings, replacing existing rows for the same cache key."""
+        """Store embeddings, replacing existing rows for the same cache key.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
         import numpy as np
 
         if len(docs) == 0:
@@ -169,11 +253,31 @@ class EmbeddingCache:
             conn.close()
 
     def clear(self) -> None:
-        """Delete the cache file if it exists."""
+        """Delete the cache file if it exists.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
         if self._path.exists():
             self._path.unlink()
             logger.info("[EmbeddingCache] cleared cache %s", self._path.name)
 
     @property
     def path(self) -> Path:
+        """Return the persistent path used by embedding cache persistence.
+
+        Called by:
+        - `EmbeddingCache` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: derive a model/provider-specific sqlite path, validate cached dimensions, store
+            embeddings transactionally, and ignore corrupt entries without failing the worker.
+        """
+
         return self._path

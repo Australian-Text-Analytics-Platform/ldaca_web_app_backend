@@ -1,4 +1,13 @@
-"""DocWorkspace data-type and schema conversion utilities for FastAPI."""
+"""DocWorkspace data-type and schema conversion utilities for FastAPI.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+    cleanup, and return stable workspace metadata to callers.
+"""
 
 from dataclasses import dataclass
 from typing import Any
@@ -11,7 +20,15 @@ from .api_models import ColumnSchema
 
 @dataclass(frozen=True)
 class Annotation:
-    """Semantic annotation value stored in annotation-typed columns."""
+    """Semantic annotation value stored in annotation-typed columns.
+
+    Used by:
+    - backend API routes because they need a backend boundary that validates inputs before
+      delegating to workspace or worker state.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
 
     provider: str
     annotation: str
@@ -28,11 +45,28 @@ ANNOTATION_POLARS_DTYPE = pl.List(
 
 
 class DocWorkspaceDataTypeUtils:
-    """Utilities for DocWorkspace dtype mapping and schema serialization."""
+    """Utilities for DocWorkspace dtype mapping and schema serialization.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
 
     @staticmethod
     def polars_dtype_to_ldaca_dtype(polars_dtype: pl.DataType) -> str:
-        """Convert Polars dtype into LDaCA-controlled dtype categories."""
+        """Convert Polars dtype into LDaCA-controlled dtype categories.
+
+        Called by:
+        - `DocWorkspaceDataTypeUtils` instances owned by backend services, routes, and tests
+          because they need a backend boundary that validates inputs before delegating to
+          workspace or worker state.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         if polars_dtype == ANNOTATION_POLARS_DTYPE:
             return "annotation"
         if polars_dtype in (
@@ -80,7 +114,16 @@ class DocWorkspaceDataTypeUtils:
 
     @staticmethod
     def get_node_schema_json_with_ldaca_dtype(node: Any) -> list[ColumnSchema]:
-        """Build JSON-ready column schema with LDaCA dtype mapping."""
+        """Build JSON-ready column schema with LDaCA dtype mapping.
+
+        Called by:
+        - `DocWorkspaceDataTypeUtils` instances owned by backend services, routes, and tests
+          because they need a stable JSON contract shared by route handlers, generated clients,
+          and tests.
+
+        Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+            cleanup, and return stable workspace metadata to callers.
+        """
         data_schema = node.data.collect_schema()
         return [
             ColumnSchema(

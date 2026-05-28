@@ -1,6 +1,12 @@
-"""
-Enhanced LDaCA Web App API - Main FastAPI Application
+"""Enhanced LDaCA Web App API - Main FastAPI Application
 Modular, production-ready text analysis platform with multi-user support
+
+Used by:
+- uvicorn, the packaged desktop backend runtime, and backend test clients because tests
+  need the same observable contract that production routes and workers rely on.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -37,6 +43,16 @@ logger = logging.getLogger(__name__)
 
 
 def generate_operation_id(route: APIRoute) -> str:
+    """Support FastAPI app mounting with a generate operation id helper.
+
+    Used by:
+    - FastAPI application startup because they need a backend boundary that validates inputs
+      before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     return route.name
 
 
@@ -45,10 +61,13 @@ async def lifespan(app: FastAPI):
     """Manage startup/shutdown lifecycle for backend runtime dependencies.
 
     Used by:
-    - FastAPI app lifecycle hooks
-
+    - FastAPI app lifecycle hooks because they need a backend boundary that validates inputs
+      before delegating to workspace or worker state.
     Why:
     - Initializes data folders/DB/session cleanup and performs safe worker shutdown.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     # Setup file logging for packaged app (especially Windows)
     from ._logging import setup_file_logging, setup_logging
@@ -155,10 +174,13 @@ async def root():
     """Return API feature/index metadata.
 
     Used by:
-    - browser/manual root checks and basic service discovery
-
+    - browser/manual root checks and basic service discovery because callers need the shared
+      shared backend behavior rule in one place instead of duplicating it.
     Why:
     - Provides a human-readable entrypoint summary for backend capabilities.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     return {
         "message": "Enhanced LDaCA Web App API",
@@ -213,10 +235,13 @@ async def health_check():
     """Return lightweight health status for liveness probes.
 
     Used by:
-    - deployment health checks and uptime monitors
-
+    - deployment health checks and uptime monitors because callers need the shared shared
+      backend behavior rule in one place instead of duplicating it.
     Why:
     - Gives a fast no-auth probe endpoint for runtime readiness checks.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     return {
         "status": "healthy",
@@ -239,10 +264,13 @@ async def status():
     """Return detailed component/module status information.
 
     Used by:
-    - diagnostics pages and manual troubleshooting
-
+    - diagnostics pages and manual troubleshooting because callers need the shared shared
+      backend behavior rule in one place instead of duplicating it.
     Why:
     - Exposes richer operational metadata than `/health`.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     return {
         "system": "Enhanced LDaCA Web App API",
@@ -292,14 +320,30 @@ _server_task: asyncio.Task[None] | None = None
 
 
 def _clear_server_state(_task: asyncio.Task[None] | None = None) -> None:
-    """Reset cached server state after a background task finishes."""
+    """Reset cached server state after a background task finishes.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     global _server, _server_task
     _server = None
     _server_task = None
 
 
 def _get_frontend_build_dir() -> Path:
-    """Locate the bundled frontend build directory using importlib.resources."""
+    """Locate the bundled frontend build directory using importlib.resources.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     from importlib import resources
 
     pkg = resources.files("ldaca_wordflow.resources.frontend")
@@ -323,6 +367,13 @@ def _mount_frontend(target_app: FastAPI) -> None:
 
     The base path comes from the ASGI ``root_path`` which is set by
     reverse proxies or explicitly via ``--root-path`` in uvicorn.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     from starlette.responses import FileResponse, HTMLResponse
     from starlette.staticfiles import StaticFiles
@@ -332,7 +383,15 @@ def _mount_frontend(target_app: FastAPI) -> None:
     _raw_index_html = index_html.read_text()
 
     def _inject_base_path(html: str, base_path: str) -> str:
-        """Inject runtime globals into the HTML <head>."""
+        """Inject runtime globals into the HTML <head>.
+
+        Called by:
+        - The `_mount_frontend` local workflow in this module because they need a stable JSON
+          contract shared by route handlers, generated clients, and tests.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
         import json
 
         globals_payload = {
@@ -371,11 +430,31 @@ def _mount_frontend(target_app: FastAPI) -> None:
 
     @target_app.get("/")
     async def _serve_index(request: Request):
+        """Return serve index API requests for FastAPI app mounting.
+
+        Called by:
+        - The `_mount_frontend` local workflow in this module because they need a stable JSON
+          contract shared by route handlers, generated clients, and tests.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         base_path = (request.scope.get("root_path") or "").rstrip("/")
         return HTMLResponse(_inject_base_path(_raw_index_html, base_path))
 
     @target_app.get("/{path:path}")
     async def _serve_frontend(path: str, request: Request):
+        """Return serve frontend API requests for FastAPI app mounting.
+
+        Called by:
+        - The `_mount_frontend` local workflow in this module because they need a stable JSON
+          contract shared by route handlers, generated clients, and tests.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         file_path = build_dir / path
         if path and file_path.is_file():
             return FileResponse(str(file_path))
@@ -384,7 +463,15 @@ def _mount_frontend(target_app: FastAPI) -> None:
 
 
 def _create_frontend_only_app(port: int) -> FastAPI:
-    """Build a minimal FastAPI app that only serves the frontend SPA."""
+    """Build a minimal FastAPI app that only serves the frontend SPA.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     frontend_app = FastAPI(title="LDaCA Frontend", docs_url=None, redoc_url=None)
     _mount_frontend(frontend_app)
     return frontend_app
@@ -420,6 +507,13 @@ def start_server(
 
     Raises:
         ValueError: If both *backend* and *frontend* are ``False``.
+
+    Used by:
+    - FastAPI application startup, backend package imports because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     if not backend and not frontend:
         raise ValueError("At least one of backend or frontend must be True")

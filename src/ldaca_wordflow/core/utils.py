@@ -1,5 +1,12 @@
-"""
-Core utilities for the LDaCA Web App
+"""Core utilities for the LDaCA Web App
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: validate file or workspace inputs, load source data through the appropriate
+    reader, normalize unsafe values, and return dataframe/text structures for callers.
 """
 
 import hashlib
@@ -51,20 +58,44 @@ def _user_root_folder(user_id: str) -> Path:
 
     In single-user mode every caller shares ``user_root``; in multi-user mode
     the folder name is derived from the user id.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     folder_name = "user_root" if not settings.multi_user else f"user_{user_id}"
     return settings.get_data_root() / settings.user_data_folder / folder_name
 
 
 def get_user_data_folder(user_id: str) -> Path:
-    """Return the user's data folder, creating it if missing."""
+    """Return the user's data folder, creating it if missing.
+
+    Used by:
+    - FastAPI application startup, backend API routes, backend package imports, backend
+      tests, core workspace and worker services because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
     user_data_folder = _user_root_folder(user_id) / "user_data"
     user_data_folder.mkdir(parents=True, exist_ok=True)
     return user_data_folder
 
 
 def get_user_workspace_folder(user_id: str) -> Path:
-    """Return the user's workspace folder, creating it if missing."""
+    """Return the user's workspace folder, creating it if missing.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
     workspace_folder = _user_root_folder(user_id) / "user_workspaces"
     workspace_folder.mkdir(parents=True, exist_ok=True)
     return workspace_folder
@@ -76,6 +107,13 @@ def get_user_cache_folder(user_id: str) -> Path:
     Lives outside `user_data` so it never appears in the file-tree endpoint
     that backs the data-loader UI. Subdirectories (e.g. `embeddings/`) keep
     different cache kinds separate so each can be cleared independently.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     cache_folder = _user_root_folder(user_id) / "user_cache"
     cache_folder.mkdir(parents=True, exist_ok=True)
@@ -88,6 +126,13 @@ def get_user_snapshots_folder(user_id: str) -> Path:
     Sibling of ``embeddings/`` under ``user_cache/``. Created lazily the
     first time demo-mode capture writes a snapshot; disabling demo mode
     does NOT clear the folder — see ``docs/snapshot-view/plan.md`` §3.6.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     snapshots_folder = get_user_cache_folder(user_id) / "snapshots"
     snapshots_folder.mkdir(parents=True, exist_ok=True)
@@ -99,6 +144,13 @@ def validate_workspace_name(name: str) -> tuple[bool, str]:
 
     Allows spaces and common punctuation but rejects path separators, control
     characters, and traversal markers.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
     """
 
     if name is None:
@@ -123,7 +175,15 @@ def validate_workspace_name(name: str) -> tuple[bool, str]:
 
 
 def allocate_workspace_folder(user_id: str, workspace_name: str) -> Path:
-    """Create (and return) a unique folder for a workspace under the user's root."""
+    """Create (and return) a unique folder for a workspace under the user's root.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
 
     base = get_user_workspace_folder(user_id)
     base.mkdir(parents=True, exist_ok=True)
@@ -149,6 +209,13 @@ def ensure_display_folder_name(current_folder: Path, desired_name: str) -> Path:
     If the current folder name already matches the sanitized desired name, it is
     returned unchanged. Otherwise, the folder is renamed to the first available
     `<name>`, `<name>_1`, `<name>_2`, ... variant within the same parent.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
 
     parent = current_folder.parent
@@ -183,6 +250,13 @@ def setup_user_folders(user_id: str) -> dict[str, Path]:
     Used by the auth login/session bootstrap endpoints to guarantee every
     subsequent I/O call has a stable home. Sample data is no longer copied
     automatically — clients must hit the dedicated import endpoint.
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     user_folder = _user_root_folder(user_id)
     user_data_folder = get_user_data_folder(user_id)
@@ -201,10 +275,13 @@ def import_sample_data_for_user(user_id: str) -> dict[str, Any]:
     sample data source. Returns summary statistics.
 
     Used by:
-    - sample-data import API endpoint
-
+    - sample-data import API endpoint because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
     Why:
     - Keeps sample data provisioning explicit and idempotent.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     source_override = settings.get_sample_data_folder()
     user_data_folder = get_user_data_folder(user_id)
@@ -267,6 +344,13 @@ async def download_remote_sample_data(
 
     Called as a FastAPI BackgroundTask after the bundled data has been copied.
     No-op when sample_data_remote_url is empty/unset.
+
+    Used by:
+    - backend API routes because they need a backend boundary that validates inputs before
+      delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     import httpx
 
@@ -342,7 +426,16 @@ async def download_remote_sample_data(
 
 
 def detect_file_type(filename: str) -> str:
-    """Detect file type from extension"""
+    """Detect file type from extension
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
     ext = Path(filename).suffix.lower()
     type_map = {
         ".csv": "csv",
@@ -369,7 +462,15 @@ def load_data_file(
     file_path: Path,
     sheet_name: str | None = None,
 ) -> Any:
-    """Load data file into appropriate DataFrame type - defaults to polars LazyFrame for efficiency"""
+    """Load data file into appropriate DataFrame type - defaults to polars LazyFrame for efficiency
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
     file_type = detect_file_type(file_path.name)
 
     # Load as polars LazyFrame by default for better performance and memory efficiency
@@ -385,6 +486,16 @@ def load_data_file(
     elif file_type == "excel":
         # Use Polars to read Excel directly; returns an eager DataFrame
         def _coerce_excel_result_to_dataframe(result: Any) -> pl.DataFrame:
+            """Coerce excel result to dataframe values into the shape expected by workspace data loading utilities.
+
+            Called by:
+            - The `load_data_file` local workflow in this module because the local file and
+              dataframe normalization flow needs this step kept close to the code that consumes it.
+
+            Flow: validate file or workspace inputs, load source data through the appropriate
+                reader, normalize unsafe values, and return dataframe/text structures for callers.
+            """
+
             if isinstance(result, pl.DataFrame):
                 return result
             if isinstance(result, dict):
@@ -425,7 +536,15 @@ def load_data_file(
 
 
 def read_text_file(file_path: Path) -> pl.DataFrame:
-    """Read a plain text file into a Polars DataFrame with a single text column."""
+    """Read a plain text file into a Polars DataFrame with a single text column.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
     content = file_path.read_text(encoding="utf-8", errors="replace")
     lines = content.splitlines()
     if not lines:
@@ -456,6 +575,13 @@ def normalize_dtypes(
     ``[{"column", "from_dtype", "to_dtype", "reason"}, ...]`` so callers can
     surface a consolidated warning to the user. The change log is empty when
     nothing needed casting.
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     if df.width == 0:
         return df, []
@@ -534,6 +660,14 @@ def read_zip_file(
 
     Returns a deterministic, path-sorted table with columns:
     ``file_path``, ``base_name``, ``extension``, and ``document``.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     archive_path = Path(file_path)
     if not archive_path.exists():
@@ -609,12 +743,28 @@ def read_zip_file(
 
 
 def generate_workspace_id() -> str:
-    """Generate a unique workspace ID"""
+    """Generate a unique workspace ID
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
     return str(uuid.uuid4())
 
 
 def validate_file_path(file_path: Path, user_folder: Path) -> bool:
-    """Validate that file path is within user's allowed directory"""
+    """Validate that file path is within user's allowed directory
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
     try:
         file_path.resolve().relative_to(user_folder.resolve())
         return True
@@ -626,11 +776,35 @@ _JS_MAX_SAFE_INTEGER = 2**53 - 1
 
 
 @overload
-def stringify_unsafe_integers(data: list[dict[str, Any]]) -> list[dict[str, Any]]: ...
+def stringify_unsafe_integers(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Type signature used by callers passing flat row payloads.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
+    ...
+
+
 @overload
 def stringify_unsafe_integers(
     data: list[list[dict[str, Any]]],
-) -> list[list[dict[str, Any]]]: ...
+) -> list[list[dict[str, Any]]]:
+    """Type signature used by callers passing grouped row payloads.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
+    """
+    ...
+
+
 def stringify_unsafe_integers(
     data: list[dict[str, Any]] | list[list[dict[str, Any]]],
 ) -> list[dict[str, Any]] | list[list[dict[str, Any]]]:
@@ -642,6 +816,13 @@ def stringify_unsafe_integers(
 
     Accepts both flat (``list[dict]``) and grouped (``list[list[dict]]``)
     row structures.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: validate file or workspace inputs, load source data through the appropriate
+        reader, normalize unsafe values, and return dataframe/text structures for callers.
     """
     if not data:
         return data

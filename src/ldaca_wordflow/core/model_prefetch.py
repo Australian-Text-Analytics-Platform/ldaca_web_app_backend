@@ -4,6 +4,14 @@ Runs downloads in a daemon thread so the server starts accepting requests
 immediately while models are fetched in the background. The first user who
 touches the relevant feature (quotation extraction, topic modelling) gets
 to skip the cold-download wait if the prefetch has already finished.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -20,7 +28,15 @@ logger = logging.getLogger(__name__)
 
 
 def _prefetch_spacy_model() -> None:
-    """Download the spaCy model used by quotation extraction if not cached."""
+    """Download the spaCy model used by quotation extraction if not cached.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     try:
         from .quotation_extractor import (
             _download_spacy_model_to_cache,
@@ -47,6 +63,13 @@ def _prefetch_topic_embedder_mps() -> None:
     `local_files_only=True` — if the key files are already on disk, we skip the
     network entirely (matches the ONNX prefetch pattern). Only when the cache
     is incomplete do we instantiate `SentenceTransformer` to download.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     try:
         from huggingface_hub import hf_hub_download
@@ -121,6 +144,13 @@ def _prefetch_topic_embedder_onnx() -> None:
     tokenizer), skipping the full safetensors weights that were previously
     fetched via snapshot_download.  hf_hub_download is idempotent — cached
     files are returned instantly without hitting the network.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     try:
         from huggingface_hub import hf_hub_download
@@ -190,6 +220,13 @@ def _prefetch_topic_embedder() -> None:
 
     On Apple Silicon (MPS available): downloads SentenceTransformer weights.
     On Windows/Linux/Intel Mac: downloads ONNX model + tokenizer.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     from .mps_embedder import is_mps_available
 
@@ -206,13 +243,29 @@ def _prefetch_topic_embedder() -> None:
 
 
 def _run_all_prefetches() -> None:
-    """Run each prefetch sequentially in the daemon thread."""
+    """Run each prefetch sequentially in the daemon thread.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     _prefetch_spacy_model()
     _prefetch_topic_embedder()
 
 
 def start_model_prefetch() -> None:
-    """Kick off background model downloads in a daemon thread."""
+    """Kick off background model downloads in a daemon thread.
+
+    Used by:
+    - FastAPI application startup, backend tests because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     thread = threading.Thread(
         target=_run_all_prefetches,
         name="model-prefetch",

@@ -10,6 +10,14 @@ the analysis store and the worker store, and best-effort deletes any
 artifact files referenced by the stored result. It deliberately skips
 tasks that are still running so the existing per-analysis "already
 running" short-circuit can do its job.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Helpers for cleaning up prior analysis tasks before submitting a new run" behavior.
+
+Flow:
+- Analysis submit routes call cleanup after checking that no matching task is still running.
+- Helpers find terminal current-task IDs across analysis key aliases.
+- Cleanup removes stale analysis and worker task records, then best-effort deletes their artifacts.
 """
 
 from __future__ import annotations
@@ -36,6 +44,17 @@ _TERMINAL_STATUSES = {
 
 
 def _dedupe_task_ids(task_ids: Iterable[str]) -> list[str]:
+    """Deduplicate task ids values for analysis cleanup routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Deduplicate task ids values for analysis cleanup routes" behavior.
+    """
+
     seen: set[str] = set()
     deduped: list[str] = []
     for task_id in task_ids:
@@ -61,6 +80,14 @@ async def clear_previous_completed_analysis_task(
     Running and pending tasks are left untouched so that explicit
     de-duplication logic in each endpoint (e.g. `any_running`) keeps
     working.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Remove any terminal "current" task for the given analysis keys" behavior.
     """
     analysis_tm = get_task_manager(user_id)
     worker_tm = workspace_manager.get_task_manager(user_id)

@@ -4,13 +4,21 @@ Implements the second concordance mode:
 
 - **Regex mode (default)** — unchanged. Polars-text concordance engine walks
   raw text; ``num_left_tokens`` means "characters" for CJK because there's
-  no whitespace, but partial-word patterns like ``equ\\w*`` survive.
+    no whitespace, but partial-word patterns like ``equ\\w*`` survive.
 - **Tokens mode** — walks the tokenization column
   for exact-token matches with N-**actual-token** left/right context. The
   word-aware semantics CJK users want once Tokenise has been run.
 
 Only the live (non-materialised) page path is wired here; the materialised
 parquet flow keeps the regex semantics.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Concordance tokens-mode helper" behavior.
+
+Flow:
+- Concordance routes call these helpers when a request targets tokenization output.
+- Query parsing turns user alternatives into exact-token match sets.
+- Page builders walk token lists to produce KWIC rows with actual-token context windows.
 """
 
 from __future__ import annotations
@@ -55,6 +63,14 @@ def parse_tokens_mode_alternatives(
     surrounding-text regex semantics that tokens mode by design rejects.
     Empty / whitespace-only alternatives are silently dropped so a stray
     separator doesn't accidentally widen the match set.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Split a tokens-mode search query into a set of alternatives" behavior.
     """
     alternatives: set[str] = set()
     for raw in TOKENS_MODE_ALT_SEPARATOR_RE.split(str(search_word or "")):
@@ -80,6 +96,14 @@ def find_token_matches(
     against the tokenization column; substring / partial matches are
     intentionally not supported in tokens mode (that's what text mode
     is for).
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they need this unit's "Return indices of tokens matching any of the user's alternatives" behavior.
     """
     needles = parse_tokens_mode_alternatives(search_word, case_sensitive=case_sensitive)
     if not needles:
@@ -108,6 +132,14 @@ def build_token_hit(
     ``left_context`` / ``right_context`` are sliced from ``raw_text`` between
     the relevant token offsets, so the strings preserve the original
     separators (single chars for CJK, whitespace for English).
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they need this unit's "Build one concordance hit struct from a token match" behavior.
     """
     match_struct = tokens[match_index]
     start_idx = int(match_struct["start"])
@@ -160,6 +192,14 @@ def compute_tokens_concordance_page(
 
     Shape matches :func:`concordance_core.compute_concordance_page` so the
     response builder can route either way without changes downstream.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Page payload for the tokens-mode concordance path" behavior.
     """
     search_word = str(request.get("search_word") or "")
     case_sensitive = bool(request.get("case_sensitive", False))

@@ -12,6 +12,15 @@ Includes:
     - POST /workspaces/nodes/{node_id}/ai-annotation/save
     - GET  /workspaces/nodes/{node_id}/ai-annotation/providers
     - GET  /workspaces/nodes/{node_id}/ai-annotation/categories
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "AI Annotation analysis endpoints" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers validate model/category requests, node selections, and current task state.
+- Helpers submit classification work, page stored results, and attach/detach generated columns.
+- Responses return model lists, task metadata, paged annotations, or saved workspace updates.
 """
 
 from __future__ import annotations
@@ -68,6 +77,17 @@ def _paginate_results(
     descending: bool = True,
     total_source_rows: Optional[int] = None,
 ) -> Dict[str, Any]:
+    """Support AI annotation routes with a paginate results helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support AI annotation routes with a paginate results helper" behavior.
+    """
+
     total = total_source_rows if total_source_rows is not None else len(items)
     total_pages = max(1, math.ceil(total / page_size))
     page = max(1, min(page, total_pages))
@@ -122,6 +142,14 @@ async def _build_response(
 
     Results are generated on demand for the requested page and are not written
     back into the stored task.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Compute and return only the requested page for AI annotation" behavior.
     """
     ws = workspace_manager.get_current_workspace(user_id)
     if ws is None:
@@ -199,6 +227,17 @@ async def _build_response(
 
 
 def _workspace_data_dir(user_id: str, workspace_id: str) -> Path:
+    """Support AI annotation routes with a workspace data dir helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support AI annotation routes with a workspace data dir helper" behavior.
+    """
+
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
@@ -212,6 +251,17 @@ def _distinct_annotation_values(
     node_id: str,
     annotation_column: str,
 ) -> list[str]:
+    """Support AI annotation routes with a distinct annotation values helper.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support AI annotation routes with a distinct annotation values helper" behavior.
+    """
+
     ws = workspace_manager.get_current_workspace(user_id)
     if ws is None:
         raise HTTPException(status_code=404, detail="No active workspace selected")
@@ -238,7 +288,16 @@ async def get_ai_annotation_models(
     request: AiAnnotationModelsRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """List available models from an OpenAI-compatible endpoint."""
+    """List available models from an OpenAI-compatible endpoint.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /ai-annotation/models route because they need this unit's "List available models from an OpenAI-compatible endpoint" behavior.
+    """
     models = await list_models(
         base_url=request.base_url,
         api_key=request.api_key,
@@ -270,6 +329,14 @@ async def run_ai_annotation(
 
     Calls the OpenAI-compatible endpoint, stores results in
     the analysis task manager, and returns paginated output.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /ai-annotation route because they need this unit's "Run AI annotation classification on selected nodes" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -344,7 +411,16 @@ async def run_ai_annotation(
 async def clear_ai_annotation(
     current_user: dict = Depends(get_current_user),
 ):
-    """Clear stored AI annotation task state."""
+    """Clear stored AI annotation task state.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /ai-annotation route because they need this unit's "Clear stored AI annotation task state" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -370,7 +446,16 @@ async def clear_ai_annotation(
 async def ai_annotation_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for AI annotation analysis."""
+    """Return current task IDs for AI annotation analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /ai-annotation/tasks/current route because they need this unit's "Return current task IDs for AI annotation analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -388,7 +473,16 @@ async def ai_annotation_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for an AI annotation task."""
+    """Return stored request payload for an AI annotation task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /ai-annotation/tasks/{task_id}/request route because they need this unit's "Return stored request payload for an AI annotation task" behavior.
+    """
     user_id = current_user["id"]
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
@@ -408,7 +502,16 @@ async def ai_annotation_task_result(
     descending: Optional[bool] = Query(None),
     current_user: dict = Depends(get_current_user),
 ):
-    """Read AI annotation result with optional pagination/sort overrides."""
+    """Read AI annotation result with optional pagination/sort overrides.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /ai-annotation/tasks/{task_id}/result route because they need this unit's "Read AI annotation result with optional pagination/sort overrides" behavior.
+    """
     user_id = current_user["id"]
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
@@ -434,7 +537,16 @@ async def ai_annotation_task_result_post(
     query: AiAnnotationResultQuery,
     current_user: dict = Depends(get_current_user),
 ):
-    """Read AI annotation result using POST body overrides."""
+    """Read AI annotation result using POST body overrides.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /ai-annotation/tasks/{task_id}/result route because they need this unit's "Read AI annotation result using POST body overrides" behavior.
+    """
     user_id = current_user["id"]
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
@@ -484,6 +596,14 @@ async def detach_ai_annotation(
 
     Classifies texts using the OpenAI-compatible endpoint, writes the result
     as a parquet file, and adds it as a new node in the workspace.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/ai-annotation/detach route because they need this unit's "Run AI annotation on a node and detach the result as a new child node" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -581,7 +701,16 @@ async def save_ai_annotation(
     request: AiAnnotationSaveRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Save AI annotation edits back to the source node."""
+    """Save AI annotation edits back to the source node.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/ai-annotation/save route because they need this unit's "Save AI annotation edits back to the source node" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
@@ -640,7 +769,16 @@ async def get_ai_annotation_providers(
     annotation_column: str = Query("ai_annotation"),
     current_user: dict = Depends(get_current_user),
 ):
-    """Return distinct provider values from the annotation column of a node."""
+    """Return distinct provider values from the annotation column of a node.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/ai-annotation/providers route because they need this unit's "Return distinct provider values from the annotation column of a node" behavior.
+    """
     user_id = current_user["id"]
     return {
         "state": "successful",
@@ -661,7 +799,16 @@ async def get_ai_annotation_categories(
     annotation_column: str = Query("ai_annotation"),
     current_user: dict = Depends(get_current_user),
 ):
-    """Return distinct category values from the annotation column of a node."""
+    """Return distinct category values from the annotation column of a node.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /nodes/{node_id}/ai-annotation/categories route because they need this unit's "Return distinct category values from the annotation column of a node" behavior.
+    """
     user_id = current_user["id"]
     return {
         "state": "successful",

@@ -1,3 +1,13 @@
+"""Database models and session helpers used by auth and application startup.
+
+Used by:
+- Backend package imports, application startup, and backend tests because tests need the
+  same observable contract that production routes and workers rely on.
+
+Flow: open the configured database/session boundary, normalize user or token records,
+    and return dependency-ready authentication state.
+"""
+
 import logging
 import secrets
 import uuid
@@ -20,11 +30,30 @@ logger = logging.getLogger(__name__)
 
 # SQLAlchemy setup
 class Base(DeclarativeBase):
+    """Declarative base used by SQLAlchemy models to share metadata.
+
+    Used by:
+    - analysis task helpers, backend package imports because analysis flows need per-user
+      task state to survive across route calls and worker result persistence.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
+    """
+
     pass
 
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
-    """User model with additional fields"""
+    """User model with additional fields
+
+    Used by:
+    - backend API routes, backend package imports, backend request/response models, backend
+      tests because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
+    """
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     picture: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -37,7 +66,15 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 
 
 class UserSession(Base):
-    """User session model for token management"""
+    """User session model for token management
+
+    Used by:
+    - backend API routes, backend package imports, backend tests because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
+    """
 
     __tablename__ = "user_sessions"
 
@@ -70,7 +107,15 @@ _USER_FIELDS = (
 
 
 def _user_to_dict(user: User) -> dict[str, Any]:
-    """Serialize a `User` row into the dict shape expected by API callers."""
+    """Serialize a `User` row into the dict shape expected by API callers.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
+    """
     payload: dict[str, Any] = {"id": str(user.id)}
     for field in _USER_FIELDS:
         payload[field] = getattr(user, field)
@@ -81,10 +126,13 @@ async def create_db_and_tables():
     """Create all configured SQLAlchemy tables.
 
     Used by:
-    - `init_db`
-
+    - `init_db` because callers need the shared authentication and session persistence rule
+      in one place instead of duplicating it.
     Why:
     - Ensures schema exists before auth/session operations begin.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -94,10 +142,13 @@ async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """Yield an async SQLAlchemy session for dependency injection.
 
     Used by:
-    - FastAPI DB dependencies (`get_user_db`)
-
+    - FastAPI DB dependencies (`get_user_db`) because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
     Why:
     - Centralizes session lifecycle and transaction scope.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         yield session
@@ -107,10 +158,13 @@ async def get_user_db(session: AsyncSession = Depends(get_async_session)):
     """Yield FastAPI Users DB adapter bound to current async session.
 
     Used by:
-    - auth/user management dependencies
-
+    - auth/user management dependencies because callers need the shared authentication and
+      session persistence rule in one place instead of duplicating it.
     Why:
     - Bridges app user model with fastapi-users integration points.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     yield SQLAlchemyUserDatabase(session, User)
 
@@ -119,10 +173,13 @@ async def init_db():
     """Initialize persistent DB environment and schema.
 
     Used by:
-    - app startup lifespan hook
-
+    - app startup lifespan hook because startup and shutdown flows need the same
+      initialization and cleanup behavior in packaged and local runs.
     Why:
     - Creates data root + schema before handling API traffic.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     # Ensure DATA_ROOT exists before creating/opening DB file
     data_root = settings.get_data_root()
@@ -137,10 +194,13 @@ async def get_or_create_user(
     """Fetch existing user by email or create/update OAuth user record.
 
     Used by:
-    - `api.auth.google_auth`
-
+    - `api.auth.google_auth` because they need a backend boundary that validates inputs
+      before delegating to workspace or worker state.
     Why:
     - Maintains idempotent user provisioning from Google identity payloads.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         # Try to get existing user by email
@@ -182,10 +242,13 @@ async def create_user_session(user_id: str) -> dict[str, Any]:
     """Create/replace active session token pair for a user.
 
     Used by:
-    - `api.auth.google_auth`
-
+    - `api.auth.google_auth` because they need a backend boundary that validates inputs
+      before delegating to workspace or worker state.
     Why:
     - Enforces single active session row per user in current design.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         # Generate our own access token
@@ -227,10 +290,13 @@ async def validate_access_token(access_token: str) -> dict[str, Any] | None:
     """Validate access token and return user/session payload when active.
 
     Used by:
-    - auth dependency validation paths
-
+    - auth dependency validation paths because callers need the shared authentication and
+      session persistence rule in one place instead of duplicating it.
     Why:
     - Centralizes token expiry and join logic for user identity resolution.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         result = await session.execute(
@@ -257,10 +323,13 @@ async def get_user_by_email(email: str) -> dict[str, Any] | None:
     """Return user payload by email when present.
 
     Used by:
-    - auth/user administration lookup paths
-
+    - auth/user administration lookup paths because callers need the shared authentication
+      and session persistence rule in one place instead of duplicating it.
     Why:
     - Provides a consistent dict payload shape for caller code.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         result = await session.execute(
@@ -277,10 +346,13 @@ async def cleanup_expired_sessions():
     """Delete expired session rows from storage.
 
     Used by:
-    - app startup/shutdown maintenance and logout flows
-
+    - app startup/shutdown maintenance and logout flows because callers need the shared
+      authentication and session persistence rule in one place instead of duplicating it.
     Why:
     - Prevents stale sessions from accumulating indefinitely.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         result = await session.execute(
@@ -298,10 +370,13 @@ async def update_user_folder_path(user_id: str, folder_path: str) -> None:
     """Persist user folder location after storage provisioning.
 
     Used by:
-    - `api.auth.google_auth`
-
+    - `api.auth.google_auth` because they need a backend boundary that validates inputs
+      before delegating to workspace or worker state.
     Why:
     - Keeps DB user metadata aligned with filesystem initialization.
+
+    Flow: open the configured database/session boundary, normalize user or token records,
+        and return dependency-ready authentication state.
     """
     async with async_session_maker() as session:
         result = await session.execute(

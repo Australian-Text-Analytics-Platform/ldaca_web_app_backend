@@ -1,6 +1,14 @@
 """Token-frequency worker task implementation.
 
 Separated from `worker.py` to keep the worker module focused and smaller.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+    frequencies, and persist derived artifacts for result queries.
 """
 
 from __future__ import annotations
@@ -32,9 +40,10 @@ def run_token_frequencies_task(
     """Execute token-frequency analysis inside a worker process.
 
     Used by:
-    - `core.worker.token_frequencies_task`
-    - `TASK_REGISTRY["token_frequencies"]`
-
+    - `core.worker.token_frequencies_task` because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+    - `TASK_REGISTRY["token_frequencies"]` because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
     Why:
         - Computes token frequencies off the API thread and writes Parquet artifacts
             for main-process lazy retrieval.
@@ -42,6 +51,9 @@ def run_token_frequencies_task(
     Refactor note:
     - If wrapper indirection is removed, this function can be imported directly
       into `TASK_REGISTRY`.
+
+    Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+        frequencies, and persist derived artifacts for result queries.
     """
     configure_worker_environment()
 
@@ -83,6 +95,16 @@ def run_token_frequencies_task(
         }
 
         def tokenizer_model_for_node(node_id: str) -> str | None:
+            """Support token-frequency worker helpers with a tokenizer model for node helper.
+
+            Called by:
+            - The `run_token_frequencies_task` local workflow in this module because background jobs
+              need one lifecycle owner for submission, progress, cancellation, and artifact cleanup.
+
+            Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+                frequencies, and persist derived artifacts for result queries.
+            """
+
             return (
                 requested_node_tokenizer_models.get(node_id) or fallback_tokenizer_model
             )

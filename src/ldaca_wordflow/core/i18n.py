@@ -17,6 +17,14 @@ Resolution order is:
 The quotation extractor is English-only. Other tools should aim for graceful
 multilingual behaviour rather than errors, but the typed exception is here so
 future English-only paths can opt in without inventing their own error type.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -47,7 +55,15 @@ _LANGUAGE_LABELS: dict[str, str] = {
 def language_label(code: str) -> str:
     """Return a human-friendly label for a language code, falling back to
     the code itself when unknown. Used by tools that surface the language
-    to an end user or an LLM (e.g. AI annotation prompts)."""
+    to an end user or an LLM (e.g. AI annotation prompts).
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need a backend
+      boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     return _LANGUAGE_LABELS.get(code.lower(), code)
 
 
@@ -55,9 +71,27 @@ class UnsupportedLanguageError(Exception):
     """Raised when a tool is asked to run against a language it does not
     support. Carries ``tool`` and ``language`` fields so the API layer can
     build an informative response without parsing the message string.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests, core workspace and
+      worker services because they need a stable JSON contract shared by route handlers,
+      generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     def __init__(self, tool: str, language: str, *, message: str | None = None):
+        """Initialize UnsupportedLanguageError state used by localization lookup.
+
+        Called by:
+        - `UnsupportedLanguageError` construction in backend services and tests because tests
+          need the same observable contract that production routes and workers rely on.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         self.tool = tool
         self.language = language
         super().__init__(
@@ -74,6 +108,14 @@ def effective_language(
     See the module docstring for the resolution order. Returns
     :data:`DEFAULT_LANGUAGE` if neither the request nor the node carries
     explicit language metadata.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests, core workspace and
+      worker services because they need a stable JSON contract shared by route handlers,
+      generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     if request_language:
         normalized = request_language.strip().lower()
@@ -102,6 +144,14 @@ def require_language(
     """Raise :class:`UnsupportedLanguageError` when ``language`` isn't in
     ``supported``. Use this at the boundary of an English-only tool to
     fail fast with a typed error.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     if language not in supported:
         raise UnsupportedLanguageError(tool, language)

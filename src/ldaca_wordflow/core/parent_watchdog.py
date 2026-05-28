@@ -12,6 +12,14 @@ probes, because OpenProcess on Windows can return NULL transiently for
 benign reasons (startup races, integrity-level handshake delays, ctypes
 HANDLE-truncation quirks). Killing a healthy backend on a flaky probe is
 worse than waiting an extra few seconds to notice a real parent death.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -37,6 +45,13 @@ def _make_windows_probe():
     HANDLE is a 64-bit pointer on 64-bit Windows; ctypes' default `c_int`
     return type can truncate it. Setting `restype = c_void_p` avoids that
     so we never mistake a valid handle for NULL.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     import ctypes
     from ctypes import wintypes
@@ -63,6 +78,13 @@ def _make_windows_probe():
 
         None means "we couldn't tell" — caller should not count it as a
         negative probe.
+
+        Called by:
+        - The `_make_windows_probe` local workflow in this module because the local shared
+          backend behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
         """
         handle = open_process(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if not handle:
@@ -91,7 +113,27 @@ def _make_windows_probe():
 
 
 def _make_unix_probe():
+    """Support desktop parent-process monitoring with a make unix probe helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     def _probe(pid: int) -> bool | None:
+        """Probe runtime state used by desktop parent-process monitoring.
+
+        Called by:
+        - The `_make_unix_probe` local workflow in this module because the local shared backend
+          behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         try:
             os.kill(pid, 0)
             return True
@@ -110,6 +152,13 @@ def _terminate_self() -> None:
     os._exit() skips Python's normal shutdown (atexit, gc, finalizers) which
     is exactly what we want — uvicorn's graceful path can hang on background
     tasks (e.g. spaCy model download), and we've already lost the parent.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     try:
         import psutil
@@ -132,7 +181,15 @@ def start_parent_watchdog(
     interval_seconds: float = _DEFAULT_INTERVAL_SECONDS,
     failure_threshold: int = _DEFAULT_FAILURE_THRESHOLD,
 ) -> None:
-    """Spawn the watchdog daemon thread if a parent pid was passed in env."""
+    """Spawn the watchdog daemon thread if a parent pid was passed in env.
+
+    Used by:
+    - backend package imports because callers need the shared shared backend behavior rule
+      in one place instead of duplicating it.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     raw = os.environ.get(_PARENT_PID_ENV)
     if not raw:
@@ -150,6 +207,16 @@ def start_parent_watchdog(
     probe = _make_windows_probe() if sys.platform == "win32" else _make_unix_probe()
 
     def _run() -> None:
+        """Support desktop parent-process monitoring with a run helper.
+
+        Called by:
+        - The `start_parent_watchdog` local workflow in this module because the local shared
+          backend behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         logger.info(
             "Parent watchdog active (parent_pid=%d, interval=%.1fs, threshold=%d).",
             parent_pid,

@@ -1,7 +1,13 @@
-"""
-Configuration management using pydantic-settings.
+"""Configuration management using pydantic-settings.
 Settings are loaded from environment variables with sensible defaults.
 Users are responsible for setting environment variables themselves.
+
+Used by:
+- Backend package imports, application startup, and backend tests because tests need the
+  same observable contract that production routes and workers rely on.
+
+Flow: read environment-backed settings, normalize path/list/debug values, and return
+    concrete runtime configuration for startup and services.
 """
 
 import json
@@ -15,12 +21,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables with defaults."""
+    """Application settings loaded from environment variables with defaults.
+
+    Used by:
+    - backend package imports, backend tests because tests need the same observable contract
+      that production routes and workers rely on.
+
+    Flow: read environment-backed settings, normalize path/list/debug values, and return
+        concrete runtime configuration for startup and services.
+    """
 
     @field_validator("debug", mode="before")
     @classmethod
     def normalize_debug_value(cls, value: Any) -> Any:
-        """Normalize common deployment debug strings before bool parsing."""
+        """Normalize common deployment debug strings before bool parsing.
+
+        Called by:
+        - `Settings` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
+        """
         if isinstance(value, str):
             normalized_value = value.strip().lower()
             if normalized_value in {"release", "prod", "production"}:
@@ -178,10 +200,13 @@ class Settings(BaseSettings):
         """Return configured data root path.
 
         Used by:
-        - startup initialization, file utilities, DB URL derivation
-
+        - startup initialization, file utilities, DB URL derivation because callers need the
+          shared runtime configuration resolution rule in one place instead of duplicating it.
         Why:
         - Centralizes conversion from env-config value to `Path` object.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
         """
         return Path(self.data_root)
 
@@ -189,10 +214,13 @@ class Settings(BaseSettings):
         """Return user data base folder path under data root.
 
         Used by:
-        - user/file/workspace folder helpers
-
+        - user/file/workspace folder helpers because workspace flows need user-scoped paths,
+          nodes, artifacts, and task state to stay synchronized.
         Why:
         - Keeps all user-owned storage rooted under one configurable path.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
         """
         return self.get_data_root() / self.user_data_folder
 
@@ -200,10 +228,13 @@ class Settings(BaseSettings):
         """Return optional sample-data override path.
 
         Used by:
-        - sample-data import/setup utilities
-
+        - sample-data import/setup utilities because callers need the shared runtime
+          configuration resolution rule in one place instead of duplicating it.
         Why:
         - Supports external dataset bundles without code changes.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
         """
         if not self.sample_data:
             return None
@@ -213,10 +244,13 @@ class Settings(BaseSettings):
         """Return database backup folder path under data root.
 
         Used by:
-        - backup and maintenance tooling
-
+        - backup and maintenance tooling because callers need the shared runtime configuration
+          resolution rule in one place instead of duplicating it.
         Why:
         - Keeps backup location configurable and co-located with runtime data.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
         """
         return self.get_data_root() / self.database_backup_folder
 
@@ -224,14 +258,17 @@ class Settings(BaseSettings):
         """Return effective database URL, deriving SQLite path when omitted.
 
         Used by:
-        - `db.py` engine initialization
-
+        - `db.py` engine initialization because callers need the shared runtime configuration
+          resolution rule in one place instead of duplicating it.
         Why:
         - Allows simple local setup while supporting explicit DB URLs in deploys.
 
         Refactor note:
         - `secret_key` default value is placeholder-grade; enforce env-provided
           secret in production startup validation to reduce misconfiguration risk.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
         """
         if self.database_url and self.database_url.strip():
             return self.database_url
@@ -240,7 +277,15 @@ class Settings(BaseSettings):
         return f"sqlite+aiosqlite:///{db_path}"
 
     def get_admin_emails(self) -> set[str]:
-        """Return normalized admin email allowlist from settings."""
+        """Return normalized admin email allowlist from settings.
+
+        Called by:
+        - `Settings` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
+        """
         if not self.admin_emails.strip():
             return set()
         return {
@@ -250,7 +295,15 @@ class Settings(BaseSettings):
         }
 
     def get_ldaca_oni_featured_collection_ids(self) -> list[str]:
-        """Return normalized staff-picked LDaCA collection ids."""
+        """Return normalized staff-picked LDaCA collection ids.
+
+        Called by:
+        - `Settings` instances owned by backend services, routes, and tests because they need a
+          backend boundary that validates inputs before delegating to workspace or worker state.
+
+        Flow: read environment-backed settings, normalize path/list/debug values, and return
+            concrete runtime configuration for startup and services.
+        """
         raw_collection_ids = self.ldaca_oni_featured_collection_ids.strip()
         if not raw_collection_ids:
             return []
@@ -282,6 +335,14 @@ def reload_settings() -> Settings:
     and transparently sees the updated values. This matters because the
     package ``__init__`` imports ``main`` eagerly, which instantiates settings
     before the CLI has a chance to set env vars like ``MULTI_USER``.
+
+    Used by:
+    - FastAPI application startup, backend API routes, backend package imports because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: read environment-backed settings, normalize path/list/debug values, and return
+        concrete runtime configuration for startup and services.
     """
     settings.__init__()
     return settings

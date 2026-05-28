@@ -1,11 +1,16 @@
 """Canonical generated analysis column names.
 
 Used by:
-- concordance, topic-modeling, and quotation analysis routes/workers
+- concordance, topic-modeling, and quotation analysis routes/workers because they need this unit's "Canonical generated analysis column names" behavior.
 
 Why:
 - Keeps generated column naming consistent across live results, detach flows,
   worker artifacts, and frontend-facing payloads.
+
+Flow:
+- Analysis modules import these constants when constructing generated columns or result payloads.
+- Helper expressions use the canonical names to compute detachable extraction columns.
+- Predicates keep tokenization and generated-analysis columns recognizable across routes and tests.
 """
 
 from __future__ import annotations
@@ -62,6 +67,14 @@ def concordance_extraction_expr(document_column: str) -> pl.Expr:
     Requires the input frame to carry ``CONC_left_context``,
     ``CONC_right_context``, ``CONC_start_idx``, ``CONC_end_idx``, and the
     named ``document_column``.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, core workspace and worker services because they need this unit's "Polars expression that slices the raw KWIC window from ``document_column``" behavior.
     """
     left_len = pl.col(CONC_LEFT_CONTEXT_COLUMN).fill_null("").str.len_chars()
     right_len = pl.col(CONC_RIGHT_CONTEXT_COLUMN).fill_null("").str.len_chars()
@@ -101,6 +114,14 @@ def compute_concordance_extraction_string(
     Used by the live (non-materialised) per-page response builder where each
     hit is projected row-by-row from a struct list rather than batched
     through Polars expressions.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes because they need this unit's "Python equivalent of ``concordance_extraction_expr`` for one hit" behavior.
     """
     left = left_context or ""
     right = right_context or ""
@@ -112,7 +133,16 @@ def compute_concordance_extraction_string(
 
 
 def concordance_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
-    """Project raw concordance struct fields into canonical prefixed columns."""
+    """Project raw concordance struct fields into canonical prefixed columns.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - core workspace and worker services because they need this unit's "Project raw concordance struct fields into canonical prefixed columns" behavior.
+    """
     return (
         pl.col(struct_column)
         .struct.field("left_context")
@@ -187,6 +217,9 @@ def tokenization_column_name(source_column: str, model: str) -> str:
     Example: ``tokenization_column_name("text", "lindera:jieba")`` returns
     ``"tokenization.text.lindera:jieba"``. The name is used only when dynamically
     hydrating a LazyFrame for token-aware analyses.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they need this unit's "Build the temporary tokenization column name for ``(source, model)``" behavior.
     """
     return TOKENIZATION_SEPARATOR.join((TOKENS_COLUMN_MARKER, source_column, model))
 
@@ -200,6 +233,14 @@ def parse_tokenization_column(name: str) -> tuple[str, str] | None:
     Limitation: source-column names or model IDs containing a ``.`` remain
     ambiguous from the name alone. Callers that need authoritative parts should
     consult ``Node.tokenization`` rather than parsing the column name.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Inverse of :func:`tokenization_column_name`" behavior.
     """
     parts = name.split(TOKENIZATION_SEPARATOR)
     if len(parts) != 3:
@@ -217,6 +258,9 @@ def is_tokenization_column_name(name: str) -> bool:
 
     Physical node schemas are no longer filtered with this helper; analyses use
     explicit generated-column sets or ``Node.tokenization`` metadata instead.
+
+    Used by:
+    - backend API routes because they need this unit's "Return whether ``name`` follows the tokenization column pattern" behavior.
     """
     return parse_tokenization_column(name) is not None
 
@@ -228,6 +272,14 @@ def tokens_struct_dtype() -> pl.DataType:
     the Rust output type emitted by ``polars_text::expressions::
     list_token_struct_output``. Tests assert schema equality, so keep these
     two definitions in sync.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend tests because they need this unit's "The canonical Polars dtype for a tokens-with-offsets column" behavior.
     """
     return pl.List(
         pl.Struct(
@@ -248,6 +300,14 @@ def is_tokenization_column(node: "Node", col_name: str) -> bool:
     LazyFrame dtype check is implicit: tokens-form entries are only ever
     registered by the tokenise operation, which guarantees the canonical
     dtype.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend tests because they need this unit's "Metadata-driven detector for a hydrated tokenization column" behavior.
     """
     tokenization = getattr(node, "tokenization", {})
     if not isinstance(tokenization, dict):
@@ -265,6 +325,14 @@ def tokens_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
     flatten each token into separate ``token`` / ``start`` / ``end``
     columns. Useful for ad-hoc inspection; production token-consuming
     paths typically operate on the list-of-struct directly.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend tests because they need this unit's "Project the struct fields out of a tokens row (list-of-struct)" behavior.
     """
     return (
         pl.col(struct_column)
@@ -278,7 +346,16 @@ def tokens_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
 
 
 def quotation_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
-    """Project raw quotation struct fields into canonical prefixed columns."""
+    """Project raw quotation struct fields into canonical prefixed columns.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - Backend services, routes, and tests that import this symbol because they need this unit's "Project raw quotation struct fields into canonical prefixed columns" behavior.
+    """
     return (
         pl.col(struct_column).struct.field("speaker").alias(QUOTE_SPEAKER_COLUMN),
         pl.col(struct_column)

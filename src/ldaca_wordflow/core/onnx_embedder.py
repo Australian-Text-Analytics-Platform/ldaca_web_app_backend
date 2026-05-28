@@ -14,6 +14,14 @@ faster on Apple Silicon.
 The class implements the same `.encode(sentences)` interface as
 SentenceTransformer so it can be passed directly as BERTopic's
 `embedding_model=` argument.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from __future__ import annotations
@@ -40,6 +48,13 @@ def _select_providers() -> list[str]:
     call.  The per-batch overhead is worse than running the ARM64 quantized
     model entirely on CPU.  DirectML on Windows covers the full graph, so
     it remains a preferred provider.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     import onnxruntime as ort
 
@@ -60,6 +75,13 @@ def _select_onnx_filename(providers: list[str]) -> str:
       onnx/model_qint8_arm64.onnx   — ARM64 (Apple Silicon)
       onnx/model_quint8_avx2.onnx   — x86_64 with AVX2 (2013+, ubiquitous)
       onnx/model.onnx                — fp32 fallback, works everywhere
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
     active = providers[0] if providers else "CPUExecutionProvider"
     if active == "DmlExecutionProvider":
@@ -75,7 +97,15 @@ def _mean_pool(
     token_embeddings: "np.ndarray",
     attention_mask: "np.ndarray",
 ) -> "np.ndarray":
-    """Attention-mask-weighted mean of token embeddings — (B, L, D) → (B, D)."""
+    """Attention-mask-weighted mean of token embeddings — (B, L, D) → (B, D).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     import numpy as np
 
     mask = attention_mask[:, :, np.newaxis].astype(np.float32)  # (B, L, 1)
@@ -85,7 +115,15 @@ def _mean_pool(
 
 
 def _l2_normalize(embeddings: "np.ndarray") -> "np.ndarray":
-    """Row-wise L2 normalization."""
+    """Row-wise L2 normalization.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     import numpy as np
 
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True).clip(min=1e-9)
@@ -97,9 +135,26 @@ class OnnxEmbedder:
 
     Produces L2-normalised mean-pooled embeddings matching the output of
     SentenceTransformer("all-MiniLM-L6-v2") to within float32 tolerance.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     def __init__(self, model_path: Path, tokenizer_path: Path) -> None:
+        """Initialize OnnxEmbedder state used by ONNX embedding inference.
+
+        Called by:
+        - `OnnxEmbedder` construction in backend services and tests because tests need the same
+          observable contract that production routes and workers rely on.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         import onnxruntime as ort
         from tokenizers import Tokenizer
 
@@ -131,6 +186,14 @@ class OnnxEmbedder:
 
         `show_progress_bar` is accepted for API compatibility with
         SentenceTransformer.encode but is always ignored.
+
+        Called by:
+        - `OnnxEmbedder` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
         """
         import numpy as np
 
@@ -176,6 +239,14 @@ class OnnxEmbedder:
         Provider selection and model-file choice are both done here so the
         caller only needs to pass the HuggingFace repo ID. Pass a `revision`
         SHA to pin to a specific upstream commit.
+
+        Called by:
+        - `OnnxEmbedder` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
         """
         from huggingface_hub import hf_hub_download
 

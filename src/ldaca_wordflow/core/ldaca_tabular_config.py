@@ -1,4 +1,13 @@
-"""Load backend-owned configuration for RO-Crate tabular conversion."""
+"""Load backend-owned configuration for RO-Crate tabular conversion.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
+"""
 
 from __future__ import annotations
 
@@ -23,6 +32,16 @@ WINDOWS_UNSAFE_FILENAME_CHARS = re.compile('[<>:"/\\\\|?*\\x00-\\x1f]')
 
 
 def _extract_crate_id(value: str) -> str:
+    """Extract crate id values used by LDaCA tabular configuration loading.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     candidate = value.strip()
     parsed = urlparse(candidate)
     if parsed.scheme in {"http", "https"}:
@@ -35,6 +54,16 @@ def _extract_crate_id(value: str) -> str:
 
 
 def _safe_corpus_config_filename(crate_id: str) -> str | None:
+    """Create safe corpus config filename values for LDaCA tabular configuration loading.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     identifier = re.sub(
         r"^arcp://", "", _extract_crate_id(crate_id), flags=re.IGNORECASE
     )
@@ -47,12 +76,30 @@ def _safe_corpus_config_filename(crate_id: str) -> str | None:
 
 
 def _load_json_resource(relative_path: str) -> dict[str, Any]:
+    """Load json resource data for LDaCA tabular configuration loading.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     resource = resources.files(CONFIG_PACKAGE).joinpath(relative_path)
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
 def load_tabular_config(crate_id: str | None = None) -> dict[str, Any]:
-    """Load the corpus-specific tabulator config when available."""
+    """Load the corpus-specific tabulator config when available.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     if crate_id:
         filename = _safe_corpus_config_filename(crate_id)
         if filename:

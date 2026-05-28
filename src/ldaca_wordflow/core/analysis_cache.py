@@ -28,6 +28,14 @@ matching:
 Multi-user safety: every cleanup is scoped by ``(user_id, workspace_id)``.
 The workspace path is resolved through the trusted
 ``workspace_manager.get_workspace_dir`` which never escapes the user's folder.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+    only workspace-owned files, and tolerate missing paths during cleanup.
 """
 
 from __future__ import annotations
@@ -58,7 +66,15 @@ def materialized_cache_path(
     task_id: str,
     node_id: str,
 ) -> Path:
-    """Return the canonical cache file path. Does not create dirs or files."""
+    """Return the canonical cache file path. Does not create dirs or files.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+        only workspace-owned files, and tolerate missing paths during cleanup.
+    """
     return (
         Path(workspace_dir)
         / "data"
@@ -72,6 +88,13 @@ def _cache_dir(user_id: str, workspace_id: str) -> Path | None:
 
     Returns ``None`` when the workspace can't be located, which makes every
     public cleanup function a safe no-op for unloaded or deleted workspaces.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+        only workspace-owned files, and tolerate missing paths during cleanup.
     """
     from .workspace import workspace_manager
 
@@ -85,6 +108,16 @@ def _cache_dir(user_id: str, workspace_id: str) -> Path | None:
 
 
 def _unlink_quiet(path: Path) -> bool:
+    """Support analysis artifact cache cleanup with an unlink quiet helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+        only workspace-owned files, and tolerate missing paths during cleanup.
+    """
+
     try:
         path.unlink(missing_ok=True)
         return True
@@ -99,6 +132,13 @@ def cleanup_task_caches(user_id: str, workspace_id: str, task_id: str) -> int:
     Idempotent. Returns the number of files unlinked. Filename matching uses
     the canonical regex (not a raw glob), so a node_id that happens to embed
     a UUID-shaped substring can't cause a false positive.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+        only workspace-owned files, and tolerate missing paths during cleanup.
     """
     if not task_id:
         return 0
@@ -122,6 +162,13 @@ def cleanup_workspace_caches(user_id: str, workspace_id: str) -> int:
     """Delete every analysis cache parquet in a workspace's data dir.
 
     Used on workspace unload. Returns number of files unlinked.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: derive owned artifact paths, walk serialized task payloads for references, remove
+        only workspace-owned files, and tolerate missing paths during cleanup.
     """
     cache_dir = _cache_dir(user_id, workspace_id)
     if cache_dir is None:

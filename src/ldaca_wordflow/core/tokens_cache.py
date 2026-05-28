@@ -5,6 +5,14 @@ attach those specs to a LazyFrame with ``hydrate_tokenization_lazyframe``.
 The generic DuckDB cache mechanics live in ``pl.col(...).text.tokenize(...,
 cache=...)``; this module owns only Wordflow's per-user cache path and node
 metadata hydration.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+    frequencies, and persist derived artifacts for result queries.
 """
 
 from __future__ import annotations
@@ -21,7 +29,15 @@ TOKENS_CACHE_FILENAME = "tokens.duckdb"
 
 
 def tokens_cache_path(user_id: str) -> Path:
-    """Return the per-user DuckDB token cache path."""
+    """Return the per-user DuckDB token cache path.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+        frequencies, and persist derived artifacts for result queries.
+    """
     return get_user_cache_folder(user_id) / TOKENS_CACHE_FILENAME
 
 
@@ -37,6 +53,14 @@ def hydrate_tokenization_lazyframe(
     the model, token column, and tokenisation params from
     ``node.tokenization[source_column]`` and attaches a cache-backed elementwise
     expression keyed on ``user_id``.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+        frequencies, and persist derived artifacts for result queries.
     """
     tokenization_registry = getattr(node, "tokenization", {})
     tokenization_meta = (

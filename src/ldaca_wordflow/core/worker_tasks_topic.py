@@ -1,4 +1,14 @@
-"""Topic modeling worker task implementation."""
+"""Topic modeling worker task implementation.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+    caches when possible, build topic payloads, and report artifacts back to the task
+    manager.
+"""
 
 from __future__ import annotations
 
@@ -53,6 +63,14 @@ def _select_embedder(language: str | None) -> tuple[str, str | None]:
     pinned MiniLM-L6 (back-compat); everything else routes to the
     multilingual fallback so ZH / JA topic modeling produces non-degenerate
     clusters.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     code = (language or "en").strip().lower()
     if code == "en":
@@ -62,7 +80,16 @@ def _select_embedder(language: str | None) -> tuple[str, str | None]:
 
 def _embedder_cache_label(repo_id: str, revision: str | None) -> str:
     """Format the embedder identifier used for on-disk cache keying so the
-    same revision string format as before lands in the cache filename."""
+    same revision string format as before lands in the cache filename.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
     suffix = revision[:8] if revision else "latest"
     return f"{repo_id}@{suffix}"
 
@@ -75,6 +102,14 @@ def _make_reagg_path(old_path: Path) -> Path:
     the original directory and the original "base" stem (stripping any prior
     `_r<hex>` suffix from earlier re-aggregations to keep names compact) and
     append a fresh short hex suffix.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     base_stem = re.sub(r"(_r[0-9a-f]+)+$", "", old_path.stem)
     return old_path.parent / f"{base_stem}_r{uuid4().hex[:8]}{old_path.suffix}"
@@ -89,6 +124,14 @@ def _sample_corpus(
     (`pl.int_range(...).sample(fraction=..., seed=...)`) so identical
     `(seed, fraction)` parameters select identical rows across tools.
     Operates on an in-memory integer Series; no parquet artifact is created.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     import polars as pl
 
@@ -109,6 +152,17 @@ def _sample_corpus(
 
 @dataclass(frozen=True)
 class _PreparedTopicPayload:
+    """Internal data bundle used by topic-modeling worker pipeline for prepared topic payload.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     artifact_root: Path
     corpora: list[list[str]]
     vectorizer_corpora: list[list[str] | None]
@@ -118,6 +172,17 @@ class _PreparedTopicPayload:
 
 @dataclass(frozen=True)
 class _SampledTopicCorpora:
+    """Internal data bundle used by topic-modeling worker pipeline for sampled topic corpora.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     corpus_sizes_before_sample: list[int]
     active_corpora: list[list[str]]
     active_corpora_indices: list[list[int]]
@@ -130,6 +195,17 @@ class _SampledTopicCorpora:
 
 @dataclass(frozen=True)
 class _EmbeddedTopicDocuments:
+    """Internal data bundle used by topic-modeling worker pipeline for embedded topic documents.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     embedder: Any
     all_embeddings: Any
     embedding_model_name: str
@@ -138,6 +214,17 @@ class _EmbeddedTopicDocuments:
 
 @dataclass(frozen=True)
 class _TopicPipelineRun:
+    """Internal data bundle used by topic-modeling worker pipeline for topic pipeline run.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     topic_model: Any
     assigned_topics: list[int]
 
@@ -145,7 +232,16 @@ class _TopicPipelineRun:
 def _load_corpora_from_workspace(
     target_workspace_dir: str, node_payloads: list[dict[str, Any]], user_id: str
 ) -> tuple[list[list[str]], list[list[str] | None], list[str | None]]:
-    """Return raw docs, optional tokenized docs, and token columns per node."""
+    """Return raw docs, optional tokenized docs, and token columns per node.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
     import polars as pl
 
     from docworkspace import Workspace
@@ -228,6 +324,17 @@ def _prepare_payload(
     workspace_dir: str | None,
     progress_callback: Callable[[float, str], None] | None,
 ) -> _PreparedTopicPayload:
+    """Prepare payload data consumed by topic-modeling worker pipeline.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     artifact_root = Path(artifact_dir)
     artifact_root.mkdir(parents=True, exist_ok=True)
 
@@ -273,6 +380,17 @@ def _sample_corpora_for_topic_modeling(
     sample_fractions: list[float | None] | None,
     random_seed: int,
 ) -> _SampledTopicCorpora:
+    """Support topic-modeling worker pipeline with a sample corpora for topic modeling helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     corpus_sizes_before_sample = [len(corpus) for corpus in corpora]
     active_corpora: list[list[str]] = []
     active_corpora_indices: list[list[int]] = []
@@ -338,6 +456,14 @@ def _compute_min_topic_size(
         n_eff: Effective document count (post-sample total across all corpora).
         topic_size_mode: "target", "min", or "exact".
         topic_size_value: The user-supplied numeric value for the chosen mode.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     if topic_size_mode == "min":
         return max(2, int(topic_size_value))
@@ -358,6 +484,14 @@ def _bertopic_language_kwarg(language: str | None) -> str:
     selection when none is passed). We always pass an explicit
     ``embedding_model``, but the flag still influences post-fit behavior,
     so route non-English to ``"multilingual"`` per BERTopic's API.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     return "english" if (language or "en").strip().lower() == "en" else "multilingual"
 
@@ -379,6 +513,14 @@ def _build_label_vectorizer(language: str | None, *, online: bool = False) -> An
     Stopwords are deliberately NOT applied here — they get filtered in the
     frontend after the user inspects topic labels (decision recorded in
     the multilingual fix discussion).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     code = (language or "en").strip().lower()
     if code == "en":
@@ -417,6 +559,14 @@ def _resolve_top_n_words(representative_words_count: int | None) -> int:
 
     Performance impact is negligible — c-TF-IDF already produces a ranked
     vocabulary per topic; ``top_n_words`` just decides where to truncate.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     requested = int(representative_words_count or 0)
     return max(50, requested * 2) if requested > 0 else 50
@@ -429,7 +579,16 @@ def _build_classic_pipeline(
     language: str | None = None,
     top_n_words: int = 50,
 ) -> Any:
-    """Build a standard BERTopic pipeline with UMAP + HDBSCAN."""
+    """Build a standard BERTopic pipeline with UMAP + HDBSCAN.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
     from bertopic import BERTopic
     from umap import UMAP
 
@@ -461,6 +620,14 @@ def _get_embedder(model_id: str, revision: str | None = None):
     ``revision`` is ``None`` for the multilingual embedder until it gets
     pinned at release time; the cache key uses the empty string as a stable
     sentinel so the per-process cache still works.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     cache_key = (model_id, revision or "")
     embedder = _EMBEDDER_CACHE.get(cache_key)
@@ -490,6 +657,17 @@ def _persist_exact_reduction_artifact(
     corpus_sizes: list[int],
     active_corpora_indices: list[list[int]],
 ) -> None:
+    """Support topic-modeling worker pipeline with a persist exact reduction artifact helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     artifact_payload: dict[str, Any] = {
         "all_docs": all_docs,
         "corpus_sizes": corpus_sizes,
@@ -513,6 +691,17 @@ def _persist_exact_reduction_artifact(
 
 
 def _load_exact_reduction_artifact(artifact_path: str) -> dict[str, Any]:
+    """Load exact reduction artifact data for topic-modeling worker pipeline.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     with open(artifact_path, "rb") as artifact_file:
         loaded = pickle.load(artifact_file)
     if not isinstance(loaded, dict):
@@ -526,6 +715,17 @@ def _load_exact_reduction_artifact(artifact_path: str) -> dict[str, Any]:
 
 
 def _count_non_outlier_topics(topic_model: Any) -> int:
+    """Support topic-modeling worker pipeline with a count non outlier topics helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     import numpy as np
 
     topic_freq_pd = topic_model.get_topic_freq()
@@ -539,6 +739,17 @@ def _count_non_outlier_topics(topic_model: Any) -> int:
 
 
 def _has_outlier_topic(topic_model: Any) -> bool:
+    """Support topic-modeling worker pipeline with a has outlier topic helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     import numpy as np
 
     topic_freq_pd = topic_model.get_topic_freq()
@@ -559,6 +770,14 @@ def _resolve_exact_reduce_topics_target(
     UI and the rest of this worker expose only non-outlier topics. When an
     outlier bucket exists, ask BERTopic for one extra topic so the visible topic
     count matches the user's exact selection.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
 
     has_outlier_topic = _has_outlier_topic(topic_model)
@@ -581,6 +800,17 @@ def _build_topic_result_payload(
     artifact_root: Any | None = None,
     existing_artifacts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Build topic result payload values used by topic-modeling worker pipeline.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     from pathlib import Path
 
     import numpy as np
@@ -909,6 +1139,18 @@ def reaggregate_exact_topic_modeling_result(
     representative_words_count: int,
     random_seed: int,
 ) -> dict[str, Any]:
+    """Support topic-modeling worker pipeline with a reaggregate exact topic modeling result helper.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     stored = _load_exact_reduction_artifact(artifact_path)
     topic_model = stored.get("topic_model")
     all_docs = stored.get("all_docs")
@@ -967,6 +1209,17 @@ def _encode_embeddings_in_chunks(
     total_docs_for_display: int = 0,
     report_every: int = 10,
 ):
+    """Support topic-modeling worker pipeline with an encode embeddings in chunks helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     effective_chunk_size = max(1, int(chunk_size or 0))
     chunk_embeddings: list[Any] = []
     n_chunks = max(1, (len(docs) + effective_chunk_size - 1) // effective_chunk_size)
@@ -1015,6 +1268,14 @@ def _embed_with_cache(
     (e.g. EN MiniLM-L6 vs multilingual MiniLM-L12) don't collide on a
     shared cache directory. Defaults to the English embedder label for
     callers that haven't been migrated yet.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     import numpy as np
 
@@ -1113,6 +1374,17 @@ def _build_empty_topic_payload(
     artifact_root: Path,
     artifact_prefix: str,
 ) -> dict[str, Any]:
+    """Build empty topic payload values used by topic-modeling worker pipeline.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     import polars as pl
 
     topic_meanings_path = artifact_root / f"{artifact_prefix}_topic_meanings.parquet"
@@ -1175,6 +1447,17 @@ def _embed_documents(
     progress_start: float,
     progress_end: float,
 ) -> _EmbeddedTopicDocuments:
+    """Support topic-modeling worker pipeline with an embed documents helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     embedder_repo_id, embedder_revision = _select_embedder(language)
     embedder = _get_embedder(embedder_repo_id, embedder_revision)
     embedding_backend = (
@@ -1208,6 +1491,17 @@ def _run_classic_pipeline(
     progress_callback: Callable[[float, str], None] | None,
     progress_fraction: float,
 ) -> _TopicPipelineRun:
+    """Support topic-modeling worker pipeline with a run classic pipeline helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     if progress_callback:
         progress_callback(
             progress_fraction, "Running classic BERTopic pipeline (UMAP + HDBSCAN)..."
@@ -1234,6 +1528,17 @@ def _language_resolution_meta(
     tokens_columns_per_node: list[str | None],
     any_pretokenised: bool,
 ) -> dict[str, Any]:
+    """Support topic-modeling worker pipeline with a language resolution meta helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     resolved_language_code = (language or "en").strip().lower() or "en"
     per_node_label_source: list[dict[str, str | None]] = []
     for index, node_info in enumerate(node_infos):
@@ -1289,6 +1594,17 @@ def _compute_topic_payload(
     topic_size_value: int | None,
     language: str | None,
 ) -> dict[str, Any]:
+    """Support topic-modeling worker pipeline with a compute topic payload helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+
     import numpy as np
 
     sampled = _sample_corpora_for_topic_modeling(
@@ -1446,12 +1762,17 @@ def run_topic_modeling_task(
     """Execute topic modeling in a worker process.
 
     Used by:
-    - `core.worker.topic_modeling_task`
-    - `TASK_REGISTRY["topic_modeling"]`
-
+    - `core.worker.topic_modeling_task` because background jobs need one lifecycle owner for
+      submission, progress, cancellation, and artifact cleanup.
+    - `TASK_REGISTRY["topic_modeling"]` because background jobs need one lifecycle owner for
+      submission, progress, cancellation, and artifact cleanup.
         Why:
         - Runs BERTopic embedding/modeling out-of-process and returns an artifact
             manifest (Parquet outputs) for main-process lazy retrieval/finalization.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
     """
     configure_worker_environment()
 

@@ -1,4 +1,13 @@
-"""FastAPI integration models for DocWorkspace."""
+"""FastAPI integration models for DocWorkspace.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
+"""
 
 from typing import Any
 
@@ -6,7 +15,15 @@ from pydantic import BaseModel, Field
 
 
 class ColumnSchema(BaseModel):
-    """Schema information for a single column."""
+    """Schema information for a single column.
+
+    Used by:
+    - core workspace and worker services because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     name: str
     dtype: str
@@ -21,7 +38,15 @@ class ColumnSchema(BaseModel):
 
 
 class NodeSummary(BaseModel):
-    """Summary information about a Node for API responses."""
+    """Summary information about a Node for API responses.
+
+    Used by:
+    - Backend services, routes, and tests that import this symbol because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     id: str
     name: str
@@ -35,7 +60,15 @@ class NodeSummary(BaseModel):
 
 
 class PaginatedData(BaseModel):
-    """Paginated data response for large datasets."""
+    """Paginated data response for large datasets.
+
+    Used by:
+    - Backend services, routes, and tests that import this symbol because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     data: list[dict[str, Any]]
     pagination: dict[str, Any] = Field(
@@ -53,7 +86,15 @@ class PaginatedData(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Standard error response format."""
+    """Standard error response format.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     error: str
     message: str
@@ -61,7 +102,15 @@ class ErrorResponse(BaseModel):
 
 
 class OperationResult(BaseModel):
-    """Result of a workspace operation."""
+    """Result of a workspace operation.
+
+    Used by:
+    - Backend services, routes, and tests that import this symbol because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     success: bool
     message: str

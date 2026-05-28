@@ -1,4 +1,13 @@
-"""Core helpers for AI annotation using the OpenAI chat completions API."""
+"""Core helpers for AI annotation using the OpenAI chat completions API.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Core helpers for AI annotation using the OpenAI chat completions API" behavior.
+
+Flow:
+- Route handlers pass endpoint, model, class, example, and text batches into these helpers.
+- Prompt builders normalize classification instructions before OpenAI chat-completion calls.
+- Response helpers validate structured output and align classifications back to input order.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 class ClassificationResult(BaseModel):
-    """Structured output schema: one classification per input text, in order."""
+    """Structured output schema: one classification per input text, in order.
+
+    Used by:
+    - backend API routes because they need this unit's "Structured output schema: one classification per input text, in order" behavior.
+    """
 
     classifications: list[str]
 
@@ -25,6 +38,17 @@ def _build_system_prompt(
     examples: list[dict[str, str]] | None = None,
     language: Optional[str] = None,
 ) -> str:
+    """Build system prompt values used by AI annotation prompt building.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build system prompt values used by AI annotation prompt building" behavior.
+    """
+
     class_descriptions = "\n".join(
         f"- {c['name']}: {c['description']}" for c in classes
     )
@@ -64,7 +88,16 @@ def _normalize_classifications(
     count: int,
     class_names: list[str],
 ) -> list[str | None]:
-    """Normalize and pad/trim a list of classifications to *count* entries."""
+    """Normalize and pad/trim a list of classifications to *count* entries.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Normalize and pad/trim a list of classifications to *count* entries" behavior.
+    """
     lower_map = {name.lower(): name for name in class_names}
     results: list[str | None] = []
 
@@ -106,6 +139,14 @@ async def classify_texts(
 
     Uses structured outputs so the model returns ``ClassificationResult`` —
     a simple ``list[str]`` of categories in the same order as the input texts.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Classify a list of texts using the OpenAI chat completions API" behavior.
     """
     resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
     client = AsyncOpenAI(
@@ -186,7 +227,16 @@ async def list_models(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> list[dict[str, str]]:
-    """List available models from an OpenAI-compatible endpoint."""
+    """List available models from an OpenAI-compatible endpoint.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes because they need this unit's "List available models from an OpenAI-compatible endpoint" behavior.
+    """
     resolved_api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
     client = AsyncOpenAI(
         api_key=resolved_api_key or "no-key",

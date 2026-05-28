@@ -1,14 +1,17 @@
 """Pydantic request/response models for backend API contracts.
 
 Used by:
-- API routers and worker result serialization boundaries
-
+- API routers and worker result serialization boundaries because they need a backend
+  boundary that validates inputs before delegating to workspace or worker state.
 Why:
 - Centralizes schema contracts shared between frontend and backend endpoints.
 
 Refactor note:
 - This module is large and mixes domains (auth/files/workspaces/analysis); future
     split by domain files could improve maintainability and import clarity.
+
+Flow: validate incoming API fields, apply defaults or validators, and serialize route
+    responses in the shape expected by frontend clients and tests.
 """
 
 from enum import Enum
@@ -24,6 +27,17 @@ from ..analysis.models import BaseAnalysisRequest
 
 
 class User(BaseModel):
+    """API schema used by routes and generated clients for user.
+
+    Used by:
+    - backend API routes, backend package imports, backend request/response models, backend
+      tests because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str
     email: str
     name: str
@@ -35,13 +49,31 @@ class User(BaseModel):
 
 
 class AuthMethod(BaseModel):
+    """API schema used by routes and generated clients for auth method.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     name: str  # "google", "github", etc. (changed from 'type' to match frontend)
     display_name: str
     enabled: bool
 
 
 class AuthInfoResponse(BaseModel):
-    """Main auth info response - tells frontend everything it needs to know"""
+    """Main auth info response - tells frontend everything it needs to know
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     authenticated: bool
     user: Optional[User] = None
@@ -51,10 +83,30 @@ class AuthInfoResponse(BaseModel):
 
 
 class GoogleIn(BaseModel):
+    """API schema used by routes and generated clients for google in.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id_token: str
 
 
 class GoogleOut(BaseModel):
+    """API schema used by routes and generated clients for google out.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     access_token: str
     refresh_token: str
     expires_in: int
@@ -64,6 +116,16 @@ class GoogleOut(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for user response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str  # UUID string, not integer
     email: str
     name: str
@@ -85,6 +147,16 @@ class UserResponse(BaseModel):
 
 
 class FileUploadResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for file upload response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     size: int
     upload_time: str
@@ -93,6 +165,16 @@ class FileUploadResponse(BaseModel):
 
 
 class ImportSampleDataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for import sample data response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     status: str
     removed_existing: bool
     file_count: int
@@ -103,16 +185,46 @@ class ImportSampleDataResponse(BaseModel):
 
 
 class ImportSampleDataRequest(BaseModel):
+    """Request schema used by API routes and generated clients for import sample data request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     collection_ids: List[str] = Field(default_factory=list)
 
 
 class SampleDataFileEntry(BaseModel):
+    """API schema used by routes and generated clients for sample data file entry.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     path: str
     size: int
     sha256: str
 
 
 class SampleDataCollection(BaseModel):
+    """API schema used by routes and generated clients for sample data collection.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str
     name: str
     description: str
@@ -125,6 +237,16 @@ class SampleDataCollection(BaseModel):
 
 
 class SampleDataCatalogueResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for sample data catalogue response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     schema_version: int
     collections: List[SampleDataCollection]
 
@@ -140,7 +262,15 @@ class SampleDataCatalogueResponse(BaseModel):
 
 
 class DemoSnapshotEntry(BaseModel):
-    """A single demo-snapshot bundle in the catalogue."""
+    """A single demo-snapshot bundle in the catalogue.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     id: str
     """Stable identifier (e.g. ``concordance-scl-tutorial``)."""
@@ -176,11 +306,31 @@ class DemoSnapshotEntry(BaseModel):
 
 
 class DemoSnapshotsCatalogueResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for demo snapshots catalogue response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     schema_version: int
     snapshots: List[DemoSnapshotEntry]
 
 
 class ImportDemoSnapshotsRequest(BaseModel):
+    """Request schema used by API routes and generated clients for import demo snapshots request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     snapshot_ids: List[str] = Field(default_factory=list)
     """Snapshot ids to import. Empty list = no-op."""
     replace_ids: List[str] = Field(default_factory=list)
@@ -190,6 +340,16 @@ class ImportDemoSnapshotsRequest(BaseModel):
 
 
 class DemoSnapshotImportResult(BaseModel):
+    """API schema used by routes and generated clients for demo snapshot import result.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str
     filename: str
     status: Literal[
@@ -203,11 +363,31 @@ class DemoSnapshotImportResult(BaseModel):
 
 
 class ImportDemoSnapshotsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for import demo snapshots response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     results: List[DemoSnapshotImportResult]
     snapshot_dir: str
 
 
 class DataFileInfo(BaseModel):
+    """Metadata schema used by API responses to describe data file info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     size: int
     created_at: str
@@ -215,11 +395,31 @@ class DataFileInfo(BaseModel):
 
 
 class LDaCAImportRequest(BaseModel):
+    """Request schema used by API routes and generated clients for l da c a import request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     url: str
     filename: Optional[str] = None
 
 
 class OniSearchRequest(BaseModel):
+    """Request schema used by API routes and generated clients for oni search request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     method: Literal[
         "keyword",
         "identifier",
@@ -235,6 +435,16 @@ class OniSearchRequest(BaseModel):
 
 
 class OniSearchResult(BaseModel):
+    """API schema used by routes and generated clients for oni search result.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str
     crate_id: str | None = None
     title: str
@@ -249,12 +459,32 @@ class OniSearchResult(BaseModel):
 
 
 class OniSearchResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for oni search response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     data: list[OniSearchResult]
     message: str
 
 
 class FileTreeNodeResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for file tree node response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     name: str
     path: str
     type: Literal["file", "directory"]
@@ -263,6 +493,17 @@ class FileTreeNodeResponse(BaseModel):
 
     @model_validator(mode="after")
     def normalize_directory_children(self) -> "FileTreeNodeResponse":
+        """Support API schema contracts with a normalize directory children helper.
+
+        Called by:
+        - `FileTreeNodeResponse` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: validate incoming API fields, apply defaults or validators, and serialize route
+            responses in the shape expected by frontend clients and tests.
+        """
+
         if self.type == "directory" and self.children is None:
             self.children = []
         return self
@@ -272,45 +513,135 @@ FileTreeNodeResponse.model_rebuild()
 
 
 class CreateFolderRequest(BaseModel):
+    """Request schema used by API routes and generated clients for create folder request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     name: str
     parent_path: str = ""
 
 
 class CreateFolderResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for create folder response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     message: str
     path: str
 
 
 class MoveFileRequest(BaseModel):
+    """Request schema used by API routes and generated clients for move file request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     source_path: str
     target_directory_path: str
 
 
 class MessageResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for message response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     message: str
 
 
 class RenameColumnRequest(BaseModel):
+    """Request schema used by API routes and generated clients for rename column request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     new_name: str
 
 
 class FilesTaskMetadataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for files task metadata response.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     task_id: str
 
 
 class FilesImportTaskStartResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for files import task start response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["running"]
     message: str
     metadata: FilesTaskMetadataResponse
 
 
 class TaskListResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for task list response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     data: list[dict[str, Any]]
     message: str
 
 
 class TaskClearActionDataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for task clear action data response.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     cleared_worker: bool
     cleared_analysis: bool
     cleared_worker_ids: list[str]
@@ -319,40 +650,110 @@ class TaskClearActionDataResponse(BaseModel):
 
 
 class TaskClearActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for task clear action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     data: TaskClearActionDataResponse
     message: str
 
 
 class TaskCancelActionDataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for task cancel action data response.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     stopped: bool
 
 
 class TaskCancelActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for task cancel action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     data: TaskCancelActionDataResponse
     message: str
 
 
 class FilesTasksListResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for files tasks list response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: str
     data: List[Dict[str, Any]]
     message: str
 
 
 class FilesTaskActionDataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for files task action data response.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     cancelled: Optional[bool] = None
     cancelled_count: Optional[int] = None
     cleared_count: Optional[int] = None
 
 
 class FilesTaskActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for files task action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: str
     data: FilesTaskActionDataResponse
     message: str
 
 
 class FileInfoResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for file info response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     size_Byte: int
     created_at: float
@@ -370,6 +771,16 @@ SnapshotToolKey = Literal[
 
 
 class SnapshotCapabilities(BaseModel):
+    """API schema used by routes and generated clients for snapshot capabilities.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     canPaginate: bool
     canSortAndFilterResult: bool
     canExport: bool
@@ -378,22 +789,62 @@ class SnapshotCapabilities(BaseModel):
 
 
 class SnapshotPayloadEntryResult(BaseModel):
+    """API schema used by routes and generated clients for snapshot payload entry result.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     kind: Literal["result"]
     path: str
 
 
 class SnapshotPayloadEntryDispersionBins(BaseModel):
+    """API schema used by routes and generated clients for snapshot payload entry dispersion bins.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     kind: Literal["dispersion-bins"]
     path: str
 
 
 class SnapshotPayloadEntrySourceProjection(BaseModel):
+    """API schema used by routes and generated clients for snapshot payload entry source projection.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     kind: Literal["source-projection"]
     path: str
     columns: list[str]
 
 
 class SnapshotPayloadEntrySettings(BaseModel):
+    """API schema used by routes and generated clients for snapshot payload entry settings.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     kind: Literal["settings"]
     path: str
 
@@ -407,6 +858,16 @@ SnapshotPayloadEntry = Union[
 
 
 class ConcordanceSnapshotPreview(BaseModel):
+    """API schema used by routes and generated clients for concordance snapshot preview.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     tool: Literal["concordance"]
     searchTerm: str
     totalHits: int
@@ -415,6 +876,16 @@ class ConcordanceSnapshotPreview(BaseModel):
 
 
 class QuotationSnapshotPreview(BaseModel):
+    """API schema used by routes and generated clients for quotation snapshot preview.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     tool: Literal["quotation"]
     openPattern: str
     closePattern: str
@@ -423,6 +894,16 @@ class QuotationSnapshotPreview(BaseModel):
 
 
 class TokenFrequenciesSnapshotPreview(BaseModel):
+    """API schema used by routes and generated clients for token frequencies snapshot preview.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     tool: Literal["token_frequencies"]
     vocabSize: int
     topToken: str
@@ -431,6 +912,16 @@ class TokenFrequenciesSnapshotPreview(BaseModel):
 
 
 class SequentialAnalysisSnapshotPreview(BaseModel):
+    """API schema used by routes and generated clients for sequential analysis snapshot preview.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     tool: Literal["sequential_analysis"]
     seriesCount: int
     bucketCount: int
@@ -438,6 +929,16 @@ class SequentialAnalysisSnapshotPreview(BaseModel):
 
 
 class TopicModelingSnapshotPreview(BaseModel):
+    """API schema used by routes and generated clients for topic modeling snapshot preview.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     tool: Literal["topic_modeling"]
     numTopics: int
     vocabSize: int
@@ -455,6 +956,16 @@ SnapshotPreview = Union[
 
 
 class SnapshotSource(BaseModel):
+    """API schema used by routes and generated clients for snapshot source.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     workspace_id: str
     workspace_name: str
     node_ids: list[str]
@@ -464,6 +975,16 @@ class SnapshotSource(BaseModel):
 
 
 class SnapshotManifest(BaseModel):
+    """API schema used by routes and generated clients for snapshot manifest.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     schema_version: Literal[1]
     mode: Literal["demo", "share"]
     tool: SnapshotToolKey
@@ -478,21 +999,61 @@ class SnapshotManifest(BaseModel):
 
 
 class SnapshotListItem(BaseModel):
+    """API schema used by routes and generated clients for snapshot list item.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     manifest: SnapshotManifest
     size_bytes: int
 
 
 class SnapshotListResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for snapshot list response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     items: list[SnapshotListItem]
 
 
 class SnapshotUploadResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for snapshot upload response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     manifest: SnapshotManifest
 
 
 class SnapshotDeleteResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for snapshot delete response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     deleted: list[str]
 
 
@@ -502,6 +1063,16 @@ class SnapshotDeleteResponse(BaseModel):
 
 
 class WorkspaceInfo(BaseModel):
+    """Metadata schema used by API responses to describe workspace info.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     id: str
     name: str
     description: str = ""
@@ -513,7 +1084,16 @@ class WorkspaceInfo(BaseModel):
 
 
 class WorkspaceSummary(BaseModel):
-    """Summary metadata for a workspace row in list responses."""
+    """Summary metadata for a workspace row in list responses.
+
+    Used by:
+    - backend API routes, backend request/response models, core workspace and worker
+      services because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
 
     id: str
     name: str
@@ -528,15 +1108,45 @@ class WorkspaceSummary(BaseModel):
 
 
 class CurrentWorkspaceResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for current workspace response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     id: str | None = None
 
 
 class SetCurrentWorkspaceResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for set current workspace response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     state: Literal["successful"]
     id: str | None = None
 
 
 class DtypeNormalizationChange(BaseModel):
+    """API schema used by routes and generated clients for dtype normalization change.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     from_dtype: str
     to_dtype: str
@@ -544,6 +1154,16 @@ class DtypeNormalizationChange(BaseModel):
 
 
 class WorkspaceNodeInfo(BaseModel):
+    """Metadata schema used by API responses to describe workspace node info.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     id: str
@@ -562,26 +1182,76 @@ class WorkspaceNodeInfo(BaseModel):
 
 
 class NodeDocumentColumnUpdateRequest(BaseModel):
+    """Request schema used by API routes and generated clients for node document column update request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     document_column: str | None = None
 
 
 class NodeTokenizationPreferenceRequest(BaseModel):
+    """Request schema used by API routes and generated clients for node tokenization preference request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve tokenization preferences, hydrate or create token columns, aggregate
+        frequencies, and persist derived artifacts for result queries.
+    """
+
     source_column: str
     model: str | None = None
     language: str | None = None
 
 
 class TokenizerModelInfo(BaseModel):
+    """Metadata schema used by API responses to describe tokenizer model info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     model: str
     label: str
     languages: list[str]
 
 
 class TokenizerModelsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for tokenizer models response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     models: list[TokenizerModelInfo]
 
 
 class WorkspaceGraphEdge(BaseModel):
+    """API schema used by routes and generated clients for workspace graph edge.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     model_config = ConfigDict(extra="allow")
 
     source: str
@@ -590,6 +1260,16 @@ class WorkspaceGraphEdge(BaseModel):
 
 
 class WorkspaceGraphResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for workspace graph response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     model_config = ConfigDict(extra="allow")
 
     nodes: list[WorkspaceNodeInfo]
@@ -597,33 +1277,93 @@ class WorkspaceGraphResponse(BaseModel):
 
 
 class WorkspaceNodesResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for workspace nodes response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     nodes: list[WorkspaceNodeInfo]
 
 
 class WorkspaceCreateRequest(BaseModel):
+    """Request schema used by API routes and generated clients for workspace create request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     name: str
     description: Optional[str] = None
 
 
 class WorkspaceSaveRequest(BaseModel):
+    """Request schema used by API routes and generated clients for workspace save request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     workspace_id: str
     name: Optional[str] = None
     description: Optional[str] = None
 
 
 class WorkspaceActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for workspace action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     state: Literal["successful"]
     message: str
     id: str | None = None
 
 
 class WorkspaceTaskStartResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for workspace task start response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     state: Literal["running"]
     message: str
     metadata: FilesTaskMetadataResponse
 
 
 class WorkspaceUploadResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for workspace upload response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: resolve the user workspace directory, refresh cached path indexes, coordinate task
+        cleanup, and return stable workspace metadata to callers.
+    """
+
     state: Literal["successful"]
     workspace: WorkspaceSummary
 
@@ -634,6 +1374,16 @@ class WorkspaceUploadResponse(BaseModel):
 
 
 class DataFrameNode(BaseModel):
+    """API schema used by routes and generated clients for data frame node.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     name: str
     parent_id: Optional[str] = None
@@ -651,6 +1401,16 @@ class DataFrameNode(BaseModel):
 
 
 class NodeLineage(BaseModel):
+    """API schema used by routes and generated clients for node lineage.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     ancestors: List[str]
     descendants: List[str]
@@ -659,6 +1419,16 @@ class NodeLineage(BaseModel):
 
 
 class DataFrameInfo(BaseModel):
+    """Metadata schema used by API responses to describe data frame info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     shape: tuple
     columns: List[str]
@@ -680,34 +1450,94 @@ class DataFrameInfo(BaseModel):
 
 
 class DataOperation(BaseModel):
+    """API schema used by routes and generated clients for data operation.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     operation_type: str  # 'filter', 'slice', 'transform', 'aggregate'
     parameters: Dict[str, Any]
     target_columns: Optional[List[str]] = None
 
 
 class FilterOperation(BaseModel):
+    """API schema used by routes and generated clients for filter operation.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     operator: str  # 'eq', 'gt', 'lt', 'contains', 'regex'
     value: Any
 
 
 class SliceOperation(BaseModel):
+    """API schema used by routes and generated clients for slice operation.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     start_row: Optional[int] = None
     end_row: Optional[int] = None
     columns: Optional[List[str]] = None
 
 
 class TransformOperation(BaseModel):
+    """API schema used by routes and generated clients for transform operation.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     operation: str  # 'rename', 'add_column', 'drop_column', 'convert_type'
     parameters: Dict[str, Any]
 
 
 class AggregateOperation(BaseModel):
+    """API schema used by routes and generated clients for aggregate operation.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     group_by: Optional[List[str]] = None
     aggregations: Dict[str, str]  # column -> function
 
 
 class ReplaceRequest(BaseModel):
+    """Request schema used by API routes and generated clients for replace request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     source_column: str = Field(..., min_length=1, max_length=200)
     pattern: str = Field(..., min_length=1)
     replacement: str = Field(default="")
@@ -720,12 +1550,32 @@ class ReplaceRequest(BaseModel):
 
 
 class ReplacePreviewResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for replace preview response.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     columns: List[str]
     dtypes: Dict[str, str]
     data: List[Dict[str, Any]]
 
 
 class ReplaceApplyResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for replace apply response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     node_id: str
     column_name: str
@@ -734,6 +1584,16 @@ class ReplaceApplyResponse(BaseModel):
 
 
 class JoinRequest(BaseModel):
+    """Request schema used by API routes and generated clients for join request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     right_node_id: str
     join_type: str  # 'inner', 'left', 'right', 'outer'
     left_on: List[str]
@@ -742,25 +1602,75 @@ class JoinRequest(BaseModel):
 
 
 class ConcatPreviewRequest(BaseModel):
+    """Request schema used by API routes and generated clients for concat preview request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_ids: List[str] = Field(..., min_length=2)
     deduplicate: bool = True
 
 
 class ConcatRequest(ConcatPreviewRequest):
+    """Request schema used by API routes and generated clients for concat request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     new_node_name: Optional[str] = None
 
 
 class NodeOperationResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for node operation response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_name: str
     node_id: str
 
 
 class NodeActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for node action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
 
 
 class CastNodeRequest(BaseModel):
+    """Request schema used by API routes and generated clients for cast node request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     target_type: str
     format: str | None = None
@@ -768,6 +1678,16 @@ class CastNodeRequest(BaseModel):
 
 
 class CastNodeInfo(BaseModel):
+    """Metadata schema used by API responses to describe cast node info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     original_type: str
     new_type: str
@@ -777,6 +1697,16 @@ class CastNodeInfo(BaseModel):
 
 
 class CastNodeResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for cast node response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     node_id: str
     cast_info: CastNodeInfo
@@ -784,6 +1714,16 @@ class CastNodeResponse(BaseModel):
 
 
 class DataFrameOperationRequest(BaseModel):
+    """Request schema used by API routes and generated clients for data frame operation request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     workspace_id: str
     parent_node_id: str
     operation: DataOperation
@@ -796,12 +1736,32 @@ class DataFrameOperationRequest(BaseModel):
 
 
 class TextSetupRequest(BaseModel):
+    """Request schema used by API routes and generated clients for text setup request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     document_column: str
     content_column: Optional[str] = None
     auto_detect: bool = True
 
 
 class DTMRequest(BaseModel):
+    """Request schema used by API routes and generated clients for d t m request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     max_features: Optional[int] = 1000
     min_df: float = 0.01
     max_df: float = 0.95
@@ -810,12 +1770,32 @@ class DTMRequest(BaseModel):
 
 
 class KeywordExtractionRequest(BaseModel):
+    """Request schema used by API routes and generated clients for keyword extraction request.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     method: str  # 'tfidf', 'count', 'custom'
     top_k: int = 20
     by_document: bool = False
 
 
 class ConcordanceAnalysisRequest(BaseModel):
+    """Request schema used by API routes and generated clients for concordance analysis request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_ids: List[str]  # Support up to 2 nodes (1 = single node mode)
     node_columns: Dict[str, str]  # node_id -> column_name mapping
     search_word: str
@@ -843,6 +1823,16 @@ class ConcordanceAnalysisRequest(BaseModel):
 
 
 class ConcordanceDetachRequest(BaseModel):
+    """Request schema used by API routes and generated clients for concordance detach request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     column: str
     search_word: str
@@ -866,6 +1856,13 @@ class ConcordanceDispersionDetachRequest(BaseModel):
     `selected_bins` + `total_bins` optionally restrict the aggregation to hits
     whose `start_idx / doc_length` falls inside one of the selected bins (the
     chart's "in-range hits only" semantic).
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
     """
 
     column: str
@@ -896,6 +1893,16 @@ class ConcordanceDispersionDetachRequest(BaseModel):
 
 
 class ConcordanceMaterializeRequest(BaseModel):
+    """Request schema used by API routes and generated clients for concordance materialize request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     search_word: str
     num_left_tokens: int = 10
@@ -912,6 +1919,16 @@ class ConcordanceMaterializeRequest(BaseModel):
 
 
 class ConcordanceDetachNodeOption(BaseModel):
+    """Option schema used by API routes and clients for concordance detach node option.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     node_name: str
     text_column: Optional[str] = None
@@ -920,6 +1937,17 @@ class ConcordanceDetachNodeOption(BaseModel):
 
 
 class ConcordanceDetachOptionsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for concordance detach options
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: Dict[str, List[ConcordanceDetachNodeOption]] | None = None
@@ -928,16 +1956,49 @@ class ConcordanceDetachOptionsResponse(BaseModel):
 
 # Quotation requests (mirror concordance shape but without search parameters)
 class QuotationEngineType(str, Enum):
+    """Enum used by API schema contracts to constrain quotation engine type values.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests, core workspace and
+      worker services because they need a stable JSON contract shared by route handlers,
+      generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     LOCAL = "local"
     REMOTE = "remote"
 
 
 class QuotationEngineConfig(BaseModel):
+    """API schema used by routes and generated clients for quotation engine config.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend request/response models, backend
+      tests, core workspace and worker services because they need a stable JSON contract
+      shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     type: QuotationEngineType = QuotationEngineType.LOCAL
     url: Optional[AnyHttpUrl] = None
 
     @model_validator(mode="after")
     def _validate_remote(self) -> "QuotationEngineConfig":
+        """Validate remote inputs before API schema contracts proceeds.
+
+        Called by:
+        - `QuotationEngineConfig` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: validate incoming API fields, apply defaults or validators, and serialize route
+            responses in the shape expected by frontend clients and tests.
+        """
+
         if self.type is QuotationEngineType.LOCAL:
             # Normalise to ensure we never persist stale URLs for local mode
             self.url = None
@@ -949,6 +2010,17 @@ class QuotationEngineConfig(BaseModel):
 
 
 class QuotationRequest(BaseModel):
+    """Request schema used by API routes and generated clients for quotation request.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend request/response models, backend
+      tests because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     # Pagination parameters
     page: int = 1
@@ -968,6 +2040,16 @@ class QuotationRequest(BaseModel):
 
 
 class QuotationDetachRequest(BaseModel):
+    """Request schema used by API routes and generated clients for quotation detach request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     column: str
     new_node_name: Optional[str] = None  # If not provided, will be auto-generated
@@ -980,6 +2062,16 @@ class QuotationDetachRequest(BaseModel):
 
 
 class QuotationMaterializeRequest(BaseModel):
+    """Request schema used by API routes and generated clients for quotation materialize request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     engine: Optional[QuotationEngineConfig] = None
     parent_task_id: str
@@ -989,6 +2081,16 @@ class QuotationMaterializeRequest(BaseModel):
 
 
 class QuotationDetachNodeOption(BaseModel):
+    """Option schema used by API routes and clients for quotation detach node option.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     node_name: str
     text_column: Optional[str] = None
@@ -997,6 +2099,16 @@ class QuotationDetachNodeOption(BaseModel):
 
 
 class QuotationDetachOptionsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for quotation detach options response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: Dict[str, List[QuotationDetachNodeOption]] | None = None
@@ -1004,12 +2116,32 @@ class QuotationDetachOptionsResponse(BaseModel):
 
 
 class QuotationMetadata(BaseModel):
+    """API schema used by routes and generated clients for quotation metadata.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     quotation_columns: list[str]
     metadata_columns: list[str]
     all_columns: list[str]
 
 
 class QuotationAnalysisResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for quotation analysis response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     data: list[list[dict[str, Any]]]
     columns: list[str]
     metadata: QuotationMetadata
@@ -1020,16 +2152,47 @@ class QuotationAnalysisResponse(BaseModel):
 
 
 class QuotationPreferenceUpdateData(BaseModel):
+    """Data payload schema embedded in API responses for quotation preference update data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     context_length: int | None = None
 
 
 class QuotationPreferenceUpdateResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for quotation preference update
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
     data: QuotationPreferenceUpdateData | None = None
 
 
 class AnalysisTaskActionResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for analysis task action response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: None = None
@@ -1037,15 +2200,45 @@ class AnalysisTaskActionResponse(BaseModel):
 
 
 class AnalysisClearResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for analysis clear response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
 
 
 class CurrentAnalysisTasksResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for current analysis tasks response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     task_ids: list[str]
 
 
 class QuotationResultQuery(BaseModel):
+    """API schema used by routes and generated clients for quotation result query.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     page: Optional[int] = None
     # Accepts the literal ``'all'`` for the snapshot capture path —
     # server caps at ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` (see
@@ -1060,6 +2253,17 @@ class QuotationResultQuery(BaseModel):
 
 
 class SequentialAnalysisRequest(BaseModel):
+    """Request schema used by API routes and generated clients for sequential analysis request.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend request/response models because
+      they need a stable JSON contract shared by route handlers, generated clients, and
+      tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     time_column: str
     group_by_columns: Optional[List[str]] = None
     # ``second`` and ``minute`` are valid backend frequencies but the
@@ -1091,6 +2295,17 @@ class SequentialAnalysisRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_numeric_params(self) -> "SequentialAnalysisRequest":
+        """Validate numeric params inputs before API schema contracts proceeds.
+
+        Called by:
+        - `SequentialAnalysisRequest` instances owned by backend services, routes, and tests
+          because they need a backend boundary that validates inputs before delegating to
+          workspace or worker state.
+
+        Flow: validate incoming API fields, apply defaults or validators, and serialize route
+            responses in the shape expected by frontend clients and tests.
+        """
+
         if self.column_type == "numeric":
             if self.numeric_interval is None or self.numeric_interval <= 0:
                 raise ValueError(
@@ -1126,6 +2341,16 @@ class SequentialAnalysisRequest(BaseModel):
 
 
 class SequentialAnalysisResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for sequential analysis response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     data: list[dict[str, Any]] | None = None
     columns: list[str] | None = None
@@ -1135,6 +2360,17 @@ class SequentialAnalysisResponse(BaseModel):
 
 
 class SequentialAnalysisPreviewResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for sequential analysis preview
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     total_records: int
     columns: list[str]
@@ -1143,25 +2379,77 @@ class SequentialAnalysisPreviewResponse(BaseModel):
 
 
 class SequentialAnalysisPreferenceUpdateData(BaseModel):
+    """Data payload schema embedded in API responses for sequential analysis preference update data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     chart_type: Literal["line", "bar", "area"]
 
 
 class SequentialAnalysisPreferenceUpdateRequest(BaseModel):
+    """Request schema used by API routes and generated clients for sequential analysis preference update request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     chart_type: str | None = None
 
 
 class SequentialAnalysisPreferenceUpdateResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for sequential analysis preference
+    update response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
     data: SequentialAnalysisPreferenceUpdateData
 
 
 class SequentialAnalysisDetachResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for sequential analysis detach
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     new_node_id: str
     new_node_name: str
 
 
 class TextAnalysisInfo(BaseModel):
+    """Metadata schema used by API responses to describe text analysis info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     document: Optional[str]
     avg_document_length: Optional[float]
     total_documents: int
@@ -1170,44 +2458,126 @@ class TextAnalysisInfo(BaseModel):
 
 
 class AiAnnotationDetachData(BaseModel):
+    """Data payload schema embedded in API responses for ai annotation detach data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     new_node_name: str
     record_count: int
 
 
 class AiAnnotationDetachResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation detach response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
     data: AiAnnotationDetachData
 
 
 class AiAnnotationSaveData(BaseModel):
+    """Data payload schema embedded in API responses for ai annotation save data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     annotation_column: str
     edits_applied: int
 
 
 class AiAnnotationSaveResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation save response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
     data: AiAnnotationSaveData
 
 
 class TopicModelingEmbeddingCacheMeasurement(BaseModel):
+    """API schema used by routes and generated clients for topic modeling embedding cache measurement.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     bytes: int
     files: int
 
 
 class TopicModelingEmbeddingCacheSizeResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for topic modeling embedding cache size
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     data: TopicModelingEmbeddingCacheMeasurement
 
 
 class TopicModelingEmbeddingCacheClearData(BaseModel):
+    """Data payload schema embedded in API responses for topic modeling embedding cache clear data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     bytes_freed: int
     files_removed: int
     measured_before: TopicModelingEmbeddingCacheMeasurement
 
 
 class TopicModelingEmbeddingCacheClearResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for topic modeling embedding cache
+    clear response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful"]
     message: str
     data: TopicModelingEmbeddingCacheClearData
@@ -1219,7 +2589,15 @@ class TopicModelingEmbeddingCacheClearResponse(BaseModel):
 
 
 class APIResponse(BaseModel):
-    """Generic API response wrapper"""
+    """Generic API response wrapper
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     success: bool
     message: str
@@ -1227,7 +2605,15 @@ class APIResponse(BaseModel):
 
 
 class PaginatedResponse(BaseModel):
-    """Generic paginated response"""
+    """Generic paginated response
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     data: List[Dict[str, Any]]
     page: int
@@ -1238,7 +2624,15 @@ class PaginatedResponse(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """Error response model"""
+    """Error response model
+
+    Used by:
+    - backend request/response models, core workspace and worker services because they need
+      a stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     error: str
     detail: str
@@ -1256,6 +2650,16 @@ class ErrorResponse(BaseModel):
 
 
 class FilePreviewRequest(BaseModel):
+    """Request schema used by API routes and generated clients for file preview request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     page: int = 0
     page_size: int = 20
@@ -1263,6 +2667,16 @@ class FilePreviewRequest(BaseModel):
 
 
 class FilePreviewResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for file preview response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filename: str
     file_type: str
     supported_types: List[str]  # ["LazyFrame", "DataFrame"]
@@ -1274,6 +2688,16 @@ class FilePreviewResponse(BaseModel):
 
 
 class FilterCondition(BaseModel):
+    """API schema used by routes and generated clients for filter condition.
+
+    Used by:
+    - backend request/response models, backend tests because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     operator: str  # Allow any string to support new operators like 'between'
     value: Any
@@ -1286,12 +2710,32 @@ class FilterCondition(BaseModel):
 
 
 class FilterRequest(BaseModel):
+    """Request schema used by API routes and generated clients for filter request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     conditions: List[FilterCondition]
     logic: Optional[str] = "and"
     new_node_name: Optional[str] = None
 
 
 class SliceRequest(BaseModel):
+    """Request schema used by API routes and generated clients for slice request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     mode: Literal["slice", "random_sample", "shuffle"] = "slice"
     offset: int = Field(default=0, ge=0)
     length: Optional[int] = Field(default=None, ge=0)
@@ -1301,6 +2745,17 @@ class SliceRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_sampling_mode(self) -> "SliceRequest":
+        """Validate sampling mode inputs before API schema contracts proceeds.
+
+        Called by:
+        - `SliceRequest` instances owned by backend services, routes, and tests because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: validate incoming API fields, apply defaults or validators, and serialize route
+            responses in the shape expected by frontend clients and tests.
+        """
+
         if self.mode == "random_sample":
             if self.sample_size is None:
                 raise ValueError("sample_size is required when mode is 'random_sample'")
@@ -1312,6 +2767,16 @@ class SliceRequest(BaseModel):
 
 
 class PaginationInfo(BaseModel):
+    """Metadata schema used by API responses to describe pagination info.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     page: int
     page_size: int
     total_rows: int
@@ -1321,6 +2786,16 @@ class PaginationInfo(BaseModel):
 
 
 class FilterPreviewResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for filter preview response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     data: List[Dict[str, Any]]
     columns: List[str]
     dtypes: Dict[str, str]
@@ -1332,12 +2807,32 @@ AnalysisTaskState = Literal["pending", "running", "successful", "failed", "cance
 
 
 class AnalysisTaskMetadata(BaseModel):
+    """API schema used by routes and generated clients for analysis task metadata.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     model_config = ConfigDict(extra="allow")
 
     task_id: str | None = None
 
 
 class SourceRowPagination(BaseModel):
+    """API schema used by routes and generated clients for source row pagination.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     page: int
     page_size: int
     total_source_rows: int
@@ -1348,22 +2843,62 @@ class SourceRowPagination(BaseModel):
 
 
 class AnalysisSorting(BaseModel):
+    """API schema used by routes and generated clients for analysis sorting.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     sort_by: str | None = None
     descending: bool
 
 
 class NodeDataSorting(BaseModel):
+    """API schema used by routes and generated clients for node data sorting.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     sort_by: str | None = None
     descending: bool
 
 
 class NodeDataFiltering(BaseModel):
+    """API schema used by routes and generated clients for node data filtering.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str | None = None
     value: str | None = None
     op: str
 
 
 class NodeDataResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for node data response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     data: list[dict[str, Any]]
     pagination: PaginationInfo
     columns: list[str]
@@ -1373,14 +2908,44 @@ class NodeDataResponse(BaseModel):
 
 
 class NodeQueryPlanResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for node query plan response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     plan: str
 
 
 class NodeShapeResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for node shape response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     shape: tuple[int | None, int | None]
 
 
 class ColumnUniqueValuesResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for column unique values response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column_name: str
     unique_count: int
     unique_values: list[ColumnScalarValue]
@@ -1388,11 +2953,31 @@ class ColumnUniqueValuesResponse(BaseModel):
 
 
 class ColumnOperationInfo(BaseModel):
+    """Metadata schema used by API responses to describe column operation info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     method: str
     label: str
 
 
 class ColumnOperationsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for column operations response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     operations: dict[str, list[ColumnOperationInfo]]
 
 
@@ -1402,6 +2987,16 @@ class ColumnOperationsResponse(BaseModel):
 
 
 class PolarsExpressionContext(str, Enum):
+    """Enum used by API schema contracts to constrain polars expression context values.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     filter = "filter"
     with_columns = "with_columns"
     select = "select"
@@ -1410,13 +3005,31 @@ class PolarsExpressionContext(str, Enum):
 
 
 class PolarsExpressionItem(BaseModel):
-    """A single polars expression supplied as a Python code string, e.g. ``pl.col('x') > 0``."""
+    """A single polars expression supplied as a Python code string, e.g. ``pl.col('x') > 0``.
+
+    Used by:
+    - backend request/response models, backend tests because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     code: str  # Python expression string evaluated with pl available
     descending: Optional[bool] = None  # used only in sort context
 
 
 class PolarsExpressionRequest(BaseModel):
+    """Request schema used by API routes and generated clients for polars expression request.
+
+    Used by:
+    - backend API routes, backend request/response models, backend tests because they need a
+      stable JSON contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     context: PolarsExpressionContext
     expressions: List[PolarsExpressionItem]
     # For group_by_agg: these are the grouping key expressions
@@ -1425,6 +3038,16 @@ class PolarsExpressionRequest(BaseModel):
 
 
 class PolarsExpressionApplyResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for polars expression apply response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     node_name: str
 
@@ -1435,10 +3058,31 @@ class PolarsExpressionApplyResponse(BaseModel):
 
 
 class StopWordsPayload(BaseModel):
+    """API schema used by routes and generated clients for stop words payload.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     stop_words: List[str]
 
 
 class TokenFrequencyRequest(BaseModel):
+    """Request schema used by API routes and generated clients for token frequency request.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend request/response models, backend
+      tests because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_ids: List[str]  # 1 or 2 node IDs
     node_columns: Dict[str, str]  # Maps node_id -> column_name
     stop_words: Optional[List[str]] = None
@@ -1463,11 +3107,31 @@ class TokenFrequencyRequest(BaseModel):
 
 
 class TokenFrequencyPreferenceUpdateRequest(BaseModel):
+    """Request schema used by API routes and generated clients for token frequency preference update request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     token_limit: int | None = None
     stop_words: list[str] | None = None
 
 
 class TokenFrequencyData(BaseModel):
+    """Data payload schema embedded in API responses for token frequency data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     token: str
     frequency: int
 
@@ -1480,6 +3144,13 @@ class TokenStatisticsData(BaseModel):
     - positive infinity -> "+Inf"
     - negative infinity -> "-Inf"
     - missing/undefined -> None
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
     """
 
     token: str
@@ -1502,6 +3173,16 @@ class TokenStatisticsData(BaseModel):
 
 
 class TokenFrequencyNodeResult(BaseModel):
+    """API schema used by routes and generated clients for token frequency node result.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     data: List[TokenFrequencyData]
     columns: List[str] = ["token", "frequency"]
     # Optional metadata (e.g., server-side truncation info)
@@ -1509,7 +3190,15 @@ class TokenFrequencyNodeResult(BaseModel):
 
 
 class TokenFrequencyResponse(BaseModel):
-    """Unified response model for token frequency analysis."""
+    """Unified response model for token frequency analysis.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     state: AnalysisTaskState | None = None
     message: str | None = None
@@ -1531,21 +3220,61 @@ class TokenFrequencyResponse(BaseModel):
 
 
 class AiAnnotationClassDef(BaseModel):
+    """API schema used by routes and generated clients for ai annotation class def.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     name: str
     description: str
 
 
 class AiAnnotationExample(BaseModel):
+    """API schema used by routes and generated clients for ai annotation example.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     query: str
     classification: str
 
 
 class AiAnnotationModelsRequest(BaseModel):
+    """Request schema used by API routes and generated clients for ai annotation models request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     base_url: Optional[str] = None
     api_key: Optional[str] = None
 
 
 class AiAnnotationRequest(BaseAnalysisRequest):
+    """Request schema used by API routes and generated clients for ai annotation request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_ids: List[str]
     node_columns: Dict[str, str]
     annotation_column: Optional[str] = None
@@ -1596,6 +3325,16 @@ class AiAnnotationRequest(BaseAnalysisRequest):
 
 
 class AiAnnotationDetachRequest(BaseModel):
+    """Request schema used by API routes and generated clients for ai annotation detach request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     column: str
     new_node_name: Optional[str] = None
     annotation_column: Optional[str] = None
@@ -1617,17 +3356,47 @@ class AiAnnotationDetachRequest(BaseModel):
 
 
 class AiAnnotationEdit(BaseModel):
+    """API schema used by routes and generated clients for ai annotation edit.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     row_index: int = Field(ge=0)
     provider: str = Field(min_length=1)
     annotation: str = ""
 
 
 class AiAnnotationSaveRequest(BaseModel):
+    """Request schema used by API routes and generated clients for ai annotation save request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     annotation_column: Optional[str] = None
     edits: List[AiAnnotationEdit] = Field(default_factory=list)
 
 
 class AiAnnotationNodeResult(BaseModel):
+    """API schema used by routes and generated clients for ai annotation node result.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     data: List[Dict[str, Any]]
     columns: List[str]
     metadata: AnalysisTaskMetadata | None = None
@@ -1636,6 +3405,16 @@ class AiAnnotationNodeResult(BaseModel):
 
 
 class AiAnnotationResultQuery(BaseModel):
+    """API schema used by routes and generated clients for ai annotation result query.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     page: Optional[int] = None
     page_size: Optional[int] = None
     sort_by: Optional[str] = None
@@ -1645,6 +3424,16 @@ class AiAnnotationResultQuery(BaseModel):
 
 
 class AiAnnotationResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: Optional[Dict[str, AiAnnotationNodeResult]] = None
@@ -1654,15 +3443,45 @@ class AiAnnotationResponse(BaseModel):
 
 
 class AiAnnotationModelInfo(BaseModel):
+    """Metadata schema used by API responses to describe ai annotation model info.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: str
     name: str
 
 
 class AiAnnotationModelsData(BaseModel):
+    """Data payload schema embedded in API responses for ai annotation models data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     models: list[AiAnnotationModelInfo]
 
 
 class AiAnnotationModelsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation models response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful", "failed"]
     message: str
     data: AiAnnotationModelsData
@@ -1670,10 +3489,30 @@ class AiAnnotationModelsResponse(BaseModel):
 
 
 class AiAnnotationProvidersData(BaseModel):
+    """Data payload schema embedded in API responses for ai annotation providers data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     providers: list[str]
 
 
 class AiAnnotationProvidersResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation providers response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful", "failed"]
     message: str
     data: AiAnnotationProvidersData
@@ -1681,10 +3520,30 @@ class AiAnnotationProvidersResponse(BaseModel):
 
 
 class AiAnnotationCategoriesData(BaseModel):
+    """Data payload schema embedded in API responses for ai annotation categories data.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     categories: list[str]
 
 
 class AiAnnotationCategoriesResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for ai annotation categories response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: Literal["successful", "failed"]
     message: str
     data: AiAnnotationCategoriesData
@@ -1697,6 +3556,17 @@ class AiAnnotationCategoriesResponse(BaseModel):
 
 
 class TopicModelingRequest(BaseModel):
+    """Request schema used by API routes and generated clients for topic modeling request.
+
+    Used by:
+    - analysis task helpers, backend API routes, backend request/response models, backend
+      tests because they need a stable JSON contract shared by route handlers, generated
+      clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_ids: List[str]  # 1 or 2 node IDs
     node_columns: Dict[str, str]  # Maps node_id -> column_name
     min_topic_size: Optional[int] = (
@@ -1733,6 +3603,16 @@ class TopicModelingRequest(BaseModel):
 
 
 class TopicModelingTopic(BaseModel):
+    """API schema used by routes and generated clients for topic modeling topic.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     id: int
     label: str
     representative_words: List[str] = Field(default_factory=list)
@@ -1743,6 +3623,16 @@ class TopicModelingTopic(BaseModel):
 
 
 class TopicModelingData(BaseModel):
+    """Data payload schema embedded in API responses for topic modeling data.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     topics: List[TopicModelingTopic]
     corpus_sizes: List[int]
     per_corpus_topic_counts: Optional[List[Dict[int, int]]] = None
@@ -1750,6 +3640,16 @@ class TopicModelingData(BaseModel):
 
 
 class TopicModelingResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for topic modeling response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: Optional[TopicModelingData] = None
@@ -1757,6 +3657,16 @@ class TopicModelingResponse(BaseModel):
 
 
 class TopicModelingResultUpdateRequest(BaseModel):
+    """Request schema used by API routes and generated clients for topic modeling result update request.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     topic_size_value: int
 
 
@@ -1767,6 +3677,13 @@ class TopicMeaningOverrideItem(BaseModel):
     "Words per topic" slice, post-fit stopword filter — instead of
     forcing the meanings parquet (written at fit time) into the
     detached node.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
     """
 
     topic_id: int
@@ -1774,7 +3691,15 @@ class TopicMeaningOverrideItem(BaseModel):
 
 
 class TopicModelingDetachRequest(BaseModel):
-    """Request payload for detaching topic assignments from cached topic-modeling output."""
+    """Request payload for detaching topic assignments from cached topic-modeling output.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     node_ids: Optional[List[str]] = None
     selected_columns: Dict[str, List[str]] = Field(default_factory=dict)
@@ -1785,6 +3710,16 @@ class TopicModelingDetachRequest(BaseModel):
 
 
 class TopicModelingDetachNodeOption(BaseModel):
+    """Option schema used by API routes and clients for topic modeling detach node option.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     node_name: str
     text_column: Optional[str] = None
@@ -1793,6 +3728,17 @@ class TopicModelingDetachNodeOption(BaseModel):
 
 
 class TopicModelingDetachOptionsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for topic modeling detach options
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: Dict[str, List[TopicModelingDetachNodeOption]] | None = None
@@ -1800,16 +3746,46 @@ class TopicModelingDetachOptionsResponse(BaseModel):
 
 
 class TopicModelingDetachedNode(BaseModel):
+    """API schema used by routes and generated clients for topic modeling detached node.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     source_node_id: str
     new_node_id: str
     topic_meanings_node_id: str | None = None
 
 
 class TopicModelingDetachData(BaseModel):
+    """Data payload schema embedded in API responses for topic modeling detach data.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     detached_nodes: list[TopicModelingDetachedNode] = Field(default_factory=list)
 
 
 class TopicModelingDetachResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for topic modeling detach response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     state: AnalysisTaskState
     message: str
     data: TopicModelingDetachData | None = None
@@ -1818,7 +3794,15 @@ class TopicModelingDetachResponse(BaseModel):
 
 # Concordance response models
 class ConcordanceMetadata(BaseModel):
-    """Metadata about concordance columns to help frontend display logic"""
+    """Metadata about concordance columns to help frontend display logic
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     concordance_columns: List[
         str
@@ -1828,7 +3812,15 @@ class ConcordanceMetadata(BaseModel):
 
 
 class ConcordanceNodeResult(BaseModel):
-    """Per-node concordance payload returned to the frontend."""
+    """Per-node concordance payload returned to the frontend.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     data: List[List[Dict[str, Any]]]
     columns: List[str]
@@ -1840,7 +3832,15 @@ class ConcordanceNodeResult(BaseModel):
 
 
 class ConcordanceAnalysisResponse(BaseModel):
-    """Unified concordance response for single or multi-node requests."""
+    """Unified concordance response for single or multi-node requests.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     state: AnalysisTaskState
     message: str
@@ -1852,12 +3852,33 @@ class ConcordanceAnalysisResponse(BaseModel):
 
 
 class ConcordanceDispersionBinRow(BaseModel):
+    """API schema used by routes and generated clients for concordance dispersion bin row.
+
+    Used by:
+    - backend request/response models because they need a stable JSON contract shared by
+      route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     matched_text: str | None = None
     bin_idx: int | None = None
     count: int | None = None
 
 
 class ConcordanceDispersionBinsResponse(BaseModel):
+    """Response schema returned by API routes and consumed by generated clients for concordance dispersion bins
+    response.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
+
     node_id: str
     total_hits: int
     document_column: str | None = None
@@ -1871,7 +3892,15 @@ class ConcordanceDispersionBinsResponse(BaseModel):
 
 
 class ColumnDescribeResponse(BaseModel):
-    """Response model for column describe statistics."""
+    """Response model for column describe statistics.
+
+    Used by:
+    - backend API routes, backend request/response models because they need a stable JSON
+      contract shared by route handlers, generated clients, and tests.
+
+    Flow: validate incoming API fields, apply defaults or validators, and serialize route
+        responses in the shape expected by frontend clients and tests.
+    """
 
     column_name: str
     count: Optional[int] = None

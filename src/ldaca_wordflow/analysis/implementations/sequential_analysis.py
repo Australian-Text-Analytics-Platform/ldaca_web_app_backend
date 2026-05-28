@@ -1,10 +1,13 @@
 """Sequential analysis request schema module.
 
 Used by:
-- sequential analysis routes and task persistence models
-
+- sequential analysis routes and task persistence models because they need a backend
+  boundary that validates inputs before delegating to workspace or worker state.
 Why:
 - Keeps sequential-analysis specific request fields versioned in one place.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 from pydantic import Field
@@ -13,18 +16,20 @@ from ..models import BaseAnalysisRequest
 
 
 class SequentialAnalysisRequest(BaseAnalysisRequest):
-    """
-    Request model for sequential analysis.
+    """Request model for sequential analysis.
 
     Used by:
-    - sequential analysis run/update endpoints
-
+    - sequential analysis run/update endpoints because they need a backend boundary that
+      validates inputs before delegating to workspace or worker state.
     Why:
     - Validates temporal grouping and binning parameters.
 
     Refactor note:
     - `column_type`, `numeric_origin`, and `numeric_interval` are declared twice;
         remove duplicated declarations to reduce schema ambiguity.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
     """
 
     node_id: str | None = Field(None, description="Node ID to analyze")

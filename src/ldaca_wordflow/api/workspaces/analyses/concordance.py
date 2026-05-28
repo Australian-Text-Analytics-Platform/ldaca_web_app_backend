@@ -5,6 +5,15 @@ Includes:
     - GET  /workspaces/{workspace_id}/concordance/tasks/{task_id}/result
     - POST /workspaces/{workspace_id}/concordance/tasks/{task_id}/result
     - POST /workspaces/{workspace_id}/nodes/{node_id}/concordance/detach
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Concordance analysis endpoints" behavior.
+
+Flow:
+- FastAPI mounts these routes through the workspace package router.
+- Route handlers validate concordance requests, current task state, and saved result overrides.
+- Helpers hydrate tokenized nodes, submit worker tasks, read artifacts, and detach generated columns.
+- Responses return task metadata, paged concordance rows, dispersion bins, or workspace updates.
 """
 
 from __future__ import annotations
@@ -71,8 +80,8 @@ class ConcordanceResultQuery(BaseModel):
     """Query overrides for reading persisted concordance results.
 
     Used by:
-    - `concordance_task_result`
-    - `concordance_task_result_post`
+    - `concordance_task_result` because they need this unit's "Query overrides for reading persisted concordance results" behavior.
+    - `concordance_task_result_post` because they need this unit's "Query overrides for reading persisted concordance results" behavior.
 
     Why:
     - Allows pagination and sorting updates without recomputing concordance.
@@ -81,6 +90,11 @@ class ConcordanceResultQuery(BaseModel):
       ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` rows by
       :func:`_apply_result_query_overrides`. Downstream code continues
       to see an ``int`` for ``page_size``.
+
+        Flow:
+        - FastAPI/Pydantic parses optional GET query parameters or POST body overrides.
+        - Result endpoints merge provided values into the stored concordance request.
+        - Downstream response builders receive normalized pagination, sorting, and visibility flags.
     """
 
     node_id: Optional[str] = None
@@ -100,9 +114,14 @@ def _apply_result_query_overrides(
 ) -> dict[str, Any]:
     """Apply request overrides from query parameters.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `concordance_task_result`
-    - `concordance_task_result_post`
+    - `concordance_task_result` because they need this unit's "Apply request overrides from query parameters" behavior.
+    - `concordance_task_result_post` because they need this unit's "Apply request overrides from query parameters" behavior.
 
     Why:
     - Reuses one normalization path for GET and POST result retrieval APIs.
@@ -130,6 +149,12 @@ def _apply_result_query_overrides(
 
 
 def _failed_concordance_result(message: str) -> dict[str, Any]:
+    """Support concordance analysis routes with a failed concordance result helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support concordance analysis routes with a failed concordance result helper" behavior.
+    """
+
     return {
         "state": "failed",
         "message": message,
@@ -143,6 +168,17 @@ def _build_concordance_task_result(
     task_id: str,
     query: ConcordanceResultQuery,
 ) -> tuple[dict[str, Any] | None, str | None]:
+    """Build concordance task result values used by concordance analysis routes.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Build concordance task result values used by concordance analysis routes" behavior.
+    """
+
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if not task:
@@ -162,8 +198,13 @@ async def run_concordance(
 ):
     """Run concordance immediately and store task metadata for retrieval.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend run route: `POST /workspaces/{id}/concordance`
+    - Frontend run route: `POST /workspaces/{id}/concordance` because they need this unit's "Run concordance immediately and store task metadata for retrieval" behavior.
 
     Why:
     - Keeps API behavior aligned with other analyses by returning task-linked
@@ -239,7 +280,16 @@ async def run_concordance(
 async def concordance_current_tasks(
     current_user: dict = Depends(get_current_user),
 ):
-    """Return current task IDs for concordance analysis."""
+    """Return current task IDs for concordance analysis.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /concordance/tasks/current route because they need this unit's "Return current task IDs for concordance analysis" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -258,7 +308,16 @@ async def concordance_task_request(
     task_id: str,
     current_user: dict = Depends(get_current_user),
 ):
-    """Return stored request payload for a concordance task."""
+    """Return stored request payload for a concordance task.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /concordance/tasks/{task_id}/request route because they need this unit's "Return stored request payload for a concordance task" behavior.
+    """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
@@ -282,8 +341,13 @@ async def concordance_task_dispersion_bins(
 ):
     """Return 100-bucket dispersion histogram for one materialised concordance node.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend dispersion summary plot, when a node has been materialised by
+    - Frontend dispersion summary plot, when a node has been materialised by because they need this unit's "Return 100-bucket dispersion histogram for one materialised concordance node" behavior.
       "Process All". The frontend re-aggregates these 100 buckets into a
       smaller number of display bins (4, 5, 10, 20, 25, 50, 100) without
       another network round-trip.
@@ -331,8 +395,13 @@ async def concordance_task_result(
 ):
     """Read concordance result with optional pagination/sort overrides.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend polling route: `GET /workspaces/{id}/concordance/tasks/{id}/result`
+    - Frontend polling route: `GET /workspaces/{id}/concordance/tasks/{id}/result` because they need this unit's "Read concordance result with optional pagination/sort overrides" behavior.
 
     Why:
     - Hydrates saved concordance state while allowing query-time view changes.
@@ -359,8 +428,13 @@ async def concordance_task_result_post(
 ):
     """Read concordance result using POST body overrides.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend state-sync route:
+    - Frontend state-sync route: because they need this unit's "Read concordance result using POST body overrides" behavior.
         `POST /workspaces/{id}/concordance/tasks/{id}/result`
 
     Why:
@@ -391,8 +465,13 @@ async def detach_concordance(
 ):
     """Submit a background task to create a concordance-detached node.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend detach action:
+    - Frontend detach action: because they need this unit's "Submit a background task to create a concordance-detached node" behavior.
         `POST /workspaces/{id}/nodes/{node_id}/concordance/detach`
 
     Why:
@@ -520,6 +599,14 @@ async def detach_concordance_dispersion(
     bullets in document-flow order. Used by the dispersion summary chart so the
     user can pull a per-document view (optionally limited to bin-filtered hits)
     into the workspace as a new data block.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/concordance/dispersion-detach route because they need this unit's "Submit a per-document aggregated detach (dispersion view)" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -654,6 +741,14 @@ async def materialize_concordance(
     Unlike detach, this does not add a node to the workspace. On completion the
     parent concordance analysis task's `materialized_paths` is updated so
     subsequent pagination and detach reuse the cached parquet.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST /nodes/{node_id}/concordance/materialize route because they need this unit's "Submit a background task that writes the full flattened occurrence parquet" behavior.
     """
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
@@ -793,8 +888,13 @@ async def concordance_detach_options(
 ):
     """Return detachable concordance columns for one node.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - Frontend concordance detach dialog
+    - Frontend concordance detach dialog because they need this unit's "Return detachable concordance columns for one node" behavior.
 
     Why:
     - Keeps mandatory generated concordance columns and optional metadata

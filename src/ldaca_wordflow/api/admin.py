@@ -1,5 +1,12 @@
-"""
-Admin endpoints
+"""Admin endpoints
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "Admin endpoints" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the admin API prefix.
+- Route handlers authorize the current user before reading database state.
+- Responses expose operational user/session state or an admin-only HTTP error.
 """
 
 import logging
@@ -22,6 +29,14 @@ def _require_admin(current_user: dict) -> None:
 
     - Single-user mode: always allowed.
     - Multi-user mode: requires current user email to be in `ADMIN_EMAILS`.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Authorize admin routes" behavior.
     """
     if not settings.multi_user:
         return
@@ -39,8 +54,13 @@ def _require_admin(current_user: dict) -> None:
 async def list_users(current_user: dict = Depends(get_current_user)):
     """List users with active-session counts.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - admin dashboard/user management views
+    - admin dashboard/user management views because they need this unit's "List users with active-session counts" behavior.
 
     Why:
     - Provides operational visibility into user and session activity.
@@ -88,8 +108,13 @@ async def list_users(current_user: dict = Depends(get_current_user)):
 async def admin_cleanup(current_user: dict = Depends(get_current_user)):
     """Trigger cleanup of expired session rows.
 
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
     Used by:
-    - admin maintenance actions
+    - admin maintenance actions because they need this unit's "Trigger cleanup of expired session rows" behavior.
 
     Why:
     - Allows manual session-store maintenance in addition to automatic cleanup.

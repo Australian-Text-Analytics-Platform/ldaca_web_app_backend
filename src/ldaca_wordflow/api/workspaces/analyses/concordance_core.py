@@ -1,4 +1,13 @@
-"""Core concordance computation helpers shared by route handlers."""
+"""Core concordance computation helpers shared by route handlers.
+
+Used by:
+- FastAPI workspace analysis routers, frontend analysis features, and backend tests because they need this unit's "Core concordance computation helpers shared by route handlers" behavior.
+
+Flow:
+- Route handlers pass saved requests, node data, and artifact paths into these helpers.
+- Helpers normalize request payloads, compute regex/token concordance pages, and attach metadata.
+- Response builders serialize dense page payloads, dispersion bins, and generated-column artifacts.
+"""
 
 from __future__ import annotations
 
@@ -51,7 +60,15 @@ def _whole_word_active_for_language(
     Returns True only when the user ticked whole_word AND the node is not
     in a CJK language. The toggle stays UI-active for the request as a
     whole — per-node suppression lives here so a mixed selection (EN + JA)
-    still wraps the pattern with ``\\b`` on the EN node.
+    still wraps the pattern with ``\b`` on the EN node.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Decide whether the whole_word toggle applies for a given node language" behavior.
     """
     if not whole_word_request or language is None:
         return whole_word_request
@@ -76,9 +93,14 @@ _REQUEST_EXCLUDE_KEYS = {
 def normalize_saved_request(raw_request: Optional[dict]) -> Optional[dict]:
     """Normalize stored concordance request payloads.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `sanitize_request_for_storage`
-    - concordance result endpoints before response rebuild
+    - `sanitize_request_for_storage` because they need this unit's "Normalize stored concordance request payloads" behavior.
+    - concordance result endpoints before response rebuild because they need this unit's "Normalize stored concordance request payloads" behavior.
 
     Why:
     - Ensures persisted requests omit view-only keys and keep stable defaults.
@@ -104,7 +126,7 @@ def sanitize_request_for_storage(request_dict: dict[str, Any]) -> dict[str, Any]
     """Return a storage-safe concordance request snapshot.
 
     Used by:
-    - Concordance route handlers when persisting task requests.
+    - Concordance route handlers when persisting task requests because they need this unit's "Return a storage-safe concordance request snapshot" behavior.
 
     Why:
     - Prevents transient pagination/sorting fields from polluting saved inputs.
@@ -116,8 +138,13 @@ def sanitize_request_for_storage(request_dict: dict[str, Any]) -> dict[str, Any]
 def concordance_non_empty_expr() -> pl.Expr:
     """Build an expression that removes empty concordance rows.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `build_concordance_lazyframe`
+    - `build_concordance_lazyframe` because they need this unit's "Build an expression that removes empty concordance rows" behavior.
 
     Why:
     - Drops rows with no meaningful matched/context text before pagination.
@@ -153,8 +180,13 @@ def build_concordance_lazyframe(
 ) -> pl.LazyFrame:
     """Create concordance rows from a source LazyFrame and request options.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `compute_concordance_page`
+    - `compute_concordance_page` because they need this unit's "Create concordance rows from a source LazyFrame and request options" behavior.
 
     Why:
     - Encapsulates `polars_text.concordance` expansion and filtering in one
@@ -190,11 +222,19 @@ def build_concordance_search_pattern(
     """Return the effective concordance pattern and whether regex mode is needed.
 
     When ``language`` is one of the CJK codes (``zh`` / ``ja`` / ``ko``)
-    the ``whole_word`` flag is suppressed because ``\\b`` word boundary
+    the ``whole_word`` flag is suppressed because ``\b`` word boundary
     semantics don't apply to languages without whitespace token
     boundaries. This lets the UI keep the toggle active for mixed
     selections (EN + ZH) — the EN node still gets the wrapped pattern;
     the ZH node falls through to the plain pattern automatically.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests, core workspace and worker services because they need this unit's "Return the effective concordance pattern and whether regex mode is needed" behavior.
     """
     if not _whole_word_active_for_language(whole_word, language):
         return search_word, regex
@@ -212,6 +252,14 @@ def _project_concordance_hit(
 
     When ``document_text`` is provided, ``CONC_extraction`` is computed
     using the same slicing rule as the worker-side materialised parquet.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Project one raw concordance struct into canonical response columns" behavior.
     """
     start_idx = raw_hit.get("start_idx")
     end_idx = raw_hit.get("end_idx")
@@ -236,7 +284,16 @@ def _project_concordance_hit(
 
 
 def _concordance_hit_has_content(hit: dict[str, Any]) -> bool:
-    """Return whether a projected concordance hit contains meaningful text."""
+    """Return whether a projected concordance hit contains meaningful text.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return whether a projected concordance hit contains meaningful text" behavior.
+    """
     for key in (
         CONC_MATCHED_TEXT_COLUMN,
         CONC_LEFT_CONTEXT_COLUMN,
@@ -254,6 +311,12 @@ def _column_metadata(
     columns: list[str],
     concordance_columns: tuple[str, ...],
 ) -> dict[str, list[str]]:
+    """Support concordance computation helpers with a column metadata helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Support concordance computation helpers with a column metadata helper" behavior.
+    """
+
     return {
         "concordance_columns": [c for c in columns if c in concordance_columns],
         "metadata_columns": [c for c in columns if c not in concordance_columns],
@@ -273,6 +336,14 @@ def _serialize_grouped_concordance_rows(
     (it normally does — ``build_concordance_lazyframe`` keeps ``pl.all()``),
     each projected hit gets a ``CONC_extraction`` field with the stitched
     raw KWIC window.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Serialize collected concordance rows into grouped per-document hit lists" behavior.
     """
     if result_df.height == 0:
         return [], []
@@ -327,8 +398,13 @@ def resolve_node_sources(
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str]]:
     """Resolve workspace nodes into validated concordance source metadata.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `build_concordance_response`
+    - `build_concordance_response` because they need this unit's "Resolve workspace nodes into validated concordance source metadata" behavior.
 
     Why:
     - Centralizes node lookup, label mapping, and LazyFrame/type validation.
@@ -389,9 +465,14 @@ def compute_concordance_page(
 ) -> dict[str, Any]:
     """Compute one concordance page for a single node source.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `build_concordance_response`
-    - `collect_interleaved_combined`
+    - `build_concordance_response` because they need this unit's "Compute one concordance page for a single node source" behavior.
+    - `collect_interleaved_combined` because they need this unit's "Compute one concordance page for a single node source" behavior.
 
     Why:
     - Produces a stable page payload shape shared by single-node and combined
@@ -472,6 +553,14 @@ def compute_node_concordance_page(
     AND the node carries tokenization metadata for the source column.
     Otherwise we fall back to the existing regex/text path so EN goldens
     stay byte-identical.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes, backend tests because they need this unit's "Route a node to either regex-mode or tokens-mode page computation" behavior.
     """
     base_lf = src["lf"]
     column = src["column"]
@@ -530,7 +619,16 @@ def _count_concordance_hits(
     request: dict[str, Any],
     size: int,
 ) -> int:
-    """Return occurrence count when running concordance on the first `size` rows."""
+    """Return occurrence count when running concordance on the first `size` rows.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return occurrence count when running concordance on the first `size` rows" behavior.
+    """
     try:
         slice_lf = build_concordance_lazyframe(base_lf.slice(0, size), column, request)
         count_df = cast(
@@ -558,8 +656,16 @@ def _count_tokens_concordance_hits(
     Walks the first ``size`` rows of the tokenization column and counts
     exact-token matches of ``search_word``. Without this, the page-size
     estimator probes via the regex engine, which produces 0 hits for CJK
-    queries (``\\b``-style whole-word semantics don't apply) and pushes the
+    queries (``\b``-style whole-word semantics don't apply) and pushes the
     estimator all the way to the largest candidate.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Tokens-mode equivalent of :func:`_count_concordance_hits`" behavior.
     """
     search_word = str(request.get("search_word") or "")
     if not search_word:
@@ -594,6 +700,14 @@ def _resolve_page_size(
     For tokens-mode requests with tokenization metadata on the node, the
     probe walks the tokens column directly so CJK searches estimate against
     actual hit density instead of the regex engine's near-zero count.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return an effective page size, estimating when the client omitted one" behavior.
     """
     if requested is not None and int(requested) > 0:
         return int(requested)
@@ -632,6 +746,14 @@ def _serialize_materialized_rows(
     before the document column was always recorded) we fall back to the
     pre-fix shape: one singleton group per hit, which keeps the table view
     looking correct but degrades dispersion to bar-per-hit.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Convert a materialised concordance slice into per-document groups" behavior.
     """
     if df.height == 0:
         return [], list(df.columns)
@@ -674,7 +796,16 @@ def compute_materialized_page(
     node_label: Optional[str] = None,
     document_column: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Paginate a materialized concordance parquet as occurrence rows."""
+    """Paginate a materialized concordance parquet as occurrence rows.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Used by:
+    - backend API routes because they need this unit's "Paginate a materialized concordance parquet as occurrence rows" behavior.
+    """
     effective_page_size = (
         int(page_size)
         if page_size is not None and int(page_size) > 0
@@ -739,8 +870,13 @@ def read_dispersion_bins(
 ) -> dict[str, Any]:
     """Pre-bin a materialised concordance parquet into 100 fixed buckets.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `concordance.concordance_task_dispersion_bins`
+    - `concordance.concordance_task_dispersion_bins` because they need this unit's "Pre-bin a materialised concordance parquet into 100 fixed buckets" behavior.
 
     Why:
     - The dispersion summary plot needs counts of hits across relative positions
@@ -803,8 +939,13 @@ def read_dispersion_bins(
 def empty_concordance_page(page: int, page_size: int) -> dict[str, Any]:
     """Return an empty concordance page payload with metadata defaults.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `build_concordance_response` fallback paths
+    - `build_concordance_response` fallback paths because they need this unit's "Return an empty concordance page payload with metadata defaults" behavior.
 
     Why:
     - Keeps response contracts consistent when no source rows are available.
@@ -842,8 +983,13 @@ def collect_interleaved_combined(
 ) -> dict[str, Any]:
     """Combine two node concordance pages using left-right interleaving.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `build_concordance_response` when `combined=True` and two nodes are set.
+    - `build_concordance_response` when `combined=True` and two nodes are set because they need this unit's "Combine two node concordance pages using left-right interleaving" behavior.
 
     Why:
     - Preserves per-node page semantics while presenting a merged comparison view.
@@ -951,10 +1097,15 @@ def build_concordance_response(
 ) -> dict[str, Any]:
     """Build the full concordance API response from a normalized request.
 
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
     Used by:
-    - `concordance.run_concordance`
-    - `concordance_task_result`
-    - `concordance_task_result_post`
+    - `concordance.run_concordance` because they need this unit's "Build the full concordance API response from a normalized request" behavior.
+    - `concordance_task_result` because they need this unit's "Build the full concordance API response from a normalized request" behavior.
+    - `concordance_task_result_post` because they need this unit's "Build the full concordance API response from a normalized request" behavior.
 
     Why:
     - Provides one shared response builder for run and retrieval endpoints,

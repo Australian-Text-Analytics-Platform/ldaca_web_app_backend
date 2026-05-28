@@ -9,6 +9,15 @@ sibling files under ``user_cache/snapshots/``:
 - ``<basename>.md``              — sidecar human description
 
 See ``docs/snapshot-view/plan.md`` §2 for the full design.
+
+Used by:
+- FastAPI router registration, frontend API clients, and backend tests because they need this unit's "Snapshot bundle storage endpoints" behavior.
+
+Flow:
+- FastAPI mounts these endpoints under the snapshot API prefix.
+- Route handlers validate bundle names, manifests, descriptions, and compatibility metadata.
+- Helpers read/write sidecar files beside the canonical snapshot archive.
+- Responses return snapshot listings, uploads, downloads, descriptions, or deletion results.
 """
 
 from __future__ import annotations
@@ -53,7 +62,11 @@ _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)(?:\.\d+)?(?:[-+].*)?$")
 def _parse_major_minor(version: str) -> str | None:
     """Return ``"<MAJOR>.<MINOR>"`` from a version string, or ``None``
     if malformed. Accepts ``"v0.4.4"``, ``"0.4.4"``, ``"0.4"``,
-    ``"0.4.0-rc1"`` etc."""
+    ``"0.4.0-rc1"`` etc.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return ``"<MAJOR>.<MINOR>"`` from a version string, or ``None``" behavior.
+    """
     if not isinstance(version, str):
         return None
     m = _VERSION_RE.match(version.strip())
@@ -63,6 +76,12 @@ def _parse_major_minor(version: str) -> str | None:
 
 
 def _is_compatible(snapshot_version: str, current_version: str) -> bool:
+    """Check whether compatible applies for snapshot routes.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Check whether compatible applies for snapshot routes" behavior.
+    """
+
     snap = _parse_major_minor(snapshot_version)
     cur = _parse_major_minor(current_version)
     if snap is None or cur is None:
@@ -79,6 +98,14 @@ def _validate_filename(filename: str) -> tuple[bool, str]:
     - contain only characters that survive ``INVALID_FILENAME_CHARS``
     - not contain ``..`` or path separators
     - be ≤ ``MAX_BASENAME_LENGTH + len(BUNDLE_SUFFIX)`` chars
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Validate a snapshot filename. Returns ``(ok, reason)``" behavior.
     """
     if not isinstance(filename, str):
         return False, "filename must be a string"
@@ -100,6 +127,14 @@ def _confined_path(snapshots_dir: Path, filename: str) -> Path:
     """Resolve a filename against the user's snapshots folder and
     assert it stays inside that folder. Raises HTTP 400 on traversal
     attempts or malformed filenames.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve a filename against the user's snapshots folder and" behavior.
     """
     ok, reason = _validate_filename(filename)
     if not ok:
@@ -116,6 +151,14 @@ def _read_manifest_from_zip(bundle_path: Path) -> dict | None:
     """Return the parsed ``manifest.json`` from inside the zip, or
     ``None`` if the zip is malformed or the manifest is missing /
     unparseable. Used by the lazy-extract path on listing.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return the parsed ``manifest.json`` from inside the zip, or" behavior.
     """
     try:
         with zipfile.ZipFile(bundle_path) as zf:
@@ -131,6 +174,14 @@ def _generate_description_md(manifest: dict) -> str:
     template — users may overwrite later via an edit flow that hasn't
     been built yet. Kept narrow on purpose: this is what a fresh
     snapshot looks like out of the box.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Auto-generate the ``.md`` sidecar from manifest data. Plain" behavior.
     """
     title = manifest.get("title") or "(untitled snapshot)"
     tool = manifest.get("tool", "(unknown tool)")
@@ -165,7 +216,11 @@ def _generate_description_md(manifest: dict) -> str:
 
 def _sidecar_paths(bundle_path: Path) -> tuple[Path, Path]:
     """Return ``(manifest_sidecar, description_sidecar)`` paths derived
-    from a bundle path."""
+    from a bundle path.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Return ``(manifest_sidecar, description_sidecar)`` paths derived" behavior.
+    """
     basename = bundle_path.name[: -len(BUNDLE_SUFFIX)]
     return (
         bundle_path.with_name(f"{basename}{MANIFEST_SIDECAR_SUFFIX}"),
@@ -177,6 +232,14 @@ def _ensure_sidecar(bundle_path: Path) -> dict | None:
     """Ensure a sidecar manifest exists for ``bundle_path``, extracting
     from the zip if it's missing. Returns the manifest dict or ``None``
     if the bundle is corrupt / unreadable.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Ensure a sidecar manifest exists for ``bundle_path``, extracting" behavior.
     """
     manifest_sidecar, _ = _sidecar_paths(bundle_path)
     if manifest_sidecar.exists():
@@ -200,6 +263,14 @@ def _list_user_snapshots(user_id: str, tool_filter: str | None) -> list[dict]:
 
     Lazy-extracts a sidecar from the zip when missing. Filters by
     ``tool_filter`` (matching ``manifest.tool``) when supplied.
+
+    Steps:
+    - Normalize caller input into the representation this module expects.
+    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
+    - Return the compact value the caller uses for artifacts, validation, or response shaping.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Walk the user's snapshots folder and return ``[{filename, manifest}, ...]``" behavior.
     """
     folder = get_user_snapshots_folder(user_id)
     items: list[dict] = []
@@ -231,7 +302,16 @@ async def list_snapshots(
     tool: str | None = None,
     user: dict = Depends(get_current_user),
 ):
-    """List snapshots for the current user, optionally filtered by tool."""
+    """List snapshots for the current user, optionally filtered by tool.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET / route because they need this unit's "List snapshots for the current user, optionally filtered by tool" behavior.
+    """
     return {"items": _list_user_snapshots(user["id"], tool)}
 
 
@@ -246,6 +326,14 @@ async def upload_snapshot(
     Validates the filename, extracts the internal ``manifest.json`` to
     write the sidecar, auto-generates the ``.md`` description. Rejects
     409 on collision (the frontend pre-checks; this is defence-in-depth).
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI POST / route because they need this unit's "Store a bundle uploaded from the frontend" behavior.
     """
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
@@ -297,7 +385,16 @@ async def download_snapshot(
     filename: str,
     user: dict = Depends(get_current_user),
 ) -> FileResponse:
-    """Stream a bundle's bytes back as ``application/zip``."""
+    """Stream a bundle's bytes back as ``application/zip``.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /{filename} route because they need this unit's "Stream a bundle's bytes back as ``application/zip``" behavior.
+    """
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
     if not bundle_path.exists():
@@ -317,6 +414,14 @@ async def get_snapshot_description(
     """Return the ``.md`` sidecar content. Regenerates from manifest
     if the sidecar is missing — never returns 404 for a present
     bundle.
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI GET /{filename}/description route because they need this unit's "Return the ``.md`` sidecar content. Regenerates from manifest" behavior.
     """
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
@@ -345,6 +450,9 @@ def _delete_bundle_with_sidecars(bundle_path: Path) -> None:
     """Remove the bundle plus both sidecar files. Best-effort on
     sidecars — if a sidecar is already absent the delete is a no-op
     rather than an error.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need this unit's "Remove the bundle plus both sidecar files. Best-effort on" behavior.
     """
     manifest_sidecar, description_sidecar = _sidecar_paths(bundle_path)
     bundle_path.unlink(missing_ok=True)
@@ -357,7 +465,16 @@ async def delete_snapshot(
     filename: str,
     user: dict = Depends(get_current_user),
 ):
-    """Remove one snapshot (bundle + both sidecars)."""
+    """Remove one snapshot (bundle + both sidecars).
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE /{filename} route because they need this unit's "Remove one snapshot (bundle + both sidecars)" behavior.
+    """
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
     if not bundle_path.exists():
@@ -375,6 +492,14 @@ async def batch_delete_snapshots(
     """Batch delete. Without ``incompatible_with``, removes every
     snapshot for ``tool``. With it, removes only those whose
     ``manifest.tool_version`` is incompatible (MAJOR.MINOR mismatch).
+
+    Flow:
+    - Resolve authentication and request parameters from FastAPI dependencies.
+    - Delegate validation, manager calls, artifacts, or state changes to the owning helper.
+    - Shape the response payload or raise the HTTP error the client should see.
+
+    Used by:
+    - Frontend and API clients through the FastAPI DELETE / route because they need this unit's "Batch delete. Without ``incompatible_with``, removes every" behavior.
     """
     items = _list_user_snapshots(user["id"], tool)
     snapshots_dir = get_user_snapshots_folder(user["id"])

@@ -1,11 +1,17 @@
-"""
-Command-line interface for LDaCA Web App.
+"""Command-line interface for LDaCA Web App.
 
 Usage:
     uvx ldaca-wordflow                  # Launch full app (backend + frontend)
     uvx ldaca-wordflow --backend        # Launch backend only
     uvx ldaca-wordflow --frontend       # Launch frontend only (requires built assets)
     uvx ldaca-wordflow --port 9000      # Custom port
+
+Used by:
+- Backend package imports, application startup, and backend tests because tests need the
+  same observable contract that production routes and workers rely on.
+
+Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+    return serialized values or existing domain errors to callers.
 """
 
 import atexit
@@ -17,6 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_args(argv: list[str] | None = None):
+    """Support command-line server startup with a parse args helper.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
+
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -59,10 +75,26 @@ def _parse_args(argv: list[str] | None = None):
 
 
 def _setup_signal_handlers() -> None:
-    """Register signal handlers and atexit hooks for graceful CLI shutdown."""
+    """Register signal handlers and atexit hooks for graceful CLI shutdown.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
 
     def _cleanup_child_processes() -> None:
-        """Terminate child processes during shutdown (Tauri/packaged desktop)."""
+        """Terminate child processes during shutdown (Tauri/packaged desktop).
+
+        Called by:
+        - The `_setup_signal_handlers` local workflow in this module because the local shared
+          backend behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
         try:
             import os
 
@@ -90,6 +122,16 @@ def _setup_signal_handlers() -> None:
             logger.warning("Error during child process cleanup: %s", e)
 
     def _signal_handler(signum, _frame):
+        """Support command-line server startup with a signal handler helper.
+
+        Called by:
+        - The `_setup_signal_handlers` local workflow in this module because the local shared
+          backend behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         logger.info("Received signal %s, shutting down gracefully...", signum)
         _cleanup_child_processes()
         sys.exit(0)
@@ -103,11 +145,29 @@ def _setup_signal_handlers() -> None:
 
 
 def _open_browser_after_delay(port: int, delay: float = 1.5) -> None:
-    """Open the user's browser after a short delay (non-blocking)."""
+    """Open the user's browser after a short delay (non-blocking).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     import threading
     import webbrowser
 
     def _open():
+        """Support command-line server startup with an open helper.
+
+        Called by:
+        - The `_open_browser_after_delay` local workflow in this module because the local shared
+          backend behavior flow needs this step kept close to the code that consumes it.
+
+        Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+            return serialized values or existing domain errors to callers.
+        """
+
         import time
 
         time.sleep(delay)
@@ -117,7 +177,17 @@ def _open_browser_after_delay(port: int, delay: float = 1.5) -> None:
 
 
 def main(argv: list[str] | None = None):
-    """CLI entry point dispatching to backend, frontend, or both."""
+    """CLI entry point dispatching to backend, frontend, or both.
+
+    Used by:
+    - FastAPI application startup, backend API routes, backend package imports, backend
+      tests, core workspace and worker services, local helpers in this module because they
+      need a backend boundary that validates inputs before delegating to workspace or worker
+      state.
+
+    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
+        return serialized values or existing domain errors to callers.
+    """
     args = _parse_args(argv)
 
     # Set env vars BEFORE any imports that trigger settings initialization

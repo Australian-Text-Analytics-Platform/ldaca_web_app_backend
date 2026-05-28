@@ -2,6 +2,15 @@
 
 Wraps the GenderGapTracker QuoteExtractor to provide a Polars-compatible
 interface matching the output format expected by quotation_core.py.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize source text, run local or remote quotation extraction, preserve
+    source-row mappings, and return grouped quotation artifacts for later
+    materialization.
 """
 
 from __future__ import annotations
@@ -38,7 +47,16 @@ QUOTATION_GROUP_COLUMN = "quotation"
 
 
 def _ensure_stubs():
-    """Install the minimal bson stub required by quote_extractor.py."""
+    """Install the minimal bson stub required by quote_extractor.py.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     if "bson" not in sys.modules:
         sys.modules["bson"] = types.ModuleType("bson")
     bson = sys.modules["bson"]
@@ -47,7 +65,16 @@ def _ensure_stubs():
 
 
 def _load_module(module_name: str, file_path: Path):
-    """Load a vendored Python module from an explicit file path."""
+    """Load a vendored Python module from an explicit file path.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     if module_name in sys.modules:
         return sys.modules[module_name]
 
@@ -67,6 +94,14 @@ def _install_quote_extractor_utils_stub():
     The original module creates a file logger at import time. We only need a
     quiet in-memory logger because the backend uses `QuoteExtractor.extract_quotes`
     directly and does not call the script entrypoints.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     if "utils" in sys.modules:
         return
@@ -74,6 +109,18 @@ def _install_quote_extractor_utils_stub():
     stub = types.ModuleType("utils")
 
     def create_logger(*_args, **_kwargs):
+        """Support quotation extraction logging with a create logger helper.
+
+        Called by:
+        - The `_install_quote_extractor_utils_stub` local workflow in this module because the
+          local quotation extraction normalization flow needs this step kept close to the code
+          that consumes it.
+
+        Flow: normalize source text, run local or remote quotation extraction, preserve
+            source-row mappings, and return grouped quotation artifacts for later
+            materialization.
+        """
+
         logger = logging.getLogger("ldaca_wordflow.quotation_tool")
         if not logger.handlers:
             logger.addHandler(logging.NullHandler())
@@ -84,17 +131,44 @@ def _install_quote_extractor_utils_stub():
 
 
 def _get_cached_spacy_model_dir() -> Path:
-    """Return the local cache directory for the quotation spaCy model."""
+    """Return the local cache directory for the quotation spaCy model.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     return _SPACY_MODEL_CACHE_ROOT / _SPACY_MODEL
 
 
 def _is_missing_spacy_model_error(exc: OSError) -> bool:
-    """Return true when spaCy failed because the model package is absent."""
+    """Return true when spaCy failed because the model package is absent.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     return "[E050]" in str(exc) and _SPACY_MODEL in str(exc)
 
 
 def _find_spacy_data_dir(root: Path) -> Path:
-    """Locate the extracted pipeline data directory inside a model archive."""
+    """Locate the extracted pipeline data directory inside a model archive.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     candidates = sorted(
         path
         for path in root.rglob("config.cfg")
@@ -110,7 +184,16 @@ def _find_spacy_data_dir(root: Path) -> Path:
 
 
 def _safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
-    """Extract a tar archive while rejecting paths outside the destination."""
+    """Extract a tar archive while rejecting paths outside the destination.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     destination = destination.resolve()
     for member in archive.getmembers():
         member_path = (destination / member.name).resolve()
@@ -120,7 +203,16 @@ def _safe_extract_tar(archive: tarfile.TarFile, destination: Path) -> None:
 
 
 def _download_spacy_model_to_cache() -> Path:
-    """Download a compatible spaCy pipeline archive into the local cache."""
+    """Download a compatible spaCy pipeline archive into the local cache.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     from spacy import about
     from spacy.cli.download import get_compatibility, get_model_filename, get_version
 
@@ -167,7 +259,16 @@ def _download_spacy_model_to_cache() -> Path:
 
 
 def _load_spacy_model():
-    """Load the quotation spaCy model from cache or download it on first use."""
+    """Load the quotation spaCy model from cache or download it on first use.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     import spacy
 
     cached_dir = _get_cached_spacy_model_dir()
@@ -185,7 +286,16 @@ def _load_spacy_model():
 
 
 def _get_extractor():
-    """Lazy-load spaCy model and QuoteExtractor (expensive, cached)."""
+    """Lazy-load spaCy model and QuoteExtractor (expensive, cached).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     global _nlp_model, _extractor
 
     if _extractor is not None:
@@ -217,7 +327,16 @@ _INDEX_RE = re.compile(r"\((\d+),(\d+)\)")
 
 
 def _remove_accents(txt: str) -> str:
-    """Mirror the quotation-tool accent normalization used before parsing."""
+    """Mirror the quotation-tool accent normalization used before parsing.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     txt = re.sub("[àáâãäåā]", "a", txt)
     txt = re.sub("[èéêëē]", "e", txt)
     txt = re.sub("[ìíîïıī]", "i", txt)
@@ -242,7 +361,16 @@ def _remove_accents(txt: str) -> str:
 
 
 def _parse_index(value: str) -> tuple[int | None, int | None]:
-    """Parse '(start,end)' string into (start, end) integers."""
+    """Parse '(start,end)' string into (start, end) integers.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     if not value:
         return None, None
     m = _INDEX_RE.match(value)
@@ -261,6 +389,14 @@ def _translate_span(
     `mapping[i]` holds the original-text index corresponding to preprocessed
     position `i`, with `mapping` having length `len(preprocessed) + 1` so that
     the exclusive end offset can be resolved at `mapping[end]`.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     if start is None or end is None:
         return start, end
@@ -282,6 +418,14 @@ def _normalize_quote(
     Indices from the extractor refer to the preprocessed text; `mapping`
     translates them back into original-text offsets so downstream callers can
     slice the untouched source string.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     speaker_start, speaker_end = _translate_span(
         *_parse_index(raw.get("speaker_index", "")), mapping
@@ -331,6 +475,14 @@ def _apply_replace_with_mapping(
 
     `mapping[i]` is the original-text index associated with `chars[i]`, with a
     trailing sentinel at position `len(chars)` giving the original end offset.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     out_chars: list[str] = []
     out_map: list[int] = []
@@ -364,6 +516,14 @@ def _preprocess_with_mapping(txt: str) -> tuple[str, list[int]]:
     Returns the preprocessed text and a mapping list of length
     `len(preprocessed) + 1` where entry `i` is the original-text index
     corresponding to preprocessed position `i`.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     length_preserving = txt.replace("\xa0", " ")
     length_preserving = _remove_accents(length_preserving)
@@ -386,13 +546,31 @@ def _preprocess_with_mapping(txt: str) -> tuple[str, list[int]]:
 
 
 def _preprocess_text(txt: str) -> str:
-    """Apply the subset of quotation-tool preprocessing needed for extraction."""
+    """Apply the subset of quotation-tool preprocessing needed for extraction.
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     preprocessed, _ = _preprocess_with_mapping(txt)
     return preprocessed
 
 
 def extract_quotations_for_texts(texts: list[str]) -> list[list[dict[str, Any]]]:
-    """Extract quotations from a list of texts using the vendored QuoteExtractor."""
+    """Extract quotations from a list of texts using the vendored QuoteExtractor.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     extractor = _get_extractor()
     nlp = extractor.nlp
     results: list[list[dict[str, Any]]] = []
@@ -415,7 +593,16 @@ def extract_quotations_for_texts(texts: list[str]) -> list[list[dict[str, Any]]]
 
 def quotation_groups_for_dataframe(df: pl.DataFrame, column: str) -> pl.DataFrame:
     """Extract quotations and attach as a grouped list column, matching the
-    format previously produced by polars-text pt.quotation()."""
+    format previously produced by polars-text pt.quotation().
+
+    Used by:
+    - backend API routes, backend tests because they need a backend boundary that validates
+      inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     texts = df.get_column(column).to_list()
     texts = [str(t) if t is not None else "" for t in texts]
 

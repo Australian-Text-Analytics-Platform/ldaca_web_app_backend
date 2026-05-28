@@ -1,4 +1,14 @@
-"""Worker implementations for quotation background tasks."""
+"""Worker implementations for quotation background tasks.
+
+Used by:
+- Backend API routes, worker tasks, workspace services, and backend tests because they
+  need a backend boundary that validates inputs before delegating to workspace or worker
+  state.
+
+Flow: normalize source text, run local or remote quotation extraction, preserve
+    source-row mappings, and return grouped quotation artifacts for later
+    materialization.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +32,16 @@ def _build_quotation_occurrence_dataframe(
     extra_columns_data: dict[str, list] | None,
     extra_columns_dtypes: dict[str, Any] | None = None,
 ):
-    """Extract quotation occurrences from a corpus. Returns (df, output_columns)."""
+    """Extract quotation occurrences from a corpus. Returns (df, output_columns).
+
+    Called by:
+    - Local helpers, route handlers, or service methods in this module because they need a
+      backend boundary that validates inputs before delegating to workspace or worker state.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     import polars as pl
 
     from ldaca_wordflow.api.workspaces.analyses.quotation_core import (
@@ -103,6 +122,14 @@ def run_quotation_detach_task(
 
     Fast path: when `materialized_path` points to an existing parquet, wrap it
     directly as the detached node without re-extracting quotations.
+
+    Used by:
+    - backend tests, core workspace and worker services because tests need the same
+      observable contract that production routes and workers rely on.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
     """
     configure_worker_environment()
 
@@ -249,7 +276,16 @@ def run_quotation_materialize_task(
     extra_columns_dtypes: dict[str, Any] | None = None,
     progress_callback: Callable[[float, str], None] | None = None,
 ) -> dict[str, Any]:
-    """Run full quotation extraction and persist the flattened parquet."""
+    """Run full quotation extraction and persist the flattened parquet.
+
+    Used by:
+    - core workspace and worker services because background jobs need one lifecycle owner
+      for submission, progress, cancellation, and artifact cleanup.
+
+    Flow: normalize source text, run local or remote quotation extraction, preserve
+        source-row mappings, and return grouped quotation artifacts for later
+        materialization.
+    """
     configure_worker_environment()
 
     try:

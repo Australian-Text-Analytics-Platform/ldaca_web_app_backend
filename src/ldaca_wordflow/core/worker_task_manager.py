@@ -1,8 +1,18 @@
-"""
-Worker-based Task Manager for managing background jobs using ProcessPoolExecutor.
+"""Per-user worker task orchestration for long-running workspace jobs.
 
-This replaces the original thread-based TaskManager with a more robust solution
-that uses separate processes for heavy computational tasks.
+Used by:
+- ``workspace_manager.get_task_manager`` to lazily allocate one manager per user because
+  task state, progress queues, and subscribers must not leak across user workspaces.
+- workspace, file, and analysis API routes that submit/cancel/clear worker jobs because
+  those routes need a shared lifecycle owner for processes that outlive the
+  request/response cycle.
+- ``api.tasks`` to list tasks and stream task lifecycle events to the frontend because
+  the Task Center needs one API-visible source of truth for active and historical
+  background work.
+
+Flow: register submitted work with metadata, feed progress queues from worker processes,
+    emit bounded SSE events, reconcile futures into ``TaskInfo`` records, cancel or
+    clear task trees on demand, and clean up artifacts after terminal states.
 """
 
 import asyncio
@@ -27,6 +37,17 @@ logger = logging.getLogger(__name__)
 
 
 def _is_terminal_task_event(event: dict[str, Any]) -> bool:
+    """Identify final task-change events so ``emit`` preserves them for SSE clients.
+
+    Called by:
+    - ``WorkerTaskManager.emit`` because final task states should displace stale queued
+      updates before a bounded SSE queue drops them.
+
+    Flow: accept only ``task_changed`` events, confirm the payload is a task dictionary,
+        normalize its state, and return true for the three terminal states the frontend must
+        not miss.
+    """
+
     if event.get("type") != "task_changed":
         return False
     task = event.get("task")
@@ -44,6 +65,17 @@ ANALYSIS_TASK_TYPES = {
 
 
 class TaskStatus(str, Enum):
+    """Canonical worker task states serialized by ``TaskInfo`` and task APIs.
+
+    Used by:
+    - ``TaskInfo`` and task response serializers because every worker lifecycle transition
+      needs stable string values for API clients, tests, and SSE payloads.
+
+    Flow: expose the only accepted pending, running, successful, failed, and cancelled
+        labels so routes and frontend code do not infer state names from worker
+        implementation details.
+    """
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCESSFUL = "successful"
@@ -53,6 +85,19 @@ class TaskStatus(str, Enum):
 
 @dataclass
 class TaskInfo:
+    """Runtime worker task record consumed by ``WorkerTaskManager`` and task endpoints.
+
+    Used by:
+    - ``WorkerTaskManager`` because it needs to keep the worker ``Future`` together with
+      API-facing metadata, progress, timestamps, parent-child links, and worker process IDs.
+    - ``api.tasks`` and tests because list/clear/cancel endpoints serialize this record to
+      explain task state to the frontend and assert lifecycle behavior.
+
+    Flow: store immutable task identity plus mutable runtime fields, let the manager update
+        progress and worker PID as messages arrive, and let ``update_status`` reconcile the
+        future into terminal API state.
+    """
+
     id: str
     future: Future
     created_at: float = field(default_factory=time.time)
@@ -71,7 +116,16 @@ class TaskInfo:
     worker_pid: int | None = None  # PID of the worker process, set once known
 
     def update_status(self):
-        """Update status based on future state."""
+        """Refresh API-visible state from the underlying worker ``Future``.
+
+        Called by:
+        - task listing and lifecycle code before returning ``TaskInfo`` to callers because the
+          stored record can lag behind the worker ``Future`` between progress messages.
+
+        Flow: mark cancelled futures as cancelled, resolve completed futures into success with
+            result/progress or failure with an error message, and mark unfinished futures
+            running while recording the first start timestamp.
+        """
         if self.future.cancelled():
             self.status = TaskStatus.CANCELLED
             if not self.finished_at:
@@ -97,9 +151,36 @@ class TaskInfo:
 
 
 class WorkerTaskManager:
-    """Task manager that uses ProcessPoolExecutor for background jobs."""
+    """Owns worker ``Future`` records for one user's workspace operations.
+
+    Used by:
+    - ``WorkspaceManager.get_task_manager`` as the per-user worker manager factory because
+      each authenticated user needs isolated task records and event subscribers.
+    - ``api.files`` and workspace lifecycle routes for imports/downloads because large file
+      operations must keep progressing after the HTTP request starts.
+    - analysis routes for topic modeling, concordance, quotation, and token frequency jobs
+      because CPU-heavy work runs in the worker pool and reports back through this manager.
+    - ``api.tasks`` for list/clear/cancel/SSE task-center operations because the frontend
+      Task Center needs one lifecycle controller for every background task it displays.
+
+    Flow: maintain task records under an async lock, allocate multiprocessing progress
+        queues, submit named worker functions, monitor progress and future completion, fan
+        out task events to bounded subscriber queues, and cancel or clear individual tasks
+        and task trees when routes request cleanup.
+    """
 
     def __init__(self):
+        """Initialize per-user task, progress, and subscriber stores.
+
+        Called by:
+        - ``WorkspaceManager.get_task_manager`` and backend tests because they need a fresh
+          manager with isolated in-memory task state for one user/test scenario.
+
+        Flow: create the task/progress dictionaries, async locks, multiprocessing manager-backed
+            progress queue registry, and per-user SSE subscriber sets that later methods mutate
+            during task lifecycles.
+        """
+
         self._tasks: dict[str, TaskInfo] = {}
         self._lock = asyncio.Lock()
         self._progress_store: dict[str, dict[str, Any]] = {}  # task_id -> progress info
@@ -115,7 +196,16 @@ class WorkerTaskManager:
     async def subscribe(
         self, user_id: str, workspace_id: str | None = None
     ) -> asyncio.Queue:
-        """Subscribe to events for a specific user channel."""
+        """Create the queue consumed by ``api.tasks.stream_tasks`` for SSE updates.
+
+        Called by:
+        - ``api.tasks.stream_tasks`` because each browser connection needs a bounded queue where
+          task events can wait until the SSE generator writes them.
+
+        Flow: allocate a bounded queue, register it under the user key while holding the
+            subscriber lock, create the subscriber set if needed, and return the queue for the
+            streaming route to read.
+        """
         queue = asyncio.Queue(maxsize=100)  # Bounded to prevent memory leaks
         key = user_id
 
@@ -130,7 +220,16 @@ class WorkerTaskManager:
     async def unsubscribe(
         self, user_id: str, workspace_id: str | None, queue: asyncio.Queue
     ):
-        """Unsubscribe from events."""
+        """Remove an SSE queue when ``api.tasks.stream_tasks`` disconnects.
+
+        Called by:
+        - ``api.tasks.stream_tasks`` cleanup because disconnected browser streams should stop
+          receiving task events and should not keep queue objects alive.
+
+        Flow: remove the queue from the user's subscriber set under lock, delete the empty set
+            when the last stream disconnects, and return the queue for parity with the subscribe
+            call path.
+        """
         key = user_id
 
         async with self._subscriber_lock:
@@ -143,7 +242,19 @@ class WorkerTaskManager:
         return queue
 
     async def emit(self, user_id: str, workspace_id: str, event: dict[str, Any]):
-        """Emit an event to all subscribers for a user channel."""
+        """Broadcast task/workspace events to Task Center stream subscribers.
+
+        Called by:
+        - submission, completion, stop, and clear paths in this manager because every task
+          lifecycle change must reach open Task Center streams.
+        - ``api.tasks.clear_tasks`` when an analysis-only task is removed because route-level
+          cleanup still needs to notify frontend state stores.
+
+        Flow: find the user's subscriber queues, classify terminal task events, enqueue the
+            event without blocking, replace one stale queued event for terminal states when
+            possible, drop only overflowed non-terminal updates, and prune queues that can no
+            longer accept events.
+        """
         key = user_id
 
         async with self._subscriber_lock:
@@ -192,7 +303,17 @@ class WorkerTaskManager:
                 del self._subscribers[key]
 
     def _serialize_task(self, task_info: TaskInfo) -> dict[str, Any]:
-        """Serialize task info for events."""
+        """Shape ``TaskInfo`` records for ``api.tasks`` responses and SSE payloads.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         return {
             "task_id": task_info.id,
             "task_type": task_info.task_type,
@@ -210,11 +331,32 @@ class WorkerTaskManager:
         }
 
     def _task_tree_ids_locked(self, task_id: str) -> builtins.list[str]:
-        """Return descendant task ids followed by the requested task id."""
+        """Return child worker IDs for clear paths while the task lock is held.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         ordered: builtins.list[str] = []
         visited: set[str] = set()
 
         def visit(parent_id: str) -> None:
+            """Walk nested materialize/detach children before their parent is cleared.
+
+            Called by:
+            - The `_task_tree_ids_locked` local workflow in this module because background jobs need
+              one lifecycle owner for submission, progress, cancellation, and artifact cleanup.
+
+            Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+                subscriber events, and clean up queues or artifacts when a task reaches a terminal
+                state.
+            """
+
             for child_id, child in list(self._tasks.items()):
                 if child.parent_task_id != parent_id or child_id in visited:
                     continue
@@ -228,13 +370,35 @@ class WorkerTaskManager:
         return ordered
 
     async def get_descendant_task_ids(self, task_id: str) -> builtins.list[str]:
-        """Return worker task descendants for *task_id* without removing them."""
+        """List child worker IDs used by task-clear endpoints before deletion.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         async with self._lock:
             return [
                 tid for tid in self._task_tree_ids_locked(task_id) if tid != task_id
             ]
 
     def _cleanup_progress_queue(self, task_id: str) -> None:
+        """Close the multiprocessing progress queue owned by a submitted task.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
+
         progress_queue = self._task_progress_queues.pop(task_id, None)
         if progress_queue is None:
             return
@@ -252,6 +416,17 @@ class WorkerTaskManager:
         workspace_id: str,
         progress_queue: Any,
     ) -> None:
+        """Mirror worker progress messages into task state and SSE events.
+
+        Used by:
+        - ``submit_task`` background monitor for every worker job because background jobs need
+          one lifecycle owner for submission, progress, cancellation, and artifact cleanup.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
+
         try:
             while True:
                 if task_info.future.done():
@@ -347,6 +522,15 @@ class WorkerTaskManager:
         correct final progress values on the task; we mirror them into the
         progress store so follow-up SSE clients see a consistent view.
         For running tasks we read back the latest worker-reported progress.
+
+        Called by:
+        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+          they need a backend boundary that validates inputs before delegating to workspace or
+          worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         task_info.update_status()
         task_id = task_info.id
@@ -380,11 +564,15 @@ class WorkerTaskManager:
         """Monitor worker completion and persist/emit final task state.
 
         Used by:
-        - `submit_task` background completion monitor
-
+        - `submit_task` background completion monitor because background jobs need one lifecycle
+          owner for submission, progress, cancellation, and artifact cleanup.
         Why:
         - Centralizes completion side effects (analysis persistence, workspace
           updates, and event emission) in one lifecycle path.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         result_persisted = False
 
@@ -784,10 +972,15 @@ class WorkerTaskManager:
         """Persist worker analysis output into analysis task storage.
 
         Used by:
-        - `_monitor_task_completion` for analysis task types
-
+        - ``_monitor_task_completion`` for topic modeling, concordance, and token-frequency
+          worker completions because background jobs need one lifecycle owner for submission,
+          progress, cancellation, and artifact cleanup.
         Why:
         - Keeps worker-result serialization synchronized with TaskManager records.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         try:
             from ..analysis.manager import get_task_manager
@@ -822,10 +1015,19 @@ class WorkerTaskManager:
         """Submit a worker task, register tracking, and start monitors.
 
         Used by:
-        - analysis and detach API routes through `workspace_manager.get_task_manager`
-
+        - ``api.files`` for LDaCA downloads/imports because they need a backend boundary that
+          validates inputs before delegating to workspace or worker state.
+        - workspace lifecycle routes for workspace import jobs because they need a backend
+          boundary that validates inputs before delegating to workspace or worker state.
+        - analysis routes for analysis, materialize, detach, and tokenization jobs because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
         Why:
         - Provides a single task lifecycle entry point with event emission.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
 
         if task_type not in TASK_REGISTRY:
@@ -913,9 +1115,11 @@ class WorkerTaskManager:
     async def stop_task(self, task_id: str) -> bool:
         """Stop a running task, mark it cancelled, and keep the record for user dismissal.
 
-        Unlike ``clear_task``, the task record is *not* removed so the UI can
-        display the cancelled state until the user explicitly clears it.
-
+        Used by:
+        - ``api.tasks.cancel_task`` when the frontend Task Center cancels a job. Unlike
+          ``clear_task``, the task record is *not* removed so the UI can display the cancelled
+          state until the user explicitly clears it because they need a stable JSON contract
+          shared by route handlers, generated clients, and tests.
         Strategy:
         - For tasks not yet picked up by a worker: ``future.cancel()`` works and
           the future is marked cancelled immediately.
@@ -924,6 +1128,10 @@ class WorkerTaskManager:
           belt-and-braces measure.  The worker process will exit, causing the
           future to raise ``BrokenProcessPool``; ``_monitor_task_completion``
           detects the pre-set CANCELLED status and does not override it.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         async with self._lock:
             task_info = self._tasks.get(task_id)
@@ -973,56 +1181,20 @@ class WorkerTaskManager:
         )
         return True
 
-    async def cancel_task(self, task_id: str) -> bool:
-        """Cancel a task by its ID."""
-        async with self._lock:
-            task_info = self._tasks.get(task_id)
-            if not task_info:
-                return False
-
-            if task_info.future.done():
-                return False
-
-            success = task_info.future.cancel()
-            if success:
-                task_info.update_status()
-            return success
-
-    async def cancel_all(
-        self,
-        *,
-        task_type: str | None = None,
-        user_id: str | None = None,
-        workspace_id: str | None = None,
-    ) -> int:
-        """Cancel all tasks matching the given filters."""
-        count = 0
-        async with self._lock:
-            for task_info in list(self._tasks.values()):
-                # Apply filters
-                if task_type and task_info.task_type != task_type:
-                    continue
-                if user_id and task_info.user_id != user_id:
-                    continue
-                if workspace_id and task_info.workspace_id != workspace_id:
-                    continue
-
-                if not task_info.future.done():
-                    if task_info.future.cancel():
-                        task_info.update_status()
-                        count += 1
-        return count
-
     async def list(
         self, *, user_id: str | None = None, workspace_id: str | None = None
     ) -> builtins.list[dict[str, Any]]:
         """List tasks with normalized progress fields for API consumption.
 
         Used by:
-        - task listing/status API endpoints
-
+        - ``api.tasks.list_tasks`` for the frontend Task Center list because they need a stable
+          JSON contract shared by route handlers, generated clients, and tests.
         Why:
         - Keeps UI state queries independent of raw `Future` internals.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         async with self._lock:
             out: builtins.list[dict[str, Any]] = []
@@ -1044,7 +1216,17 @@ class WorkerTaskManager:
         user_id: str | None = None,
         workspace_id: str | None = None,
     ) -> bool:
-        """Check if any tasks are running, optionally filtered."""
+        """Gate duplicate analysis submissions for routes that reuse in-flight jobs.
+
+        Used by:
+        - topic modeling and token-frequency submit routes before starting a job because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         async with self._lock:
             for task_info in self._tasks.values():
                 # Apply filters
@@ -1067,7 +1249,17 @@ class WorkerTaskManager:
         user_id: str | None = None,
         workspace_id: str | None = None,
     ) -> TaskInfo | None:
-        """Get the latest task of a given type, optionally filtered."""
+        """Return the newest matching worker task for duplicate-submit responses.
+
+        Used by:
+        - topic modeling and token-frequency routes after ``any_running`` is true because they
+          need a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         async with self._lock:
             items = []
             for task_info in self._tasks.values():
@@ -1091,11 +1283,15 @@ class WorkerTaskManager:
         """Return one task with current status/progress reconciled.
 
         Used by:
-        - analysis polling endpoints and sync helpers
-
+        - analysis polling endpoints and sync helpers because they need a backend boundary that
+          validates inputs before delegating to workspace or worker state.
         Why:
         - Ensures callers receive up-to-date state derived from future + progress
             store data.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
         """
         async with self._lock:
             task_info = self._tasks.get(task_id)
@@ -1105,7 +1301,17 @@ class WorkerTaskManager:
             return task_info
 
     async def clear_task(self, task_id: str) -> bool:
-        """Clear and remove a specific task record by ID."""
+        """Remove one worker task record and emit ``task_removed``.
+
+        Used by:
+        - analysis clear endpoints that already know the exact worker task ID because they need
+          a backend boundary that validates inputs before delegating to workspace or worker
+          state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         async with self._lock:
             task_info = self._tasks.get(task_id)
             if not task_info:
@@ -1139,7 +1345,17 @@ class WorkerTaskManager:
         return True
 
     async def clear_task_tree(self, task_id: str) -> builtins.list[str]:
-        """Clear a task and any worker tasks registered as its descendants."""
+        """Remove a worker task plus child materialize/detach tasks.
+
+        Used by:
+        - ``api.tasks.clear_tasks`` and analysis cleanup helpers so parent task removal also
+          clears worker-side child artifacts because they need a backend boundary that validates
+          inputs before delegating to workspace or worker state.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         removed_tasks: builtins.list[tuple[str, str, str]] = []
         removed_task_infos: builtins.list[TaskInfo] = []
         async with self._lock:
@@ -1184,7 +1400,18 @@ class WorkerTaskManager:
         user_id: str | None = None,
         workspace_id: str | None = None,
     ) -> int:
-        """Clear and remove task records, optionally filtered."""
+        """Bulk-remove worker tasks for workspace/file cleanup flows.
+
+        Used by:
+        - ``api.files`` when clearing download/import task records because they need a backend
+          boundary that validates inputs before delegating to workspace or worker state.
+        - ``WorkspaceManager`` workspace close/delete paths because background jobs need one
+          lifecycle owner for submission, progress, cancellation, and artifact cleanup.
+
+        Flow: resolve task records under locks, reconcile progress or future state, emit bounded
+            subscriber events, and clean up queues or artifacts when a task reaches a terminal
+            state.
+        """
         removed_tasks: list[tuple[str, str, str]] = []
         removed_task_infos: list[TaskInfo] = []
         async with self._lock:
