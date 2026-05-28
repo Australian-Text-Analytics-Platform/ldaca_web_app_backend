@@ -1,4 +1,4 @@
-"""Phase 4.1: ``UserPreferences`` carries optional ``default_language`` and
+"""``UserPreferences`` carries optional ``default_language`` and
 ``default_tokenizer_model`` so the frontend can persist a per-user choice.
 
 Both fields default to ``None`` (no preference) so existing users see no

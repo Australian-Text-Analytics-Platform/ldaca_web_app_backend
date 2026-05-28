@@ -1,4 +1,4 @@
-"""Phase 4.7 follow-up: materialize honours search_mode end-to-end.
+"""Materialize honours search_mode end-to-end.
 
 Before this regression test, ``run_concordance_materialize_task`` only
 walked raw text through the regex engine — so a tokens-mode CJK search

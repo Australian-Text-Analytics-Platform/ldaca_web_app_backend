@@ -1,6 +1,6 @@
-"""Phase 3.1: ``_select_embedder`` routes to a multilingual model when the
-corpus language isn't English. Locks in the routing decision without
-loading the actual model so the test is fast.
+"""``_select_embedder`` routes to a multilingual model when the corpus language isn't English.
+
+Locks in the routing decision without loading the actual model so the test is fast.
 """
 
 from __future__ import annotations

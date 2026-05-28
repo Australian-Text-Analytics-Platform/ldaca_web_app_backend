@@ -716,9 +716,8 @@ async def import_sample_data(
 ):
     """Import (or re-import) sample data for the current user on demand.
 
-    Phase 1 (synchronous): copies bundled datasets (SCL, ADO/twitter) immediately.
-    Phase 2 (background): downloads any missing or updated remote datasets
-    if SAMPLE_DATA_REMOTE_URL is configured.
+    Copies bundled datasets (SCL, ADO/twitter) immediately, then downloads any
+    missing or updated remote datasets if SAMPLE_DATA_REMOTE_URL is configured.
 
     If request.collection_ids is non-empty, only those collections are downloaded
     remotely. An empty list means "download all non-bundled collections" (default).

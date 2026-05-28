@@ -1,5 +1,4 @@
-"""Phase 3 foundation: ``effective_language`` resolves the language a
-tool should use, with a stable precedence:
+"""``effective_language`` resolves the language a tool should use, with a stable precedence:
 
 1. Explicit ``request_language`` wins,
 2. else first non-empty language on tokenization metadata,

@@ -1,4 +1,4 @@
-"""Phase 3.6: quotation routes reject non-English with a typed payload.
+"""Quotation routes reject non-English with a typed payload.
 
 Calls the route handlers directly to keep tests fast (no FastAPI client),
 and asserts the language gate fires BEFORE any spaCy / vendored extractor

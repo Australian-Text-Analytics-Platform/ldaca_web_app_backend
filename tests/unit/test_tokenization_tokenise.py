@@ -188,8 +188,7 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
     ),
 )
 def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
-    """Phase 1.9 + 2.3: lindera:jieba backend is reachable through tokenise_column
-    and produces word-level (multi-char) Chinese segmentation."""
+    """lindera:jieba is reachable through tokenise_column and produces word-level tokens."""
     df = pl.DataFrame({"text": ["今天天气很好"]}).lazy()
     node = Node(data=df, name="zh_root")
 

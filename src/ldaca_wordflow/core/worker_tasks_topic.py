@@ -22,12 +22,12 @@ logger = logging.getLogger(__name__)
 _EMBEDDER_CACHE: dict[tuple[str, str], Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 
-# Phase 3.1: language → (repo_id, revision) for the topic-modeling embedder.
-# English keeps the pinned MiniLM-L6 the topic-modeling team has been
+# Language → (repo_id, revision) for the topic-modeling embedder. English keeps
+# the pinned MiniLM-L6 the topic-modeling team has been
 # validating against (existing flows are byte-identical when language
 # resolves to "en"). Anything else routes to the multilingual MiniLM-L12,
-# which is same 384-dim embedding space, ~110 MB ONNX, 50+ languages
-# including ZH / JA / KO / ES / FR / DE per decision 3.
+# which is same 384-dim embedding space, ~110 MB ONNX, and covers 50+
+# languages including ZH / JA / KO / ES / FR / DE.
 #
 # Revision pinning for the multilingual model is deferred until the ZH
 # workflow is validated end-to-end. ``scripts/check_model_updates.py``
@@ -1008,7 +1008,7 @@ def _embed_with_cache(
     """Encode docs using the embedder, reading from / writing to disk cache.
 
     When cache_dir is None the cache is bypassed and all docs are encoded
-    directly (preserves the pre-Phase-2 behaviour for callers that don't
+    directly (preserves the previous behaviour for callers that don't
     pass a cache dir).
 
     ``cache_model_id`` keys the on-disk cache so two different embedders

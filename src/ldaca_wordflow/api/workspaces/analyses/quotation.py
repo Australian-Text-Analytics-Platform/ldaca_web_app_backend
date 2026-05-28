@@ -58,8 +58,8 @@ CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
 # cleanly across tools.
 SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000
 
-# Phase 3.6: quotation extractor is English-only. Vendored GenderGapTracker
-# rules / spaCy model only work for English; running them on other
+# Quotation extractor is English-only. Vendored GenderGapTracker rules / spaCy
+# model only work for English; running them on other
 # languages produces garbage rather than a useful refusal. Frontend shows
 # a disabled-with-tooltip control, but the API still gates so curl users
 # / future clients can't bypass it.

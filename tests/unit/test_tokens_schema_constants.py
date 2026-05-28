@@ -7,9 +7,8 @@ Asserts:
 - ``is_tokenization_column`` reads from ``Node.tokenization``, not from a
     fixed magic column name.
 
-These are the contracts every Phase 2 consumer (concordance tokens-mode,
-token-frequency tokens-path, future POS) relies on, so any drift between
-Rust and Python schemas — or between the naming helper and its consumers
+These are the contracts every tokenization consumer relies on, so any drift
+between Rust and Python schemas — or between the naming helper and its consumers
 — must fail loudly here.
 """
 

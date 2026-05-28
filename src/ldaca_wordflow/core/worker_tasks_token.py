@@ -120,8 +120,8 @@ def run_token_frequencies_task(
         stats_df = None
         for node_id in node_ids:
             if node_id in token_streams:
-                # Phase 5 perf path: the API endpoint spilled one row per
-                # token (post-explode, post-null-filter) to a parquet via
+                # The API endpoint spilled one row per token (post-explode,
+                # post-null-filter) to a parquet via
                 # ``sink_parquet`` so we count in Polars without
                 # round-tripping through Python objects. The endpoint
                 # guarantees the column name is ``token``.

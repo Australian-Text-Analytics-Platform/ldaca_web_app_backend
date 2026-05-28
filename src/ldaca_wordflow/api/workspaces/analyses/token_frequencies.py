@@ -514,8 +514,8 @@ async def calculate_token_frequencies(
                 source_column=column_name,
                 user_id=user_id,
             )
-            # Phase 5 perf fix: spill the explode-flattened tokens to a
-            # parquet via streaming sink instead of materialising a
+            # Spill the explode-flattened tokens to a parquet via streaming
+            # sink instead of materialising a
             # ``list[list[str]]`` of Python str objects (which for 10 k
             # CJK docs with ~1 k tokens each was ~500 MB of pure PyObject
             # overhead). The worker scans the parquet and computes

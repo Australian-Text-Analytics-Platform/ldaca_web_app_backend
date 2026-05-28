@@ -1,4 +1,4 @@
-"""Language-routing helpers for analysis tools (Phase 3).
+"""Language-routing helpers for analysis tools.
 
 Tools that have per-language behavior (quotation extractor, topic embedder,
 POS tagger, AI annotation prompts) need a single source of truth for "what
@@ -14,10 +14,9 @@ Resolution order is:
 3. Default ``"en"`` so existing English flows are unchanged when nothing
    has been specified anywhere.
 
-Decision 4 + Phase 3.6: quotation extractor is English-only. Other tools
-in Phase 3 should aim for graceful multilingual behaviour rather than
-errors, but the typed exception is here so future English-only paths can
-opt in without inventing their own error type.
+The quotation extractor is English-only. Other tools should aim for graceful
+multilingual behaviour rather than errors, but the typed exception is here so
+future English-only paths can opt in without inventing their own error type.
 """
 
 from __future__ import annotations

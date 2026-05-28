@@ -107,7 +107,7 @@ def test_worker_raw_text_path_requires_tokenizer_model(tmp_path, monkeypatch):
 
 
 def test_worker_uses_node_token_streams_when_provided(tmp_path, monkeypatch):
-    """Phase 5 perf path: the API endpoint spills one row per token to a
+    """The API endpoint spills one row per token to a
     parquet via ``sink_parquet``, then hands the path to the worker.
     Worker scans + group_by.len in Polars — no Python list materialisation.
     """

@@ -1,4 +1,4 @@
-"""Phase 3.7: AI annotation prompt carries a language hint.
+"""AI annotation prompt carries a language hint.
 
 The corpus language is surfaced to the LLM so it doesn't treat CJK
 characters as encoding noise. English flows are byte-identical — the
@@ -10,7 +10,6 @@ from __future__ import annotations
 from ldaca_wordflow.api.workspaces.analyses.ai_annotation_core import (
     _build_system_prompt,
 )
-
 
 CLASSES = [
     {"name": "positive", "description": "Positive sentiment"},
@@ -28,9 +27,7 @@ def test_prompt_omits_language_line_when_unspecified() -> None:
     English-only prompt byte-for-byte (modulo the new optional kwarg).
     """
     baseline = _build_system_prompt(CLASSES, examples=None)
-    with_explicit_none = _build_system_prompt(
-        CLASSES, examples=None, language=None
-    )
+    with_explicit_none = _build_system_prompt(CLASSES, examples=None, language=None)
     assert baseline == with_explicit_none
     assert "Texts to classify are in" not in baseline
 

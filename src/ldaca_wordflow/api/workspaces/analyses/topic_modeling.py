@@ -413,10 +413,10 @@ async def run_topic_modeling(
         artifact_dir, artifact_prefix = _prepare_topic_artifact_target(
             user_id, workspace_id
         )
-        # Phase 3.5: resolve a single effective language for the label-stage
+        # Resolve a single effective language for the label-stage
         # CountVectorizer. Explicit request param wins; otherwise we read
-        # from the first node's tokenization metadata (decision 7). Multi-language
-        # corpora left to the user — the frontend should send "multi" or the
+        # from the first node's tokenization metadata. Multi-language corpora
+        # are left to the user — the frontend should send "multi" or the
         # union language label when mixing nodes.
         first_node = ws.nodes[request.node_ids[0]]
         topic_language = effective_language(request.language, first_node)

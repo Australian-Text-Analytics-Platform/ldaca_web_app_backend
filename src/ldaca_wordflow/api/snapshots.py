@@ -37,13 +37,13 @@ BUNDLE_SUFFIX = ".ldaca-snapshot"
 MANIFEST_SIDECAR_SUFFIX = ".manifest.json"
 DESCRIPTION_SIDECAR_SUFFIX = ".md"
 
-# Same sanitisation rules as the frontend (plan §2.1). The frontend
-# pre-validates; the server check is defence-in-depth.
+# Same sanitisation rules as the frontend. The frontend pre-validates; the
+# server check is defence-in-depth.
 INVALID_FILENAME_CHARS = re.compile(r'[/\\:*?"<>|]')
 MAX_BASENAME_LENGTH = 80
 
-# Compatibility predicate for batch-delete-incompatible. Mirrors the
-# frontend predicate (plan §2.4). MAJOR.MINOR equality; per-tool
+# Compatibility predicate for batch-delete-incompatible. Mirrors the frontend
+# predicate. MAJOR.MINOR equality; per-tool
 # allowlists not implemented server-side yet — the frontend's
 # TOOL_COMPATIBILITY registry is the source of truth there, but the
 # server makes the actual delete call so it independently verifies.

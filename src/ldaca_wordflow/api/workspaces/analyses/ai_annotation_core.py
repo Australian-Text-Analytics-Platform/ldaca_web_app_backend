@@ -36,8 +36,8 @@ def _build_system_prompt(
         f"Categories:\n{class_descriptions}\n\n"
     )
 
-    # Phase 3.7: surface the corpus language so the LLM doesn't mistake CJK
-    # or other non-Latin scripts for noise / encoding errors. Only added for
+    # Surface the corpus language so the LLM doesn't mistake CJK or other
+    # non-Latin scripts for noise / encoding errors. Only added for
     # non-default languages so the existing English prompt is byte-identical.
     if language and language.lower() != DEFAULT_LANGUAGE:
         base += f"Texts to classify are in {language_label(language)}.\n\n"
@@ -152,12 +152,16 @@ async def classify_texts(
             )
 
             for i, (text, cls) in enumerate(zip(batch_texts, classifications)):
-                all_results.append({
-                    "row_index": batch_start + i,
-                    text_column_name: text,
-                    "classification": cls,
-                    "error": None if cls is not None else "No classification returned",
-                })
+                all_results.append(
+                    {
+                        "row_index": batch_start + i,
+                        text_column_name: text,
+                        "classification": cls,
+                        "error": None
+                        if cls is not None
+                        else "No classification returned",
+                    }
+                )
         except Exception as exc:
             logger.warning(
                 "Batch classification failed for rows %d-%d: %s",
@@ -166,12 +170,14 @@ async def classify_texts(
                 exc,
             )
             for i, text in enumerate(batch_texts):
-                all_results.append({
-                    "row_index": batch_start + i,
-                    text_column_name: text,
-                    "classification": None,
-                    "error": str(exc),
-                })
+                all_results.append(
+                    {
+                        "row_index": batch_start + i,
+                        text_column_name: text,
+                        "classification": None,
+                        "error": str(exc),
+                    }
+                )
 
     return all_results
 

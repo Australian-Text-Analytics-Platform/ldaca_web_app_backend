@@ -1,6 +1,5 @@
-"""Phase 2.6: concordance tokens-mode honors the tokenization column.
+"""Concordance tokens-mode honors the tokenization column.
 
-Decision 6 + decision 7:
 - Regex mode (default) walks raw text; ``num_left_tokens`` means "chars" on
   CJK because there's no whitespace.
 - Tokens mode walks the tokenization column for exact-token matches with
