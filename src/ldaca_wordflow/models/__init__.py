@@ -1438,7 +1438,7 @@ class TokenFrequencyRequest(BaseModel):
                 "node_columns": {"node1": "text_column", "node2": "content_column"},
                 "stop_words": ["the", "and", "or"],
                 "token_limit": 50,
-                "tokenizer_model": "plain_words_en",
+                "tokenizer_model": "native:plain_words_en",
             }
         },
     )

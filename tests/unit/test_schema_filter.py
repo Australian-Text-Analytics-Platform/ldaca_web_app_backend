@@ -22,10 +22,10 @@ from ldaca_wordflow.api.workspaces.schema_filter import (
 
 from docworkspace import Node, TokenizationMeta
 
-_TOKENS_NAME = "tokenization.text.jieba"
+_TOKENS_NAME = "tokenization.text.lindera:jieba"
 
 
-def _meta(source: str = "text", model: str = "jieba") -> TokenizationMeta:
+def _meta(source: str = "text", model: str = "lindera:jieba") -> TokenizationMeta:
     return {
         "column_name": tokenization_column_name(source, model),
         "model": model,

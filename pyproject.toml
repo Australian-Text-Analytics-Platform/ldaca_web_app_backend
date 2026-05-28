@@ -43,8 +43,9 @@ dependencies = [
     # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
     "polars[rtcompat]>=1.40.0",
     # polars-text 0.2.0 shipped the multilingual tokenizer additions:
-    # jieba ZH (`model="jieba"`), Lindera JA + KO (`model="lindera-ja-ipadic"`
-    # etc.), offset-aware tokenization, and Unicode-aware sentence/word counts.
+    # Lindera Jieba ZH (`model="lindera:jieba"`), Lindera JA + KO
+    # (`model="lindera:ja-ipadic"` etc.), offset-aware tokenization, and
+    # Unicode-aware sentence/word counts.
     # 0.2.1 is the perf release: single-sweep byte→char conversion (the
     # Lindera regression fix), `to_lowercase` short-circuit for case-free
     # backends, and a flat list-of-struct builder. On a 13k-row JP corpus
@@ -54,7 +55,7 @@ dependencies = [
     # used by `core.tokens_cache`, so pin >=0.3.0.
     # Older wheels (<=0.1.7) fall through to `load_hf_tokenizer` for the
     # lindera model IDs, which then tries to fetch them as HF Hub model repos
-    # and dies with "Failed to fetch tokenizer.json for lindera-ja-ipadic"
+    # and dies with "Failed to fetch tokenizer.json for lindera:ja-ipadic"
     # the first time a derived JA/KO tokens column gets lazily evaluated
     # (e.g. on a concordance call). Serialized plan source-path rebasing now
     # lives in polars-source-utils via docworkspace, keeping polars-text's

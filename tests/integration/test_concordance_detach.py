@@ -130,12 +130,12 @@ async def test_concordance_detach_options_ignore_token_metadata(
     # Register tokenization directly on the in-memory node so the test
     # doesn't need to round-trip through plbin (the polars FFI plan can't
     # always be deserialized cross-version; see prior FfiPlugin episode).
-    tokenization_name = tokenization_column_name("text", "bert-base-uncased")
+    tokenization_name = tokenization_column_name("text", "huggingface:bert-base-uncased")
     node.register_tokenization(  # type: ignore[arg-type]
         "text",
         {
             "column_name": tokenization_name,
-            "model": "bert-base-uncased",
+            "model": "huggingface:bert-base-uncased",
             "language": "en",
             "params": {"lowercase": True, "remove_punct": True},
         },

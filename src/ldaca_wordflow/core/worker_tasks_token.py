@@ -74,12 +74,16 @@ def run_token_frequencies_task(
         )
 
         token_streams = node_token_streams or {}
-        effective_tokenizer_model = (tokenizer_model or "").strip() or "plain_words_en"
+        effective_tokenizer_model = (tokenizer_model or "").strip() or None
         node_ids = list({**node_corpora, **token_streams}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
             raise ValueError("Maximum of 2 corpora can be compared")
+        if node_corpora and effective_tokenizer_model is None:
+            raise ValueError(
+                "tokenizer_model is required when token frequencies must tokenize raw text"
+            )
 
         for i, node_id in enumerate(node_ids):
             node_name = node_display_names.get(node_id) or node_id
@@ -128,6 +132,7 @@ def run_token_frequencies_task(
                     "document",
                     [str(v) if v is not None else "" for v in docs],
                 )
+                assert effective_tokenizer_model is not None
                 frequency_results[node_id] = pt.token_frequencies(
                     series,
                     model=effective_tokenizer_model,

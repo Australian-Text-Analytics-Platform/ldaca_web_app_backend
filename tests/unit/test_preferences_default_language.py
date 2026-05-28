@@ -32,21 +32,23 @@ def test_merge_preferences_sets_default_language() -> None:
 
 def test_merge_preferences_sets_tokenizer_model_independently() -> None:
     current = UserPreferences(default_language="zh")
-    update = UserPreferencesUpdate(default_tokenizer_model="jieba")
+    update = UserPreferencesUpdate(default_tokenizer_model="lindera:jieba")
     merged = merge_preferences(current, update)
     assert merged.default_language == "zh"  # preserved
-    assert merged.default_tokenizer_model == "jieba"
+    assert merged.default_tokenizer_model == "lindera:jieba"
 
 
 def test_merge_preferences_none_means_no_change() -> None:
     """The partial-update contract: ``None`` on either new field doesn't
     erase an existing value. This mirrors how ``hidden_views`` /
     ``quotation`` already behave."""
-    current = UserPreferences(default_language="ja", default_tokenizer_model="jieba")
+    current = UserPreferences(
+        default_language="ja", default_tokenizer_model="lindera:jieba"
+    )
     update = UserPreferencesUpdate(favorite_workspaces=["a"])
     merged = merge_preferences(current, update)
     assert merged.default_language == "ja"
-    assert merged.default_tokenizer_model == "jieba"
+    assert merged.default_tokenizer_model == "lindera:jieba"
     assert merged.favorite_workspaces == ["a"]
 
 
@@ -70,12 +72,12 @@ def test_round_trip_json_serialisation() -> None:
     surprises."""
     prefs = UserPreferences(
         default_language="zh",
-        default_tokenizer_model="jieba",
+        default_tokenizer_model="lindera:jieba",
     )
     serialized = prefs.model_dump_json()
     rehydrated = UserPreferences.model_validate_json(serialized)
     assert rehydrated.default_language == "zh"
-    assert rehydrated.default_tokenizer_model == "jieba"
+    assert rehydrated.default_tokenizer_model == "lindera:jieba"
     assert rehydrated.ldaca_oni_api_token is None
 
 

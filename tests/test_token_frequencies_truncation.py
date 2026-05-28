@@ -56,6 +56,7 @@ def _simulate_token_frequency_completion(workspace_id: str):
         artifact_prefix=f"test_token_freq_{task.task_id}",
         token_limit=req.get("token_limit") or DEFAULT_TOKEN_LIMIT,
         stop_words=req.get("stop_words") or [],
+        tokenizer_model=req.get("tokenizer_model") or "native:plain_words_en",
     )
     task.complete(GenericAnalysisResult(worker_result))
     task_manager.save_task(task)
@@ -140,6 +141,7 @@ async def test_token_frequencies_full_table_and_metadata(
         "node_ids": node_ids,
         "node_columns": {node_ids[0]: "document", node_ids[1]: "document"},
         "stop_words": ["the", "and"],
+        "tokenizer_model": "native:plain_words_en",
     }
 
     response = await authenticated_client.post(

@@ -29,8 +29,8 @@ def _node_with_tokenization(language: str) -> Node:
     node.register_tokenization(
         "text",
         {  # type: ignore[arg-type]
-            "column_name": "tokenization.text.jieba",
-            "model": "jieba",
+            "column_name": "tokenization.text.lindera:jieba",
+            "model": "lindera:jieba",
             "language": language,
             "params": {"lowercase": True, "remove_punct": True},
         },

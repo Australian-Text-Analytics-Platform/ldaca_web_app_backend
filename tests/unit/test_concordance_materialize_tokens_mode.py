@@ -214,7 +214,7 @@ def test_concordance_materialize_request_accepts_language_hint() -> None:
 async def test_tokens_materialize_route_selects_tokenization_column_once(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    tokenization_column = "tokenization.text.bert-base-uncased"
+    tokenization_column = "tokenization.text.huggingface:bert-base-uncased"
     node = Node(
         data=pl.DataFrame(
             {
@@ -228,7 +228,7 @@ async def test_tokens_materialize_route_selects_tokenization_column_once(
         "text",
         {  # type: ignore[arg-type]
             "column_name": tokenization_column,
-            "model": "bert-base-uncased",
+            "model": "huggingface:bert-base-uncased",
             "language": "en",
             "params": {"lowercase": True, "remove_punct": True},
         },

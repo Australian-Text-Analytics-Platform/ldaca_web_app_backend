@@ -29,8 +29,8 @@ def _zh_node() -> Node:
     node.register_tokenization(
         "text",
         {  # type: ignore[arg-type]
-            "column_name": "tokenization.text.jieba",
-            "model": "jieba",
+            "column_name": "tokenization.text.lindera:jieba",
+            "model": "lindera:jieba",
             "language": "zh",
             "params": {"lowercase": True, "remove_punct": True},
         },
@@ -91,7 +91,7 @@ async def test_get_quotation_rejects_explicit_chinese(fake_workspace_manager):
 async def test_get_quotation_rejects_implicit_chinese_via_tokenization(
     fake_workspace_manager,
 ):
-    """No explicit language in request, but node has jieba/zh tokens;
+    """No explicit language in request, but node has lindera:jieba/zh tokens;
     gate falls back to tokenization metadata and refuses."""
     _ws, node = fake_workspace_manager
     request = QuotationRequest(column="text")  # language=None
@@ -152,7 +152,7 @@ def test_quotation_gate_helper_returns_resolved_language() -> None:
 async def test_materialize_quotation_excludes_tokenization_columns_from_metadata(
     tmp_path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    tokenization_column = "tokenization.text.bert-base-uncased"
+    tokenization_column = "tokenization.text.huggingface:bert-base-uncased"
     node = Node(
         data=pl.DataFrame(
             {

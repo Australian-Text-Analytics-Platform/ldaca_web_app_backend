@@ -25,10 +25,10 @@ from ldaca_wordflow.models import (
 
 from docworkspace import Node, TokenizationMeta
 
-TOKENIZATION_COLUMN = "tokenization.text.lindera-ja-ipadic"
+TOKENIZATION_COLUMN = "tokenization.text.lindera:ja-ipadic"
 TOKENIZATION_META: TokenizationMeta = {
     "column_name": TOKENIZATION_COLUMN,
-    "model": "lindera-ja-ipadic",
+    "model": "lindera:ja-ipadic",
     "language": "ja",
     "params": {"lowercase": True, "remove_punct": True},
 }
@@ -127,7 +127,7 @@ async def test_clone_inherits_tokenization(single_parent):
 
     child = _child(manager, {parent.id})
     assert child.tokenization["text"]["column_name"] == TOKENIZATION_COLUMN
-    assert child.tokenization["text"]["model"] == "lindera-ja-ipadic"
+    assert child.tokenization["text"]["model"] == "lindera:ja-ipadic"
     assert child.tokenization["text"]["language"] == "ja"
 
 
@@ -179,7 +179,7 @@ async def test_concat_inherits_tokenization_from_parents(two_parents):
     await nodes_api.concat_nodes(request, current_user={"id": "user"})
 
     child = _child(manager, {parent_a.id, parent_b.id})
-    assert child.tokenization["text"]["model"] == "lindera-ja-ipadic"
+    assert child.tokenization["text"]["model"] == "lindera:ja-ipadic"
 
 
 @pytest.mark.asyncio

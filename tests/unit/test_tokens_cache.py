@@ -31,7 +31,7 @@ def isolated_cache_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_cache_schema_has_six_columns(isolated_cache_db: Path) -> None:
     base = pl.DataFrame({"text": ["hello world"]}).lazy()
     expr = cast(Any, pl.col("text")).text.tokenize(
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         lowercase=True,
         remove_punct=True,
         cache=tc.tokens_cache_path(TEST_USER),
@@ -62,11 +62,11 @@ def test_tokenise_column_registers_metadata_without_mutating_node_data() -> None
     tokenization_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
 
-    assert tokenization_name == tokenization_column_name("text", "bert-base-uncased")
+    assert tokenization_name == tokenization_column_name("text", "huggingface:bert-base-uncased")
     assert node.tokenization["text"]["column_name"] == tokenization_name
     assert tokenization_name not in node.data.collect_schema().names()
     tokenization_meta = cast(dict[str, Any], node.tokenization["text"])
@@ -83,7 +83,7 @@ def test_hydrate_tokenization_adds_tokens_column() -> None:
     tokenization_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
 
@@ -104,7 +104,7 @@ def test_hydrate_tokenization_adds_tokens_column() -> None:
 def test_warm_cache_does_not_retokenize(monkeypatch: pytest.MonkeyPatch) -> None:
     base = pl.DataFrame({"text": ["hello world", "hello world"]}).lazy()
     expr = cast(Any, pl.col("text")).text.tokenize(
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         lowercase=True,
         remove_punct=True,
         cache=tc.tokens_cache_path(TEST_USER),
@@ -144,7 +144,7 @@ def test_filter_pushdown_only_tokenizes_surviving_rows(
     monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
     expr = cast(Any, pl.col("text")).text.tokenize(
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         lowercase=True,
         remove_punct=True,
         cache=tc.tokens_cache_path(TEST_USER),
@@ -173,7 +173,7 @@ def test_repeated_texts_in_chunk_are_deduplicated(
     monkeypatch.setattr(pt_cache, "_tokenize_misses", spy)
 
     expr = cast(Any, pl.col("text")).text.tokenize(
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         lowercase=True,
         remove_punct=True,
         cache=tc.tokens_cache_path(TEST_USER),

@@ -8,6 +8,7 @@ from types import ModuleType
 from typing import Any, cast
 
 import polars as pl
+import pytest
 from ldaca_wordflow.core.worker_tasks_token import run_token_frequencies_task
 
 
@@ -16,9 +17,7 @@ def _stub_polars_text(monkeypatch) -> list[str | None]:
     fake = cast(Any, ModuleType("polars_text"))
     requested_models: list[str | None] = []
 
-    def _token_frequencies(
-        series: pl.Series, model: str | None = None
-    ) -> dict[str, int]:
+    def _token_frequencies(series: pl.Series, model: str) -> dict[str, int]:
         # Mimic the raw-text path: naive whitespace split for the test.
         requested_models.append(model)
         counter: dict[str, int] = {}
@@ -44,10 +43,11 @@ def test_worker_raw_text_path_unchanged_when_no_tokens(tmp_path, monkeypatch):
         node_display_names={"node-1": "EN Corpus"},
         artifact_dir=str(tmp_path),
         artifact_prefix="token_freq_text",
+        tokenizer_model="native:plain_words_en",
     )
 
     assert result["state"] == "successful"
-    assert requested_models == ["plain_words_en"]
+    assert requested_models == ["native:plain_words_en"]
     parquet_path = Path(result["artifacts"]["nodes"][0]["token_parquet_path"])
     counts = pl.read_parquet(parquet_path).to_dicts()
     counts_map = {row["token"]: row["frequency"] for row in counts}
@@ -70,10 +70,11 @@ def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
         node_display_names={"text-side": "EN", "tokens-side": "ZH"},
         artifact_dir=str(tmp_path),
         artifact_prefix="token_freq_mixed",
+        tokenizer_model="native:plain_words_en",
     )
 
     assert result["state"] == "successful"
-    assert requested_models == ["plain_words_en"]
+    assert requested_models == ["native:plain_words_en"]
     node_paths = {
         artifact["node_id"]: Path(artifact["token_parquet_path"])
         for artifact in result["artifacts"]["nodes"]
@@ -88,6 +89,21 @@ def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
     }
     assert text_counts == {"alpha": 2, "beta": 1}
     assert tokens_counts == {"beta": 1, "gamma": 2}
+
+
+def test_worker_raw_text_path_requires_tokenizer_model(tmp_path, monkeypatch):
+    _stub_polars_text(monkeypatch)
+
+    with pytest.raises(ValueError, match="tokenizer_model is required"):
+        run_token_frequencies_task(
+            configure_worker_environment=lambda: None,
+            user_id="user-1",
+            workspace_id="ws-1",
+            node_corpora={"node-1": ["alpha beta"]},
+            node_display_names={"node-1": "EN Corpus"},
+            artifact_dir=str(tmp_path),
+            artifact_prefix="token_freq_text",
+        )
 
 
 def test_worker_uses_node_token_streams_when_provided(tmp_path, monkeypatch):

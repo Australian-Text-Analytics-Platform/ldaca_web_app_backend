@@ -109,6 +109,7 @@ def _simulate_token_frequency_completion(workspace_id: str):
         artifact_prefix=f"test_token_freq_{task.task_id}",
         token_limit=req.get("token_limit") or DEFAULT_TOKEN_LIMIT,
         stop_words=req.get("stop_words") or [],
+        tokenizer_model=req.get("tokenizer_model") or "native:plain_words_en",
     )
 
     task.complete(GenericAnalysisResult(worker_result))
@@ -183,6 +184,7 @@ class TestTokenFrequencyPersistence:
         request_payload = {
             "node_ids": [tiny_node_id],
             "node_columns": {tiny_node_id: "document"},
+            "tokenizer_model": "native:plain_words_en",
         }
 
         # When: We call the token frequencies endpoint
@@ -245,6 +247,7 @@ class TestTokenFrequencyPersistence:
         request_payload = {
             "node_ids": [tiny_node_id],
             "node_columns": {tiny_node_id: "document"},
+            "tokenizer_model": "native:plain_words_en",
         }
 
         response = await post_json(
@@ -293,12 +296,14 @@ class TestTokenFrequencyPersistence:
         first_request = {
             "node_ids": [tiny_node_id],
             "node_columns": {tiny_node_id: "document"},
+            "tokenizer_model": "native:plain_words_en",
         }
 
         second_request = {
             "node_ids": [tiny_node_id],
             "node_columns": {tiny_node_id: "document"},
             "stop_words": ["alpha", "beta"],
+            "tokenizer_model": "native:plain_words_en",
         }
 
         # When: We call the endpoint twice
@@ -339,6 +344,7 @@ class TestTokenFrequencyPersistence:
         request_payload = {
             "node_ids": [sample_node_id, tiny_node_id],
             "node_columns": {sample_node_id: "document", tiny_node_id: "document"},
+            "tokenizer_model": "native:plain_words_en",
         }
 
         # When: We call the token frequencies endpoint
@@ -390,6 +396,7 @@ class TestTokenFrequencyPersistence:
             "node_ids": [tiny_node_id],
             "node_columns": {tiny_node_id: "document"},
             "stop_words": ["the", "and"],
+            "tokenizer_model": "native:plain_words_en",
         }
 
         initial_response = await post_json(
@@ -987,12 +994,14 @@ class TestWorkspaceGraphEnrichment:
         workspace = workspace_manager.get_current_workspace(test_user["id"])
         assert workspace is not None
         node = workspace.nodes[tiny_node_id]
-        tokenization_name = tokenization_column_name("document", "bert-base-uncased")
+        tokenization_name = tokenization_column_name(
+            "document", "huggingface:bert-base-uncased"
+        )
         node.register_tokenization(  # type: ignore[arg-type]
             "document",
             {
                 "column_name": tokenization_name,
-                "model": "bert-base-uncased",
+                "model": "huggingface:bert-base-uncased",
                 "language": "en",
                 "params": {"lowercase": True, "remove_punct": True},
             },
@@ -1013,7 +1022,7 @@ class TestWorkspaceGraphEnrichment:
         assert len(tokenization) == 1
         only_meta = tokenization["document"]
         assert only_meta["column_name"] == tokenization_name
-        assert only_meta["model"] == "bert-base-uncased"
+        assert only_meta["model"] == "huggingface:bert-base-uncased"
 
 
 @pytest.mark.anyio
@@ -1085,12 +1094,14 @@ class TestAnalysisPersistenceEdgeCases:
             "node_ids": [node1_id],
             "node_columns": {node1_id: "document"},
             "stop_words": ["alpha"],
+            "tokenizer_model": "native:plain_words_en",
         }
 
         ws2_payload = {
             "node_ids": [node2_id],
             "node_columns": {node2_id: "document"},
             "stop_words": ["beta"],
+            "tokenizer_model": "native:plain_words_en",
         }
 
         # Switch back to ws1 before submitting ws1 analysis

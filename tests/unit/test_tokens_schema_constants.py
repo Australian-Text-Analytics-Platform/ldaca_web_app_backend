@@ -34,7 +34,7 @@ from docworkspace import Node
 
 # Test fixture: canonical (source, model) we use throughout this module.
 _TEXT_COLUMN = "text"
-_BERT_MODEL = "bert-base-uncased"
+_BERT_MODEL = "huggingface:bert-base-uncased"
 _TOKENS_NAME = f"tokenization.{_TEXT_COLUMN}.{_BERT_MODEL}"
 
 
@@ -52,7 +52,7 @@ def test_parse_tokenization_column_round_trips() -> None:
 def test_parse_tokenization_column_rejects_non_tokenization_names() -> None:
     assert parse_tokenization_column("plain_column") is None
     # Missing prefix.
-    assert parse_tokenization_column("tokens.text.jieba") is None
+    assert parse_tokenization_column("tokens.text.lindera:jieba") is None
     # Wrong number of parts (source or model containing dots is ambiguous —
     # by design we treat it as unparseable; consult Node.tokenization instead).
     assert parse_tokenization_column("tokenization.text.foo.bar") is None
@@ -66,7 +66,9 @@ def test_struct_field_names_match_rust_output() -> None:
 
 def test_tokens_struct_dtype_matches_polars_text_output() -> None:
     df = pl.DataFrame({"text": ["Hello world"]})
-    out = df.select(cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME))
+    out = df.select(
+        cast(Any, pl.col("text")).text.tokenize(model=_BERT_MODEL).alias(_TOKENS_NAME)
+    )
     assert out.schema[_TOKENS_NAME] == tokens_struct_dtype(), (
         f"polars-text emits {out.schema[_TOKENS_NAME]!r}, "
         f"but generated_columns declares {tokens_struct_dtype()!r}"
@@ -77,7 +79,8 @@ def test_is_tokenization_column_reads_from_node_metadata() -> None:
     # Build a node with a token column registered in Node.tokenization.
     df = pl.DataFrame({"text": ["hi"]})
     with_tokens = df.lazy().select(
-        pl.col("text"), cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
+        pl.col("text"),
+        cast(Any, pl.col("text")).text.tokenize(model=_BERT_MODEL).alias(_TOKENS_NAME),
     )
     node = Node(data=with_tokens, name="tokens_root")
     node.register_tokenization(
@@ -95,7 +98,7 @@ def test_is_tokenization_column_reads_from_node_metadata() -> None:
 def test_is_tokenization_column_rejects_unregistered_column() -> None:
     df = pl.DataFrame({"text": ["hi"]})
     out = df.lazy().select(
-        cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
+        cast(Any, pl.col("text")).text.tokenize(model=_BERT_MODEL).alias(_TOKENS_NAME)
     )
     node = Node(data=out, name="unregistered")
     # Column exists in schema but isn't in Node.tokenization → not a tokens column.
@@ -112,7 +115,7 @@ def test_is_tokenization_column_rejects_non_token_column() -> None:
 def test_tokens_struct_projection_unpacks_fields() -> None:
     df = pl.DataFrame({"text": ["hello world"]})
     tokens_df = df.select(
-        cast(Any, pl.col("text")).text.tokenize().alias(_TOKENS_NAME)
+        cast(Any, pl.col("text")).text.tokenize(model=_BERT_MODEL).alias(_TOKENS_NAME)
     ).explode(_TOKENS_NAME)
     unpacked = tokens_df.select(*tokens_struct_projection(_TOKENS_NAME))
     assert set(unpacked.columns) == {

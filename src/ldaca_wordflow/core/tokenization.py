@@ -16,10 +16,10 @@ from ..api.workspaces.analyses.generated_columns import tokenization_column_name
 
 _CASE_FREE_MODELS: frozenset[str] = frozenset(
     {
-        "jieba",
-        "lindera-ja-ipadic",
-        "lindera-ja-unidic",
-        "lindera-ko-dic",
+        "lindera:jieba",
+        "lindera:ja-ipadic",
+        "lindera:ja-unidic",
+        "lindera:ko-dic",
     }
 )
 _REMOVE_PUNCT_DEFAULT = True

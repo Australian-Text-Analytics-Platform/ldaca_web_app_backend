@@ -39,7 +39,7 @@ from ldaca_wordflow.core.tokenization import tokenise_column
 
 from docworkspace import Node
 
-# Toy Chinese document tokenised by jieba-style segmentation. Offsets are
+# Toy Chinese document tokenised by lindera:jieba-style segmentation. Offsets are
 # char positions in the original text.
 ZH_TEXT = "今天天气很好今天我们出去玩"
 ZH_TOKENS = [
@@ -105,7 +105,7 @@ def test_build_token_hit_second_match_has_two_left_tokens() -> None:
 
 
 def test_compute_tokens_page_groups_hits_per_row() -> None:
-    tokenization_col = "tokenization.text.jieba"
+    tokenization_col = "tokenization.text.lindera:jieba"
     df = pl.DataFrame(
         {
             "text": [ZH_TEXT, "晚上去看电影", "今天"],
@@ -176,7 +176,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
     tokenization_col = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
 
@@ -213,7 +213,7 @@ def test_token_mode_hydrates_only_requested_page_slice(
 
 
 def test_compute_tokens_page_with_english_word_aware_context() -> None:
-    tokenization_col = "tokenization.text.bert-base-uncased"
+    tokenization_col = "tokenization.text.huggingface:bert-base-uncased"
     en_text = "the quick brown fox jumps over the lazy dog"
     en_tokens = []
     cursor = 0

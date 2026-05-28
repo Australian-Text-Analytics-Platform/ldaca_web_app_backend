@@ -57,7 +57,6 @@ def _token_freq_submission_lock(user_id: str, workspace_id: str) -> asyncio.Lock
 DEFAULT_TOKEN_LIMIT = 25
 SERVER_LIMIT_MULTIPLIER = 5
 MAX_SERVER_TOKEN_LIMIT = 5000
-DEFAULT_TOKENIZER_MODEL = "plain_words_en"
 
 
 @dataclass(frozen=True)
@@ -470,7 +469,7 @@ async def calculate_token_frequencies(
         raise HTTPException(
             status_code=400, detail="token_limit must be a positive integer"
         )
-    tokenizer_model = (request.tokenizer_model or "").strip() or DEFAULT_TOKENIZER_MODEL
+    tokenizer_model = (request.tokenizer_model or "").strip()
 
     # Prepare the artifact target early so the tokens-mode spill files
     # share a parent directory with the eventual frequency parquets and
@@ -538,6 +537,12 @@ async def calculate_token_frequencies(
                 for v in docs_df["__doc_col__"].to_list()
             ]
         node_display_names[node_id] = str(getattr(node, "name", None) or node_id)
+
+    if node_corpora and not tokenizer_model:
+        raise HTTPException(
+            status_code=400,
+            detail="tokenizer_model is required when token frequencies must tokenize raw text",
+        )
 
     if document_column_updated:
         update_workspace(user_id, workspace_id, best_effort=True)

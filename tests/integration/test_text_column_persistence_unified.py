@@ -65,6 +65,7 @@ async def test_text_column_preference_persists_across_text_analyses(
         json={
             "node_ids": [node.id],
             "node_columns": {node.id: "text_a"},
+            "tokenizer_model": "native:plain_words_en",
         },
     )
     assert token_response.status_code == 200, token_response.text

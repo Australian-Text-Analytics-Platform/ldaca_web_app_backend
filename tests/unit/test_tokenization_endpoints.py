@@ -84,7 +84,7 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch, make_node):
 async def test_post_tokens_creates_new_column(fake_workspace_manager):
     _manager, _workspace, node = fake_workspace_manager
     request = TokeniseColumnRequest(
-        source_column="text", model="bert-base-uncased", language="en"
+        source_column="text", model="huggingface:bert-base-uncased", language="en"
     )
 
     result = await tokenization_api.create_tokenization(
@@ -93,7 +93,7 @@ async def test_post_tokens_creates_new_column(fake_workspace_manager):
 
     assert result.is_new is True
     assert result.replaced_column is None
-    assert result.column == "tokenization.text.bert-base-uncased"
+    assert result.column == "tokenization.text.huggingface:bert-base-uncased"
     assert node.tokenization["text"]["column_name"] == result.column
     assert result.column not in node.data.collect_schema().names()
     assert "cache_backend" not in node.tokenization["text"]
@@ -103,7 +103,7 @@ async def test_post_tokens_creates_new_column(fake_workspace_manager):
 async def test_post_tokens_replays_replaces_existing(fake_workspace_manager):
     _manager, _workspace, node = fake_workspace_manager
     request = TokeniseColumnRequest(
-        source_column="text", model="bert-base-uncased", language="en"
+        source_column="text", model="huggingface:bert-base-uncased", language="en"
     )
 
     first = await tokenization_api.create_tokenization(
@@ -128,14 +128,14 @@ async def test_post_tokens_different_source_preserves_existing_token_specs(
     first = await tokenization_api.create_tokenization(
         node_id=node.id,
         request=TokeniseColumnRequest(
-            source_column="text", model="bert-base-uncased", language="en"
+            source_column="text", model="huggingface:bert-base-uncased", language="en"
         ),
         current_user={"id": "user"},
     )
     second = await tokenization_api.create_tokenization(
         node_id=node.id,
         request=TokeniseColumnRequest(
-            source_column="value", model="jieba", language="zh"
+            source_column="value", model="lindera:jieba", language="zh"
         ),
         current_user={"id": "user"},
     )
@@ -143,7 +143,7 @@ async def test_post_tokens_different_source_preserves_existing_token_specs(
     assert second.is_new is True
     assert second.replaced_column is None
     assert node.find_tokenization_column("text") == first.column
-    assert second.column == "tokenization.value.jieba"
+    assert second.column == "tokenization.value.lindera:jieba"
     assert node.find_tokenization_column("value") == second.column
     assert len(node.tokenization) == 2
 
@@ -152,7 +152,7 @@ async def test_post_tokens_different_source_preserves_existing_token_specs(
 async def test_post_tokens_400_on_missing_source(fake_workspace_manager):
     _manager, _workspace, node = fake_workspace_manager
     request = TokeniseColumnRequest(
-        source_column="nonexistent", model="bert-base-uncased", language="en"
+        source_column="nonexistent", model="huggingface:bert-base-uncased", language="en"
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -165,7 +165,7 @@ async def test_post_tokens_400_on_missing_source(fake_workspace_manager):
 @pytest.mark.asyncio
 async def test_post_tokens_404_on_unknown_node(fake_workspace_manager):
     request = TokeniseColumnRequest(
-        source_column="text", model="bert-base-uncased", language="en"
+        source_column="text", model="huggingface:bert-base-uncased", language="en"
     )
 
     with pytest.raises(HTTPException) as exc_info:

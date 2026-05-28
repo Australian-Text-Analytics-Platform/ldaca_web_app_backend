@@ -12,7 +12,7 @@ def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypat
 
     fake_polars_text = cast(Any, ModuleType("polars_text"))
 
-    def fake_token_frequencies(series, model=None):
+    def fake_token_frequencies(series, model):
         requested_models.append(model)
         return {"alpha": 3, "beta": 1}
 
@@ -53,11 +53,11 @@ def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypat
                 message,
             )
         ),
-        tokenizer_model="jieba",
+        tokenizer_model="lindera:jieba",
     )
 
     assert result["state"] == "successful"
-    assert requested_models == ["jieba", "jieba"]
+    assert requested_models == ["lindera:jieba", "lindera:jieba"]
     assert progress_updates[0][1].startswith("Loading token frequency")
     assert any(
         "Preparing text data" in message for _progress, message in progress_updates

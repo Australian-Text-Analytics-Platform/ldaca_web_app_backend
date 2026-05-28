@@ -184,8 +184,8 @@ TOKENS_END_FIELD = "end"
 def tokenization_column_name(source_column: str, model: str) -> str:
     """Build the temporary tokenization column name for ``(source, model)``.
 
-    Example: ``tokenization_column_name("text", "jieba")`` returns
-    ``"tokenization.text.jieba"``. The name is used only when dynamically
+    Example: ``tokenization_column_name("text", "lindera:jieba")`` returns
+    ``"tokenization.text.lindera:jieba"``. The name is used only when dynamically
     hydrating a LazyFrame for token-aware analyses.
     """
     return TOKENIZATION_SEPARATOR.join((TOKENS_COLUMN_MARKER, source_column, model))

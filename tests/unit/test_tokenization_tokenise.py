@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import cast
 
 import polars as pl
@@ -13,6 +14,8 @@ from ldaca_wordflow.core.tokenization import tokenise_column
 from ldaca_wordflow.core.tokens_cache import hydrate_tokenization_lazyframe
 
 from docworkspace import Node
+
+_LINDERA_JIEBA_TESTS_ENV = "POLARS_TEXT_RUN_LINDERA_JIEBA_TESTS"
 
 
 def _make_node(name: str = "root") -> Node:
@@ -27,12 +30,12 @@ def _make_node(name: str = "root") -> Node:
 
 def test_tokenise_registers_metadata_without_mutating_node_data() -> None:
     node = _make_node()
-    expected_name = tokenization_column_name("text", "bert-base-uncased")
+    expected_name = tokenization_column_name("text", "huggingface:bert-base-uncased")
 
     result_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
 
@@ -42,7 +45,7 @@ def test_tokenise_registers_metadata_without_mutating_node_data() -> None:
     meta = node.tokenization["text"]
     assert "source_column" not in meta
     assert meta["column_name"] == expected_name
-    assert meta["model"] == "bert-base-uncased"
+    assert meta["model"] == "huggingface:bert-base-uncased"
     assert meta["language"] == "en"
     assert "cache_backend" not in meta
     assert meta["params"] == {"lowercase": True, "remove_punct": True}
@@ -59,7 +62,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
     first = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     tokenization_count_first = len(node.tokenization)
@@ -67,7 +70,7 @@ def test_tokenise_is_idempotent_on_source_and_model() -> None:
     second = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     tokenization_count_second = len(node.tokenization)
@@ -84,21 +87,26 @@ def test_tokenise_with_different_model_replaces_node_token_spec() -> None:
     bert_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     multi_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-multilingual-cased",
+        model="huggingface:bert-base-multilingual-cased",
         language="en",
     )
 
     assert bert_name != multi_name
     assert len(node.tokenization) == 1
-    assert node.find_tokenization_column("text", model="bert-base-uncased") is None
     assert (
-        node.find_tokenization_column("text", model="bert-base-multilingual-cased")
+        node.find_tokenization_column("text", model="huggingface:bert-base-uncased")
+        is None
+    )
+    assert (
+        node.find_tokenization_column(
+            "text", model="huggingface:bert-base-multilingual-cased"
+        )
         == multi_name
     )
 
@@ -109,13 +117,13 @@ def test_tokenise_with_different_source_preserves_existing_token_specs() -> None
     text_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     value_name = tokenise_column(
         node,
         source_column="value",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
 
@@ -132,7 +140,7 @@ def test_tokenise_does_not_touch_undo_stack() -> None:
     tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     assert not node.can_undo
@@ -145,7 +153,7 @@ def test_tokenise_rejects_missing_source_column() -> None:
         tokenise_column(
             node,
             source_column="nonexistent",
-            model="bert-base-uncased",
+            model="huggingface:bert-base-uncased",
             language="en",
         )
 
@@ -160,7 +168,7 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
     tokenization_name = tokenise_column(
         node,
         source_column="text",
-        model="bert-base-uncased",
+        model="huggingface:bert-base-uncased",
         language="en",
     )
     hydrated = hydrate_tokenization_lazyframe(
@@ -172,8 +180,15 @@ def test_tokenise_emits_canonical_struct_dtype() -> None:
     assert schema[tokenization_name] == tokens_struct_dtype()
 
 
+@pytest.mark.skipif(
+    _LINDERA_JIEBA_TESTS_ENV not in os.environ,
+    reason=(
+        f"Set {_LINDERA_JIEBA_TESTS_ENV}=1 and provide a reachable "
+        "lindera:jieba dictionary archive to run Jieba download tests."
+    ),
+)
 def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
-    """Phase 1.9 + 2.3: jieba backend is reachable through tokenise_column
+    """Phase 1.9 + 2.3: lindera:jieba backend is reachable through tokenise_column
     and produces word-level (multi-char) Chinese segmentation."""
     df = pl.DataFrame({"text": ["今天天气很好"]}).lazy()
     node = Node(data=df, name="zh_root")
@@ -181,7 +196,7 @@ def test_tokenise_chinese_via_jieba_produces_word_level_tokens() -> None:
     tokenization_name = tokenise_column(
         node,
         source_column="text",
-        model="jieba",
+        model="lindera:jieba",
         language="zh",
     )
 

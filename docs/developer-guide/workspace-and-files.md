@@ -89,7 +89,7 @@ allows only the supported transformation contexts.
 
 `api/workspaces/schema_filter.py` is the frontend-facing schema filter.
 Tokenisation specs are tracked in `Node.tokenization` keyed by source column,
-with hydrated column names such as `tokenization.text.jieba`. The node stores
+with hydrated column names such as `tokenization.text.lindera:jieba`. The node stores
 the source column, selected model, language, and cache metadata. Analysis paths
 resolve the per-user DuckDB cache path and call
 `pl.col(...).text.tokenize(..., cache=path)` to hydrate temporary token
