@@ -37,3 +37,7 @@ class TokenFrequencyRequest(BaseAnalysisRequest):
         None,
         description="Tokenizer model ID used for raw text token-frequency analysis",
     )
+    node_tokenizer_models: dict[str, str] | None = Field(
+        None,
+        description="Map of node_id to tokenizer model ID for raw text token-frequency analysis",
+    )

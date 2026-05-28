@@ -15,6 +15,7 @@ from typing import Any, Literal, cast
 import polars as pl
 from docworkspace.workspace.core import Workspace
 from fastapi import APIRouter, Depends, HTTPException, Query
+from polars_text.models import PREDEFINED_MODELS, predefined_model_records
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ from ...core.polars_expr_validator import (
     validate_polars_expr_code,
 )
 from ...core.polars_operations import get_operations_for_dtype
+from ...core.tokenization import tokenise_column
 from ...core.utils import stringify_unsafe_integers
 from ...core.workspace import workspace_manager
 from ...models import (
@@ -39,9 +41,11 @@ from ...models import (
     FilterRequest,
     NodeActionResponse,
     NodeDataResponse,
+    NodeDocumentColumnUpdateRequest,
     NodeOperationResponse,
     NodeQueryPlanResponse,
     NodeShapeResponse,
+    NodeTokenizationPreferenceRequest,
     PaginationInfo,
     PolarsExpressionApplyResponse,
     PolarsExpressionContext,
@@ -49,6 +53,7 @@ from ...models import (
     ReplaceApplyResponse,
     ReplaceRequest,
     SliceRequest,
+    TokenizerModelsResponse,
     WorkspaceNodeInfo,
 )
 from .schema_filter import frontend_node_info, project_visible
@@ -325,6 +330,40 @@ def _require_current_workspace(user_id: str) -> Workspace:
     if workspace is None:
         raise HTTPException(status_code=404, detail="Workspace not found")
     return workspace
+
+
+def _require_current_workspace_id(user_id: str) -> str:
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if not workspace_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace_id
+
+
+def _normalise_iso6391_language_code(code: str | None) -> str | None:
+    if code is None:
+        return None
+    trimmed = code.strip().lower()
+    if not trimmed:
+        return None
+    primary = re.split(r"[-_]", trimmed, maxsplit=1)[0]
+    if not re.fullmatch(r"[a-z]{2}", primary):
+        raise HTTPException(
+            status_code=422,
+            detail="language must be an ISO 639-1 two-letter code",
+        )
+    return primary
+
+
+def _validate_existing_column(node: Node, column_name: str) -> None:
+    schema_names = node.data.collect_schema().names()
+    if column_name not in schema_names:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Node {node.name!r} has no column {column_name!r}; "
+                f"available columns: {sorted(schema_names)}"
+            ),
+        )
 
 
 def _propagated_tokenization(
@@ -656,6 +695,13 @@ async def replace_apply(
     )
 
 
+@router.get("/tokenizer-models", response_model=TokenizerModelsResponse)
+async def get_tokenizer_models(
+    _current_user: dict = Depends(get_current_user),
+):
+    return {"models": predefined_model_records()}
+
+
 @router.get("/nodes/{node_id}", response_model=WorkspaceNodeInfo)
 async def get_node_info(
     node_id: str,
@@ -664,6 +710,68 @@ async def get_node_info(
     user_id = current_user["id"]
     ws = _require_current_workspace(user_id)
     return frontend_node_info(ws.nodes[node_id])
+
+
+@router.put("/nodes/{node_id}/document-column", response_model=WorkspaceNodeInfo)
+async def set_node_document_column(
+    node_id: str,
+    request: NodeDocumentColumnUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    workspace_id = _require_current_workspace_id(user_id)
+    ws = _require_current_workspace(user_id)
+    node = ws.nodes[node_id]
+    document_column = (request.document_column or "").strip()
+
+    if document_column:
+        _validate_existing_column(node, document_column)
+        node.document = document_column
+    else:
+        node.document = None
+
+    update_workspace(user_id, workspace_id, best_effort=True)
+    return frontend_node_info(node)
+
+
+@router.put(
+    "/nodes/{node_id}/tokenization-preference", response_model=WorkspaceNodeInfo
+)
+async def set_node_tokenization_preference(
+    node_id: str,
+    request: NodeTokenizationPreferenceRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    user_id = current_user["id"]
+    workspace_id = _require_current_workspace_id(user_id)
+    ws = _require_current_workspace(user_id)
+    node = ws.nodes[node_id]
+    source_column = request.source_column.strip()
+    model = (request.model or "").strip()
+
+    if not source_column:
+        raise HTTPException(status_code=422, detail="source_column is required")
+    if not model:
+        _validate_existing_column(node, source_column)
+        node.unregister_tokenization(source_column)
+        update_workspace(user_id, workspace_id, best_effort=True)
+        return frontend_node_info(node)
+    if model not in PREDEFINED_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown tokenizer model: {model}")
+
+    language = _normalise_iso6391_language_code(request.language)
+    try:
+        tokenise_column(
+            node,
+            source_column=source_column,
+            model=model,
+            language=language,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    update_workspace(user_id, workspace_id, best_effort=True)
+    return frontend_node_info(node)
 
 
 @router.get("/nodes/{node_id}/query-plan", response_model=NodeQueryPlanResponse)

@@ -364,16 +364,6 @@ async def run_topic_modeling(
         column_name = request.node_columns[node_id]
         available_columns = list(node_data.collect_schema().names())
 
-        try:
-            node.document = column_name
-        except Exception as exc:
-            logger.debug(
-                "Failed to set topic-modeling node.document for node %s column %s: %s",
-                node_id,
-                column_name,
-                exc,
-            )
-
         node_infos.append(
             {
                 "node_id": node_id,

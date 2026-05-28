@@ -558,7 +558,26 @@ class WorkspaceNodeInfo(BaseModel):
     can_undo: bool | None = None
     can_redo: bool | None = None
     dtype_normalization: list[DtypeNormalizationChange] | None = None
-    tokenization: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class NodeDocumentColumnUpdateRequest(BaseModel):
+    document_column: str | None = None
+
+
+class NodeTokenizationPreferenceRequest(BaseModel):
+    source_column: str
+    model: str | None = None
+    language: str | None = None
+
+
+class TokenizerModelInfo(BaseModel):
+    model: str
+    label: str
+    languages: list[str]
+
+
+class TokenizerModelsResponse(BaseModel):
+    models: list[TokenizerModelInfo]
 
 
 class WorkspaceGraphEdge(BaseModel):
@@ -1150,11 +1169,6 @@ class TextAnalysisInfo(BaseModel):
     is_text_ready: bool
 
 
-class DefaultStopWordsResponse(BaseModel):
-    stopwords: list[str]
-    error: str | None = None
-
-
 class AiAnnotationDetachData(BaseModel):
     new_node_name: str
     record_count: int
@@ -1430,6 +1444,7 @@ class TokenFrequencyRequest(BaseModel):
     stop_words: Optional[List[str]] = None
     token_limit: Optional[int] = None
     tokenizer_model: Optional[str] = None
+    node_tokenizer_models: Optional[Dict[str, str]] = None
     # Pydantic v2 model config
     model_config = ConfigDict(
         json_schema_extra={
@@ -1438,7 +1453,10 @@ class TokenFrequencyRequest(BaseModel):
                 "node_columns": {"node1": "text_column", "node2": "content_column"},
                 "stop_words": ["the", "and", "or"],
                 "token_limit": 50,
-                "tokenizer_model": "native:plain_words_en",
+                "node_tokenizer_models": {
+                    "node1": "native:plain_words_en",
+                    "node2": "huggingface:bert-base-uncased",
+                },
             }
         },
     )

@@ -41,7 +41,6 @@ from ....models import (
     QuotationResultQuery,
 )
 from ....settings import settings
-from ..utils import update_workspace
 from . import quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_tokenization_column_name
@@ -430,12 +429,6 @@ async def get_quotation(
 
         node = workspace.nodes[node_id]
         _enforce_quotation_language_gate(request.language, node)
-        try:
-            node.document = request.column
-            update_workspace(user_id, workspace_id, best_effort=True)
-        except Exception:
-            # Best-effort persistence only; do not block analysis.
-            pass
 
         engine = request.engine or QuotationEngineConfig()
 

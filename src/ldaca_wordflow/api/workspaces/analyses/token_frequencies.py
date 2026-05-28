@@ -35,7 +35,7 @@ from ....models import (
     TokenFrequencyRequest,
     TokenFrequencyResponse,
 )
-from ..utils import ensure_task_synced, update_workspace
+from ..utils import ensure_task_synced
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
 
@@ -470,6 +470,11 @@ async def calculate_token_frequencies(
             status_code=400, detail="token_limit must be a positive integer"
         )
     tokenizer_model = (request.tokenizer_model or "").strip()
+    requested_node_tokenizer_models = {
+        node_id: model.strip()
+        for node_id, model in (request.node_tokenizer_models or {}).items()
+        if model and model.strip()
+    }
 
     # Prepare the artifact target early so the tokens-mode spill files
     # share a parent directory with the eventual frequency parquets and
@@ -481,27 +486,29 @@ async def calculate_token_frequencies(
 
     node_corpora: dict[str, list[str]] = {}
     node_token_streams: dict[str, str] = {}
+    node_tokenizer_models: dict[str, str] = {}
     node_display_names: dict[str, str] = {}
-    document_column_updated = False
     for node_id in request.node_ids:
         node = ws.nodes[node_id]
         node_data = node.data
 
         column_name = request.node_columns[node_id]
 
-        try:
-            node.document = column_name
-            document_column_updated = True
-        except Exception as exc:
-            logger.debug(
-                "Failed to persist node.document for node %s column %s: %s",
-                node_id,
-                column_name,
-                exc,
-            )
-
         tokenization_col = node.find_tokenization_column(column_name)
         if tokenization_col is not None:
+            tokenization_registry = getattr(node, "tokenization", {})
+            tokenization_meta = (
+                tokenization_registry.get(column_name, {})
+                if isinstance(tokenization_registry, dict)
+                else {}
+            )
+            model = (
+                tokenization_meta.get("model")
+                if isinstance(tokenization_meta, dict)
+                else None
+            )
+            if isinstance(model, str) and model.strip():
+                node_tokenizer_models[node_id] = model.strip()
             node_data = hydrate_tokenization_lazyframe(
                 node=node,
                 source_column=column_name,
@@ -538,14 +545,23 @@ async def calculate_token_frequencies(
             ]
         node_display_names[node_id] = str(getattr(node, "name", None) or node_id)
 
-    if node_corpora and not tokenizer_model:
+    node_tokenizer_models.update(
+        {
+            node_id: requested_node_tokenizer_models.get(node_id) or tokenizer_model
+            for node_id in node_corpora
+        }
+    )
+    missing_tokenizer_model_node_ids = [
+        node_id for node_id, model in node_tokenizer_models.items() if not model
+    ]
+    if missing_tokenizer_model_node_ids:
         raise HTTPException(
             status_code=400,
-            detail="tokenizer_model is required when token frequencies must tokenize raw text",
+            detail=(
+                "node_tokenizer_models must include a tokenizer model for raw-text nodes: "
+                + ", ".join(missing_tokenizer_model_node_ids)
+            ),
         )
-
-    if document_column_updated:
-        update_workspace(user_id, workspace_id, best_effort=True)
 
     requested_stop_words = sanitize_stop_words(request.stop_words)
 
@@ -595,6 +611,7 @@ async def calculate_token_frequencies(
                 "token_limit": effective_limit,
                 "stop_words": requested_stop_words,
                 "tokenizer_model": tokenizer_model,
+                "node_tokenizer_models": node_tokenizer_models,
             },
         )
 
@@ -604,6 +621,7 @@ async def calculate_token_frequencies(
         token_limit=effective_limit,
         stop_words=requested_stop_words,
         tokenizer_model=tokenizer_model,
+        node_tokenizer_models=node_tokenizer_models,
     )
 
     task_manager = get_task_manager(user_id)

@@ -94,7 +94,7 @@ def test_worker_mixes_token_stream_and_text_paths(tmp_path, monkeypatch):
 def test_worker_raw_text_path_requires_tokenizer_model(tmp_path, monkeypatch):
     _stub_polars_text(monkeypatch)
 
-    with pytest.raises(ValueError, match="tokenizer_model is required"):
+    with pytest.raises(ValueError, match="node_tokenizer_models must include"):
         run_token_frequencies_task(
             configure_worker_environment=lambda: None,
             user_id="user-1",

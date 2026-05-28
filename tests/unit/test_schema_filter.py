@@ -65,7 +65,7 @@ def test_project_visible_preserves_lazyframe_columns() -> None:
     assert "value" in projected_columns
 
 
-def test_frontend_node_info_preserves_schema_and_reports_token_metadata() -> None:
+def test_frontend_node_info_preserves_schema() -> None:
     node = _make_node_with_tokenization()
     info = frontend_node_info(node)
 
@@ -73,15 +73,15 @@ def test_frontend_node_info_preserves_schema_and_reports_token_metadata() -> Non
     assert _TOKENS_NAME in info["schema"]
     assert info["columns"] == ["text", "value", _TOKENS_NAME]
     assert info["shape"][1] == 3
-    assert info["tokenization"] == {"text": _meta()}
+    assert "tokenization" not in info
 
 
-def test_frontend_node_info_reports_empty_tokenization() -> None:
+def test_frontend_node_info_plain_node() -> None:
     df = pl.DataFrame({"text": ["a"]}).lazy()
     node = Node(data=df, name="plain")
     info = frontend_node_info(node)
     assert info["columns"] == ["text"]
-    assert info["tokenization"] == {}
+    assert "tokenization" not in info
     assert info["shape"][1] == 1
 
 

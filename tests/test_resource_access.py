@@ -28,17 +28,6 @@ def test_sample_data_resources_exist():
     assert files, f"No packaged sample data files found under {sample_root}"
 
 
-def test_stopwords_resources():
-    stopwords_dir = resources.files("ldaca_wordflow.resources")
-    languages = ["en", "es", "fr", "de"]
-    for lang in languages:
-        path = stopwords_dir.joinpath(f"stopwords_{lang}.txt")
-        with resources.as_file(path) as resolved:
-            assert resolved.is_file()
-            content = resolved.read_text(encoding="utf-8")
-            assert content.strip(), f"Stopwords file {path} should not be empty"
-
-
 def test_import_sample_data_uses_packaged_resources(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_root", tmp_path)
     monkeypatch.setattr(settings, "user_data_folder", "users")

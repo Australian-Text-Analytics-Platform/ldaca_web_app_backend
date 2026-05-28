@@ -94,9 +94,17 @@ The analysis routes live under `api/workspaces/analyses/`.
   per-user DuckDB embedding cache.
 - AI annotation calls OpenAI structured-output classification and can detach
   saved labels into workspace data.
-- Tokenization routes register and remove tokenisation metadata. Downstream
-  analyses hydrate those token specs from the per-user DuckDB token cache when
-  needed.
+- Standalone tokenization routes are not exposed. Tokenizer model inventory is
+  available from `GET /api/workspaces/tokenizer-models`; it is sourced from
+  `polars-text` and carries model IDs, display labels, and supported ISO 639-1
+  language codes without backend recommendation policy. Node selectors persist
+  document columns through `PUT /api/workspaces/nodes/{node_id}/document-column`.
+  Token frequency stores per-column preferences through
+  `PUT /api/workspaces/nodes/{node_id}/tokenization-preference`, then derives the
+  model from `Node.tokenization` when submitting worker jobs. The legacy
+  `node_tokenizer_models` request field remains accepted only for compatibility.
+  `Node.tokenization` metadata is hydrated from the per-user DuckDB token cache
+  when an existing workspace node carries cached token specs.
 
 Shared helpers in `cleanup.py`, `current_tasks.py`, `generated_columns.py`,
 `page_size_estimation.py`, and core cache modules keep route code smaller.

@@ -29,7 +29,7 @@ def _stub_worker_task_manager(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_text_column_preference_persists_across_text_analyses(
+async def test_text_column_preference_is_set_by_node_endpoint_not_analyses(
     authenticated_client, workspace_id, monkeypatch
 ):
     user_id = "test"
@@ -60,11 +60,23 @@ async def test_text_column_preference_persists_across_text_analyses(
 
     assert node is not None
 
+    async def set_document_column(column: str) -> None:
+        response = await authenticated_client.put(
+            f"/api/workspaces/nodes/{node.id}/document-column",
+            json={"document_column": column},
+        )
+        assert response.status_code == 200, response.text
+        refreshed_node = workspace.nodes.get(node.id)
+        assert refreshed_node is not None
+        assert refreshed_node.document == column
+
+    await set_document_column("text_a")
+
     token_response = await authenticated_client.post(
         "/api/workspaces/token-frequencies",
         json={
             "node_ids": [node.id],
-            "node_columns": {node.id: "text_a"},
+            "node_columns": {node.id: "text_b"},
             "tokenizer_model": "native:plain_words_en",
         },
     )
@@ -74,11 +86,13 @@ async def test_text_column_preference_persists_across_text_analyses(
     assert refreshed is not None
     assert refreshed.document == "text_a"
 
+    await set_document_column("text_b")
+
     concordance_response = await authenticated_client.post(
         "/api/workspaces/concordance",
         json={
             "node_ids": [node.id],
-            "node_columns": {node.id: "text_b"},
+            "node_columns": {node.id: "text_a"},
             "search_word": "alpha",
             "num_left_tokens": 1,
             "num_right_tokens": 1,
@@ -92,6 +106,8 @@ async def test_text_column_preference_persists_across_text_analyses(
     refreshed = workspace.nodes.get(node.id)
     assert refreshed is not None
     assert refreshed.document == "text_b"
+
+    await set_document_column("text_a")
 
     async def fake_compute_quote_dataframe(
         node,
@@ -113,7 +129,7 @@ async def test_text_column_preference_persists_across_text_analyses(
     quotation_response = await authenticated_client.post(
         f"/api/workspaces/nodes/{node.id}/quotation",
         json={
-            "column": "text_a",
+            "column": "text_b",
         },
     )
     assert quotation_response.status_code == 200, quotation_response.text
@@ -122,11 +138,13 @@ async def test_text_column_preference_persists_across_text_analyses(
     assert refreshed is not None
     assert refreshed.document == "text_a"
 
+    await set_document_column("text_b")
+
     topic_response = await authenticated_client.post(
         "/api/workspaces/topic-modeling",
         json={
             "node_ids": [node.id],
-            "node_columns": {node.id: "text_b"},
+            "node_columns": {node.id: "text_a"},
             "min_topic_size": 2,
         },
     )
@@ -148,5 +166,4 @@ async def test_text_column_preference_persists_across_text_analyses(
         if hasattr(analysis_task.request, "model_dump")
         else analysis_task.request.dict()
     )
-    assert request_data["node_columns"][node.id] == "text_b"
-    assert request_data["node_columns"][node.id] == "text_b"
+    assert request_data["node_columns"][node.id] == "text_a"

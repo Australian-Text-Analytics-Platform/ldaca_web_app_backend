@@ -63,3 +63,57 @@ def test_token_frequency_worker_emits_early_progress_updates(tmp_path, monkeypat
         "Preparing text data" in message for _progress, message in progress_updates
     )
     assert progress_updates[-1] == (1.0, "Token frequency analysis completed")
+
+
+def test_token_frequency_worker_uses_per_node_tokenizer_models(tmp_path, monkeypatch):
+    requested_models: list[str | None] = []
+
+    fake_polars_text = cast(Any, ModuleType("polars_text"))
+
+    def fake_token_frequencies(series, model):
+        requested_models.append(model)
+        return {str(model): 1}
+
+    fake_polars_text.token_frequencies = fake_token_frequencies
+    fake_polars_text.token_frequency_stats = lambda left, right: pl.DataFrame(
+        {
+            "token": ["alpha"],
+            "freq_corpus_0": [1],
+            "percent_corpus_0": [1.0],
+            "freq_corpus_1": [1],
+            "percent_corpus_1": [1.0],
+            "log_likelihood_llv": [0.0],
+            "percent_diff": [0.0],
+            "bayes_factor_bic": [0.0],
+            "effect_size_ell": [0.0],
+            "relative_risk": [1.0],
+            "log_ratio": [0.0],
+            "odds_ratio": [1.0],
+            "significance": [""],
+        }
+    )
+    monkeypatch.setitem(sys.modules, "polars_text", fake_polars_text)
+
+    result = run_token_frequencies_task(
+        configure_worker_environment=lambda: None,
+        user_id="user-1",
+        workspace_id="ws-1",
+        node_corpora={
+            "node-en": ["alpha beta"],
+            "node-ja": ["吾輩は猫である"],
+        },
+        node_display_names={"node-en": "English", "node-ja": "Japanese"},
+        artifact_dir=str(tmp_path),
+        artifact_prefix="token_frequency_models",
+        node_tokenizer_models={
+            "node-en": "native:plain_words_en",
+            "node-ja": "lindera:ja-ipadic",
+        },
+    )
+
+    assert requested_models == ["native:plain_words_en", "lindera:ja-ipadic"]
+    assert result["analysis_params"]["node_tokenizer_models"] == {
+        "node-en": "native:plain_words_en",
+        "node-ja": "lindera:ja-ipadic",
+    }
+    assert result["analysis_params"]["tokenizer_model"] is None

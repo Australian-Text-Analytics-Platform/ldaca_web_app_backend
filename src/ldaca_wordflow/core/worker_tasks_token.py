@@ -27,6 +27,7 @@ def run_token_frequencies_task(
     progress_callback: Callable[[float, str], None] | None = None,
     node_token_streams: dict[str, str] | None = None,
     tokenizer_model: str | None = None,
+    node_tokenizer_models: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Execute token-frequency analysis inside a worker process.
 
@@ -74,15 +75,32 @@ def run_token_frequencies_task(
         )
 
         token_streams = node_token_streams or {}
-        effective_tokenizer_model = (tokenizer_model or "").strip() or None
+        fallback_tokenizer_model = (tokenizer_model or "").strip() or None
+        requested_node_tokenizer_models = {
+            node_id: model.strip()
+            for node_id, model in (node_tokenizer_models or {}).items()
+            if model and model.strip()
+        }
+
+        def tokenizer_model_for_node(node_id: str) -> str | None:
+            return (
+                requested_node_tokenizer_models.get(node_id) or fallback_tokenizer_model
+            )
+
         node_ids = list({**node_corpora, **token_streams}.keys())
         if not node_ids:
             raise ValueError("At least one corpus is required")
         if len(node_ids) > 2:
             raise ValueError("Maximum of 2 corpora can be compared")
-        if node_corpora and effective_tokenizer_model is None:
+        missing_tokenizer_model_node_ids = [
+            node_id
+            for node_id in node_corpora
+            if tokenizer_model_for_node(node_id) is None
+        ]
+        if missing_tokenizer_model_node_ids:
             raise ValueError(
-                "tokenizer_model is required when token frequencies must tokenize raw text"
+                "node_tokenizer_models must include a tokenizer model for raw-text nodes: "
+                + ", ".join(missing_tokenizer_model_node_ids)
             )
 
         for i, node_id in enumerate(node_ids):
@@ -98,6 +116,7 @@ def run_token_frequencies_task(
             progress_callback(0.6, "Computing token frequencies...")
 
         frequency_results: dict[str, dict[str, int]] = {}
+        node_models_used: dict[str, str] = {}
         stats_df = None
         for node_id in node_ids:
             if node_id in token_streams:
@@ -132,7 +151,9 @@ def run_token_frequencies_task(
                     "document",
                     [str(v) if v is not None else "" for v in docs],
                 )
+                effective_tokenizer_model = tokenizer_model_for_node(node_id)
                 assert effective_tokenizer_model is not None
+                node_models_used[node_id] = effective_tokenizer_model
                 frequency_results[node_id] = pt.token_frequencies(
                     series,
                     model=effective_tokenizer_model,
@@ -182,13 +203,21 @@ def run_token_frequencies_task(
             stats_df.lazy().sink_parquet(stats_path)
             statistics_path = str(stats_path)
 
+        shared_model = None
+        if node_models_used:
+            unique_models = set(node_models_used.values())
+            shared_model = (
+                next(iter(unique_models)) if len(unique_models) == 1 else None
+            )
+
         analysis_params_dict = {
             "node_ids": list(node_ids),
             "node_columns": {},
             "token_limit": effective_limit,
             "server_limit": server_limit,
             "stop_words": requested_stop_words,
-            "tokenizer_model": effective_tokenizer_model,
+            "tokenizer_model": shared_model,
+            "node_tokenizer_models": node_models_used,
         }
 
         result_payload: dict[str, Any] = {
@@ -212,7 +241,8 @@ def run_token_frequencies_task(
                 "token_limit": effective_limit,
                 "server_limit": server_limit,
                 "stop_words": requested_stop_words,
-                "tokenizer_model": effective_tokenizer_model,
+                "tokenizer_model": shared_model,
+                "node_tokenizer_models": node_models_used,
                 "node_display_names": {**node_display_names},
             },
             "stop_words": requested_stop_words,

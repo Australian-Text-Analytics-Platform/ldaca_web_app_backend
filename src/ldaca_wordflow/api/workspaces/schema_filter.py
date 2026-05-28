@@ -2,8 +2,7 @@
 
 Token outputs are cache-backed and hydrated only inside analysis paths; node
 schemas no longer need special hidden-column filtering. This module preserves
-the physical schema while surfacing ``Node.tokenization`` metadata for UI
-affordances that need to know whether a node has been tokenised.
+the physical schema for UI consumption.
 """
 
 from __future__ import annotations
@@ -32,7 +31,7 @@ def project_visible(lf: pl.LazyFrame) -> pl.LazyFrame:
 
 
 def frontend_node_info(node: Node) -> dict[str, Any]:
-    """Return :meth:`Node.info` with structured token metadata attached."""
+    """Return :meth:`Node.info` projected for frontend consumption."""
     info = node.info()
     if "id" not in info and "node_id" in info:
         info["id"] = info["node_id"]
@@ -45,14 +44,6 @@ def frontend_node_info(node: Node) -> dict[str, Any]:
     info["columns"] = filtered_columns
     info["schema"] = filtered_schema
     info["shape"] = (height, len(filtered_columns))
-    # Guard against test mocks where metadata attributes are not real dicts.
-    tokenization = getattr(node, "tokenization", None)
-    if isinstance(tokenization, dict):
-        info["tokenization"] = {
-            source: dict(tokenization[source]) for source in sorted(tokenization.keys())
-        }
-    else:
-        info["tokenization"] = {}
     return info
 
 

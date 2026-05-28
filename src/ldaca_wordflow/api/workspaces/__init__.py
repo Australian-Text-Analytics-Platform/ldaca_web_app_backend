@@ -26,7 +26,6 @@ from .analyses import (
     quotation,
     sequential_analysis,
     token_frequencies,
-    tokenization,
     topic_modeling,
 )
 
@@ -41,7 +40,6 @@ router.include_router(quotation.router)
 router.include_router(concordance.router)
 router.include_router(topic_modeling.router)
 router.include_router(ai_annotation.router)
-router.include_router(tokenization.router)
 router.include_router(ui_state.router)
 
 __all__ = ["router", "workspace_manager"]

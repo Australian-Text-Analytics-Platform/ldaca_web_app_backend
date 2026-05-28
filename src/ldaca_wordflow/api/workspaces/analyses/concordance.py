@@ -39,7 +39,6 @@ from ....models import (
     ConcordanceMaterializeRequest,
     CurrentAnalysisTasksResponse,
 )
-from ..utils import update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
@@ -181,23 +180,6 @@ async def run_concordance(
         raise HTTPException(
             status_code=400, detail="At least one node ID must be provided"
         )
-
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is not None:
-        document_column_updated = False
-        for node_id in request.node_ids:
-            try:
-                workspace.nodes[node_id].document = request.node_columns[node_id]
-                document_column_updated = True
-            except Exception as exc:
-                logger.debug(
-                    "Failed to set concordance node.document for node %s column %s: %s",
-                    node_id,
-                    request.node_columns[node_id],
-                    exc,
-                )
-        if document_column_updated:
-            update_workspace(user_id, workspace_id, best_effort=True)
 
     try:
         analysis_request = AnalysisConcordanceRequest(
