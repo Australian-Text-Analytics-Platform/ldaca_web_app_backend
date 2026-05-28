@@ -973,15 +973,13 @@ class TestSequentialAnalysisPersistence:
 class TestWorkspaceGraphEnrichment:
     """Test workspace graph enrichment with analysis data."""
 
-    async def test_graph_surfaces_tokenization_metadata_on_tokenised_node(
+    async def test_graph_surfaces_tokenizer_models_on_tokenised_node(
         self, authenticated_client, workspace_id, tiny_node_id, test_user
     ):
-        """After Tokenise, ``/graph`` must surface ``tokenization`` per-node so the
-        frontend tokens-mode auto-pick can read it.
+        """After Tokenise, ``/graph`` must surface ``tokenizer_models`` per-node.
 
-        Regression test: the endpoint previously returned ``node.info()``
-        directly (no tokenization metadata), which left the
-        concordance tokens-mode radio permanently disabled for CJK corpora.
+        The frontend reads this light-weight column-to-model map to restore
+        tokenizer selectors and tokens-mode availability after tab navigation.
         """
         # Given: a tokenised node. Register tokenization directly on
         # the in-memory node so we don't round-trip through plbin (polars

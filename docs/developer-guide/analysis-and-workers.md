@@ -99,10 +99,11 @@ The analysis routes live under `api/workspaces/analyses/`.
   `polars-text` and carries model IDs, display labels, and supported ISO 639-1
   language codes without backend recommendation policy. Node selectors persist
   document columns through `PUT /api/workspaces/nodes/{node_id}/document-column`.
-  Token frequency stores per-column preferences through
-  `PUT /api/workspaces/nodes/{node_id}/tokenization-preference`, then derives the
-  model from `Node.tokenization` when submitting worker jobs. The legacy
-  `node_tokenizer_models` request field remains accepted only for compatibility.
+  Token frequency and concordance store per-column preferences through
+  `PUT /api/workspaces/nodes/{node_id}/tokenization-preference`, then derive the
+  model from `Node.tokenization` when submitting worker jobs. Token-frequency
+  requests still include `node_tokenizer_models` as task/snapshot settings and
+  as a short-lived fallback while a preference write is in flight.
   `Node.tokenization` metadata is hydrated from the per-user DuckDB token cache
   when an existing workspace node carries cached token specs.
 
