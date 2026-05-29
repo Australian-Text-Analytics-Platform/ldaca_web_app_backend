@@ -37,6 +37,7 @@ from ...models import (
 from polars_text.models import PREDEFINED_MODELS, predefined_model_records
 
 from .schema_filter import frontend_node_info, project_visible
+from ...core.exceptions import InternalServiceError, InvalidInputError, NodeNotFoundError, NotFoundError, ValidationError
 from .utils import (
     Node,
     _is_string_list_dtype,
@@ -64,10 +65,7 @@ def _normalise_iso6391_language_code(code: str | None) -> str | None:
         return None
     primary = re.split(r"[-_]", trimmed, maxsplit=1)[0]
     if not re.fullmatch(r"[a-z]{2}", primary):
-        raise HTTPException(
-            status_code=422,
-            detail="language must be an ISO 639-1 two-letter code",
-        )
+        raise ValidationError("language must be an ISO 639-1 two-letter code",)
     return primary
 
 
@@ -185,7 +183,7 @@ async def delete_node(node_id: str, current_user: dict = Depends(get_current_use
     if success:
         update_workspace(user_id, workspace_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Node not found")
+        raise NodeNotFoundError("Node not found")
     return {"state": "successful", "message": "Node deleted successfully"}
 
 
@@ -251,9 +249,7 @@ async def clone_node(
             logger.debug("new_node.info() failed after clone, returning minimal dict")
             return {"id": getattr(new_node, "id", None), "name": new_name}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
+        raise InternalServiceError(str(exc)) from exc
 @router.put("/nodes/{node_id}/document-column", response_model=WorkspaceNodeInfo)
 async def set_node_document_column(
     node_id: str,
@@ -294,15 +290,14 @@ async def set_node_tokenization_preference(
     model = (request.model or "").strip()
 
     if not source_column:
-        raise HTTPException(status_code=422, detail="source_column is required")
+        raise ValidationError("source_column is required")
     if not model:
         _validate_existing_column(node, source_column)
         node.unregister_tokenization(source_column)
         update_workspace(user_id, workspace_id, best_effort=True)
         return frontend_node_info(node)
     if model not in PREDEFINED_MODELS:
-        raise HTTPException(status_code=400, detail=f"Unknown tokenizer model: {model}")
-
+        raise InvalidInputError(f"Unknown tokenizer model: {model}")
     language = _normalise_iso6391_language_code(request.language)
     try:
         tokenise_column(
@@ -312,8 +307,7 @@ async def set_node_tokenization_preference(
             language=language,
         )
     except KeyError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     update_workspace(user_id, workspace_id, best_effort=True)
     return frontend_node_info(node)
 
@@ -384,9 +378,7 @@ async def get_column_unique_values(
             "has_null": has_null,
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
+        raise InternalServiceError(str(exc)) from exc
 @router.get(
     "/nodes/{node_id}/columns/{column_name}/describe",
     response_model=ColumnDescribeResponse,
@@ -454,9 +446,7 @@ async def describe_column(
             max=serialize_value(desc_dict.get("max")),
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
+        raise InternalServiceError(str(exc)) from exc
 @router.get(
     "/nodes/{node_id}/columns/{column_name}/operations",
     response_model=ColumnOperationsResponse,
@@ -473,5 +463,5 @@ async def column_operations(
     schema = dict(node.data.collect_schema().items())
     dtype = schema.get(column_name)
     if dtype is None:
-        raise HTTPException(status_code=404, detail=f"Column '{column_name}' not found")
+        raise NotFoundError(f"Column '{column_name}' not found")
     return {"operations": get_operations_for_dtype(dtype)}

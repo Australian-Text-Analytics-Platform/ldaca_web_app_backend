@@ -12,6 +12,7 @@ Flow: normalize inputs, delegate to the owning backend state or service boundary
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from contextlib import asynccontextmanager
 from typing import IO, Any, cast
@@ -68,6 +69,11 @@ async def lifespan(app: FastAPI):
     setup_logging()
     log_file: IO[str] | None = setup_file_logging("main")
     current_settings = reload_settings()
+    if not os.getenv("SECRET_KEY") and current_settings.multi_user:
+        logger.warning(
+            "SECRET_KEY not set in environment — JWT signatures will change on restart."
+            " Set SECRET_KEY for stable multi-user deployments."
+        )
 
     logger.info(
         "Starting LDaCA Web App (platform=%s, python=%s)",
@@ -132,6 +138,11 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
 )
+
+# Setup request logging (before CORS so it captures everything)
+from ._middleware import RequestLoggingMiddleware
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Setup CORS (regex + credentials from settings)
 app.add_middleware(

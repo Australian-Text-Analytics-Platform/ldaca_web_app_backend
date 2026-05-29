@@ -17,6 +17,7 @@ import polars as pl
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...core.auth import get_current_user
+from ...core.exceptions import InvalidInputError, ValidationError
 from ...models import (
     FilterPreviewResponse,
     NodeOperationResponse,
@@ -62,10 +63,7 @@ def _build_slice_or_sample_lazy(
 
     if request.mode == "random_sample":
         if request.sample_size is None:
-            raise HTTPException(
-                status_code=422,
-                detail="sample_size is required when mode is 'random_sample'",
-            )
+            raise ValidationError("sample_size is required when mode is 'random_sample'",)
         if request.sample_size < 1:
             sample_indices = pl.int_range(pl.len()).sample(
                 fraction=request.sample_size,
@@ -151,8 +149,7 @@ async def slice_preview(
             preview_lazy, page, page_size
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     return FilterPreviewResponse(
         data=data_rows,
         columns=columns,

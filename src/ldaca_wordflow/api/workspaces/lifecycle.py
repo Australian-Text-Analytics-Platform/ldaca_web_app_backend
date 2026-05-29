@@ -40,47 +40,12 @@ from ...models import (
     WorkspaceUploadResponse,
 )
 from .schema_filter import frontend_node_info
-from .utils import update_workspace
+from .utils import require_current_workspace, require_current_workspace_id, update_workspace
+from ...core.exceptions import AccessDeniedError, InvalidInputError, ResourceConflictError, ResourceGoneError, TaskNotFoundError, WorkspaceNotFoundError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workspaces", tags=["lifecycle"])
-
-
-def _require_current_workspace_id(user_id: str) -> str:
-    """Resolve required current workspace id state for workspace lifecycle routes.
-
-    Steps:
-    - Normalize caller input into the representation this module expects.
-    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
-    - Return the compact value the caller uses for artifacts, validation, or response shaping.
-
-    Called by:
-    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve required current workspace id state for workspace lifecycle routes" behavior.
-    """
-
-    workspace_id = workspace_manager.get_current_workspace_id(user_id)
-    if workspace_id is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return workspace_id
-
-
-def _require_current_workspace(user_id: str) -> Workspace:
-    """Resolve required current workspace state for workspace lifecycle routes.
-
-    Steps:
-    - Normalize caller input into the representation this module expects.
-    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
-    - Return the compact value the caller uses for artifacts, validation, or response shaping.
-
-    Called by:
-    - Local helpers, route handlers, or service methods in this module because they need this unit's "Resolve required current workspace state for workspace lifecycle routes" behavior.
-    """
-
-    workspace = workspace_manager.get_current_workspace(user_id)
-    if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-    return workspace
 
 
 def _safe_download_name(name: str) -> str:
@@ -108,9 +73,9 @@ def _safe_member_path(name: str) -> PurePosixPath:
 
     path = PurePosixPath(name)
     if path.is_absolute() or ".." in path.parts:
-        raise HTTPException(status_code=400, detail="Invalid zip entry path")
+        raise InvalidInputError("Invalid zip entry path")
     if any(part in {"", "."} for part in path.parts):
-        raise HTTPException(status_code=400, detail="Invalid zip entry path")
+        raise InvalidInputError("Invalid zip entry path")
     return path
 
 
@@ -175,7 +140,7 @@ async def set_current_workspace(
         await workspace_manager.clear_workspace_tasks(user_id, previous_workspace_id)
     success = workspace_manager.set_current_workspace(user_id, workspace_id)
     if not success and workspace_id is not None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return {"state": "successful", "id": workspace_id}
 
 
@@ -199,7 +164,7 @@ async def create_workspace(
     user_id = current_user["id"]
     is_valid, reason = validate_workspace_name(request.name)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=f"Invalid workspace name: {reason}")
+        raise InvalidInputError(f"Invalid workspace name: {reason}")
     workspace = Workspace(name=request.name)
     workspace_id = workspace.id
     workspace.description = request.description or ""
@@ -230,10 +195,10 @@ async def delete_workspace(
 
     user_id = current_user["id"]
     if not workspace_id.strip():
-        raise HTTPException(status_code=400, detail="workspace_id is required")
+        raise InvalidInputError("workspace_id is required")
     success = workspace_manager.delete_workspace(user_id, workspace_id)
     if not success:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return {
         "state": "successful",
         "message": f"Workspace {workspace_id} deleted successfully",
@@ -263,7 +228,7 @@ async def unload_workspace(
         await workspace_manager.clear_workspace_tasks(user_id, workspace_id)
     existed = workspace_manager.unload_workspace(user_id, workspace_id, save=save)
     if not existed:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return {
         "state": "successful",
         "message": f"Workspace {workspace_id} unloaded",
@@ -288,11 +253,11 @@ async def rename_workspace(
     """
 
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
-    workspace = _require_current_workspace(user_id)
+    workspace_id = require_current_workspace_id(user_id)
+    workspace = require_current_workspace(user_id)
     is_valid, reason = validate_workspace_name(new_name)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=f"Invalid workspace name: {reason}")
+        raise InvalidInputError(f"Invalid workspace name: {reason}")
     workspace.name = new_name
     update_workspace(user_id, workspace_id, workspace)
     return workspace.info_json()
@@ -315,8 +280,8 @@ async def update_workspace_description(
     """
 
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
-    workspace = _require_current_workspace(user_id)
+    workspace_id = require_current_workspace_id(user_id)
+    workspace = require_current_workspace(user_id)
     workspace.description = description.strip()
     update_workspace(user_id, workspace_id, workspace)
     return workspace.info_json()
@@ -338,8 +303,8 @@ async def save_workspace(
     """
 
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
-    ws = _require_current_workspace(user_id)
+    workspace_id = require_current_workspace_id(user_id)
+    ws = require_current_workspace(user_id)
     update_workspace(user_id, workspace_id, ws)
     return {"state": "successful", "message": "Workspace saved"}
 
@@ -363,8 +328,8 @@ async def start_workspace_download(
       track progress and the UI stays responsive.
     """
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
-    ws = _require_current_workspace(user_id)
+    workspace_id = require_current_workspace_id(user_id)
+    ws = require_current_workspace(user_id)
 
     # Persist latest state if this is the current in-memory workspace
     if workspace_manager.get_current_workspace_id(user_id) == workspace_id:
@@ -373,8 +338,7 @@ async def start_workspace_download(
     # Verify workspace directory exists before submitting
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None or not workspace_dir.exists():
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     # Resolve a human-readable name for the task centre label
     ws_name = ws.name if ws else workspace_id
 
@@ -418,40 +382,27 @@ async def download_workspace_artifact(
       download to avoid unbounded disk usage.
     """
     user_id = current_user["id"]
-    workspace_id = _require_current_workspace_id(user_id)
+    workspace_id = require_current_workspace_id(user_id)
 
     tm = workspace_manager.get_task_manager(user_id)
     task_info = await tm.get_task(task_id)
     if task_info is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     # Verify the task belongs to this workspace
     if task_info.workspace_id != workspace_id:
-        raise HTTPException(
-            status_code=403, detail="Task does not belong to this workspace"
-        )
-
+        raise AccessDeniedError("Task does not belong to this workspace")
     if task_info.task_type != "workspace_download":
-        raise HTTPException(status_code=400, detail="Task is not a workspace download")
-
+        raise InvalidInputError("Task is not a workspace download")
     from ...core.worker_task_manager import TaskStatus
 
     if task_info.status != TaskStatus.SUCCESSFUL:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Task is not completed (state: {task_info.status.value})",
-        )
-
+        raise ResourceConflictError(f"Task is not completed (state: {task_info.status.value})",)
     result = task_info.result
     if not isinstance(result, dict) or not result.get("artifact_path"):
-        raise HTTPException(status_code=410, detail="Artifact metadata missing")
-
+        raise ResourceGoneError("Artifact metadata missing")
     artifact_path = Path(result["artifact_path"])
     if not artifact_path.exists():
-        raise HTTPException(
-            status_code=410, detail="Artifact already downloaded or deleted"
-        )
-
+        raise ResourceGoneError("Artifact already downloaded or deleted")
     filename = result.get("filename", f"{workspace_id}.zip")
 
     def _stream_and_delete():
@@ -504,12 +455,10 @@ async def upload_workspace_zip(
 
     filename = file.filename or "workspace.zip"
     if not filename.lower().endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Only .zip files are supported")
-
+        raise InvalidInputError("Only .zip files are supported")
     file_bytes = await file.read()
     if not file_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
-
+        raise InvalidInputError("Uploaded file is empty")
     existing_ids = {
         item.get("id")
         for item in workspace_manager.list_user_workspaces_summaries(user_id)
@@ -523,8 +472,7 @@ async def upload_workspace_zip(
             with zipfile.ZipFile(io.BytesIO(file_bytes), "r") as zf:
                 members = [m for m in zf.infolist() if not m.is_dir()]
                 if not members:
-                    raise HTTPException(status_code=400, detail="ZIP archive is empty")
-
+                    raise InvalidInputError("ZIP archive is empty")
                 safe_paths = [_safe_member_path(m.filename) for m in members]
                 metadata_candidates = [
                     p
@@ -532,11 +480,7 @@ async def upload_workspace_zip(
                     if p.name == "metadata.json" and "__MACOSX" not in p.parts
                 ]
                 if not metadata_candidates:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="ZIP must contain workspace metadata.json",
-                    )
-
+                    raise InvalidInputError("ZIP must contain workspace metadata.json",)
                 metadata_path_in_zip = min(
                     metadata_candidates, key=lambda p: len(p.parts)
                 )
@@ -571,11 +515,7 @@ async def upload_workspace_zip(
             extracted_root = Path(extraction_dir)
             metadata_file = extracted_root / "metadata.json"
             if not metadata_file.exists():
-                raise HTTPException(
-                    status_code=400,
-                    detail="ZIP missing required metadata.json at workspace root",
-                )
-
+                raise InvalidInputError("ZIP missing required metadata.json at workspace root",)
             with metadata_file.open("r", encoding="utf-8") as f:
                 metadata = json.load(f)
 
@@ -627,9 +567,7 @@ async def upload_workspace_zip(
         )
         return {"state": "successful", "workspace": summary}
     except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid ZIP file: {exc}")
-
-
+        raise InvalidInputError(f"Invalid ZIP file: {exc}")
 @router.get("/info", response_model=WorkspaceInfo)
 async def get_workspace_info(
     current_user: dict = Depends(get_current_user),
@@ -646,7 +584,7 @@ async def get_workspace_info(
     """
 
     user_id = current_user["id"]
-    workspace = _require_current_workspace(user_id)
+    workspace = require_current_workspace(user_id)
     return workspace.info_json()
 
 
@@ -665,7 +603,7 @@ async def get_workspace_graph(
     - frontend graph canvas initialization and refresh because they need this unit's "Return workspace graph payload" behavior.
     """
     user_id = current_user["id"]
-    workspace = _require_current_workspace(user_id)
+    workspace = require_current_workspace(user_id)
     graph = workspace.graph_json()
     graph["nodes"] = [
         frontend_node_info(workspace.nodes[entry["id"]])
@@ -691,6 +629,6 @@ async def get_workspace_nodes(
     """
 
     user_id = current_user["id"]
-    workspace = _require_current_workspace(user_id)
+    workspace = require_current_workspace(user_id)
     nodes = [frontend_node_info(node) for node in workspace.nodes.values()]
     return {"nodes": nodes}

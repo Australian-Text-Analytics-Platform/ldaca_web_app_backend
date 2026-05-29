@@ -18,6 +18,7 @@ from ...core.auth import get_current_user
 from ...core.oni_client import OniClient, OniSearchMethod
 from ...models import OniSearchRequest, OniSearchResponse, OniSearchResult
 from ...settings import settings
+from ...core.exceptions import InvalidInputError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -126,10 +127,7 @@ async def search_ldaca_collections(
     try:
         method = OniSearchMethod(request.method)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400, detail="Unsupported LDaCA search method"
-        ) from exc
-
+        raise InvalidInputError("Unsupported LDaCA search method") from exc
     client = _ldaca_oni_client(ldaca_api_token)
     data = _normalise_oni_results(
         await client.search(

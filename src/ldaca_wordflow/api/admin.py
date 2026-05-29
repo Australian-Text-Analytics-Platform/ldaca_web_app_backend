@@ -19,6 +19,7 @@ from ..core.auth_service import _utc_now_naive, cleanup_expired_sessions
 from ..db import async_session_maker
 from ..models.db import User, UserSession
 from ..settings import settings
+from ..core.exceptions import AccessDeniedError
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,7 @@ def _require_admin(current_user: dict) -> None:
     if current_email and current_email in admin_allowlist:
         return
 
-    raise HTTPException(status_code=403, detail="Admin access required")
-
-
+    raise AccessDeniedError("Admin access required")
 @router.get("/users")
 async def list_users(current_user: dict = Depends(get_current_user)):
     """List users with active-session counts.

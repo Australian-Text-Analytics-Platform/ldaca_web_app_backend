@@ -55,14 +55,8 @@ def _prefetch_spacy_model() -> None:
         logger.warning("[prefetch] spaCy model prefetch failed", exc_info=True)
 
 
-def _prefetch_topic_embedder_mps() -> None:
-    """Ensure the SentenceTransformer model weights are cached for MPS inference.
-
-    On Apple Silicon, the worker uses SentenceTransformer + PyTorch MPS rather
-    than the ONNX path. This prefetch first probes the HuggingFace cache with
-    `local_files_only=True` — if the key files are already on disk, we skip the
-    network entirely (matches the ONNX prefetch pattern). Only when the cache
-    is incomplete do we instantiate `SentenceTransformer` to download.
+def _prefetch_topic_embedder() -> None:
+    """Download the native SentenceTransformer topic embedder if not cached.
 
     Called by:
     - Local helpers, route handlers, or service methods in this module because they need a
@@ -71,175 +65,21 @@ def _prefetch_topic_embedder_mps() -> None:
     Flow: normalize inputs, delegate to the owning backend state or service boundary, and
         return serialized values or existing domain errors to callers.
     """
-    try:
-        from huggingface_hub import hf_hub_download
-        from huggingface_hub.errors import LocalEntryNotFoundError
-    except Exception:
-        logger.warning(
-            "[prefetch] huggingface_hub not importable; MPS embedder prefetch skipped",
-            exc_info=True,
-        )
-        return
-
-    # Probe key files — config + tokenizer + weights (safetensors preferred,
-    # pytorch_model.bin fallback). If all are cached at the pinned revision,
-    # skip network entirely.
-    try:
-        hf_hub_download(
-            repo_id=_TOPIC_EMBEDDER_REPO_ID,
-            filename="config.json",
-            revision=_TOPIC_EMBEDDER_REVISION,
-            local_files_only=True,
-        )
-        hf_hub_download(
-            repo_id=_TOPIC_EMBEDDER_REPO_ID,
-            filename="tokenizer.json",
-            revision=_TOPIC_EMBEDDER_REVISION,
-            local_files_only=True,
-        )
-        try:
-            hf_hub_download(
-                repo_id=_TOPIC_EMBEDDER_REPO_ID,
-                filename="model.safetensors",
-                revision=_TOPIC_EMBEDDER_REVISION,
-                local_files_only=True,
-            )
-        except LocalEntryNotFoundError:
-            hf_hub_download(
-                repo_id=_TOPIC_EMBEDDER_REPO_ID,
-                filename="pytorch_model.bin",
-                revision=_TOPIC_EMBEDDER_REVISION,
-                local_files_only=True,
-            )
-        logger.info(
-            "[prefetch] MPS embedder model already cached (revision %s)",
-            _TOPIC_EMBEDDER_REVISION[:8],
-        )
-        return
-    except LocalEntryNotFoundError, Exception:
-        pass
-
     try:
         from sentence_transformers import SentenceTransformer
 
         logger.info(
-            "[prefetch] Downloading SentenceTransformer model %s @ %s for MPS...",
+            "[prefetch] Downloading SentenceTransformer model %s @ %s...",
             _TOPIC_EMBEDDER_REPO_ID,
-            _TOPIC_EMBEDDER_REVISION[:8],
+            (_TOPIC_EMBEDDER_REVISION or "main")[:8],
         )
         SentenceTransformer(
             _TOPIC_EMBEDDER_REPO_ID,
-            device="cpu",
             revision=_TOPIC_EMBEDDER_REVISION,
         )
         logger.info("[prefetch] SentenceTransformer model ready")
     except Exception:
-        logger.warning("[prefetch] MPS model prefetch failed", exc_info=True)
-
-
-def _prefetch_topic_embedder_onnx() -> None:
-    """Download ONNX model + tokenizer for topic modelling if not cached.
-
-    Downloads only the files needed by OnnxEmbedder (quantized model +
-    tokenizer), skipping the full safetensors weights that were previously
-    fetched via snapshot_download.  hf_hub_download is idempotent — cached
-    files are returned instantly without hitting the network.
-
-    Called by:
-    - Local helpers, route handlers, or service methods in this module because they need a
-      backend boundary that validates inputs before delegating to workspace or worker state.
-
-    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
-        return serialized values or existing domain errors to callers.
-    """
-    try:
-        from huggingface_hub import hf_hub_download
-        from huggingface_hub.errors import LocalEntryNotFoundError
-    except Exception:
-        logger.warning(
-            "[prefetch] huggingface_hub not importable; topic embedder prefetch skipped",
-            exc_info=True,
-        )
-        return
-
-    from .onnx_embedder import _select_onnx_filename, _select_providers
-
-    providers = _select_providers()
-    onnx_filename = _select_onnx_filename(providers)
-
-    # Probe primary files — if both are cached at the pinned revision we're done.
-    try:
-        hf_hub_download(
-            repo_id=_TOPIC_EMBEDDER_REPO_ID,
-            filename=onnx_filename,
-            revision=_TOPIC_EMBEDDER_REVISION,
-            local_files_only=True,
-        )
-        hf_hub_download(
-            repo_id=_TOPIC_EMBEDDER_REPO_ID,
-            filename="tokenizer.json",
-            revision=_TOPIC_EMBEDDER_REVISION,
-            local_files_only=True,
-        )
-        logger.info(
-            "[prefetch] topic embedder ONNX files already cached (revision %s)",
-            _TOPIC_EMBEDDER_REVISION[:8],
-        )
-        return
-    except LocalEntryNotFoundError, Exception:
-        pass
-
-    # Download: platform-appropriate model, fp32 fallback, tokenizer.
-    files_to_fetch = [onnx_filename, "tokenizer.json"]
-    if onnx_filename != "onnx/model.onnx":
-        files_to_fetch.append("onnx/model.onnx")
-
-    logger.info(
-        "[prefetch] Downloading ONNX topic embedder %s @ %s...",
-        _TOPIC_EMBEDDER_REPO_ID,
-        _TOPIC_EMBEDDER_REVISION[:8],
-    )
-    try:
-        for filename in files_to_fetch:
-            try:
-                hf_hub_download(
-                    repo_id=_TOPIC_EMBEDDER_REPO_ID,
-                    filename=filename,
-                    revision=_TOPIC_EMBEDDER_REVISION,
-                )
-                logger.info("[prefetch] downloaded %s", filename)
-            except Exception as exc:
-                logger.warning("[prefetch] could not download %s: %s", filename, exc)
-        logger.info("[prefetch] topic embedder download complete")
-    except Exception:
-        logger.warning("[prefetch] topic embedder prefetch failed", exc_info=True)
-
-
-def _prefetch_topic_embedder() -> None:
-    """Download the topic embedder model appropriate for this platform.
-
-    On Apple Silicon (MPS available): downloads SentenceTransformer weights.
-    On Windows/Linux/Intel Mac: downloads ONNX model + tokenizer.
-
-    Called by:
-    - Local helpers, route handlers, or service methods in this module because they need a
-      backend boundary that validates inputs before delegating to workspace or worker state.
-
-    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
-        return serialized values or existing domain errors to callers.
-    """
-    from .mps_embedder import is_mps_available
-
-    try:
-        use_mps = is_mps_available()
-    except Exception:
-        logger.warning("[prefetch] MPS availability probe failed", exc_info=True)
-        use_mps = False
-
-    if use_mps:
-        _prefetch_topic_embedder_mps()
-    else:
-        _prefetch_topic_embedder_onnx()
+        logger.warning("[prefetch] SentenceTransformer prefetch failed", exc_info=True)
 
 
 def _run_all_prefetches() -> None:

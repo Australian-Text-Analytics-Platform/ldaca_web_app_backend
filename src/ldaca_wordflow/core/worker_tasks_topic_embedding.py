@@ -20,11 +20,9 @@ _EMBEDDER_CACHE: dict[tuple[str, str], Any] = {}
 _EMBEDDING_CHUNK_SIZE = 512
 
 # Language → (repo_id, revision) for the topic-modeling embedder. English keeps
-# the pinned MiniLM-L6 the topic-modeling team has been
-# validating against (existing flows are byte-identical when language
-# resolves to "en"). Anything else routes to the multilingual MiniLM-L12,
-# which is same 384-dim embedding space, ~110 MB ONNX, and covers 50+
-# languages including ZH / JA / KO / ES / FR / DE.
+# the pinned MiniLM-L6 the topic-modeling team has been validating against.
+# Anything else routes to the multilingual MiniLM-L12, which covers 50+ languages
+# including ZH / JA / KO / ES / FR / DE.
 #
 # Revision pinning for the multilingual model is deferred until the ZH
 # workflow is validated end-to-end. ``scripts/check_model_updates.py``
@@ -82,12 +80,7 @@ def _embedder_cache_label(repo_id: str, revision: str | None) -> str:
 
 
 def _get_embedder(model_id: str, revision: str | None = None):
-    """Get or create a cached embedder per worker process.
-
-    On Apple Silicon, prefers MPS (PyTorch Metal) over ONNX CPU — the full
-    BERT graph runs on Metal/Neural Engine as a single unit, giving ~3× cold
-    throughput vs the ARM64 quantized ONNX path (64s vs 201s on M1 Max,
-    26k docs).  Falls through to ONNX on Windows, Linux, and Intel Macs.
+    """Get or create a cached native SentenceTransformer per worker process.
 
     ``revision`` is ``None`` for the multilingual embedder until it gets
     pinned at release time; the cache key uses the empty string as a stable
@@ -95,7 +88,8 @@ def _get_embedder(model_id: str, revision: str | None = None):
 
     Called by:
     - ``_embed_documents`` (this module).
-    - Tests that patch ``mps_embedder`` / ``onnx_embedder`` to verify routing.
+    - Tests that patch ``sentence_transformers.SentenceTransformer`` to verify
+      model selection without downloading weights.
 
     Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
         caches when possible, build topic payloads, and report artifacts back to the task
@@ -106,19 +100,31 @@ def _get_embedder(model_id: str, revision: str | None = None):
     if embedder is not None:
         return embedder
 
-    from .mps_embedder import is_mps_available
+    from sentence_transformers import SentenceTransformer
 
-    if is_mps_available():
-        from .mps_embedder import MpsEmbedder
-
-        embedder = MpsEmbedder.from_pretrained(model_id, revision=revision)
-    else:
-        from .onnx_embedder import OnnxEmbedder
-
-        embedder = OnnxEmbedder.from_pretrained(model_id, revision=revision)
+    embedder = SentenceTransformer(model_id, revision=revision)
 
     _EMBEDDER_CACHE[cache_key] = embedder
     return embedder
+
+
+def _embedder_provider_id(embedder: Any) -> str:
+    """Return a stable provider label for native SentenceTransformer caching.
+
+    Called by:
+    - ``_embed_with_cache`` (this module) for DuckDB cache partitioning.
+    - ``_embed_documents`` (this module) for result metadata.
+
+    Flow: load workspace corpora, choose sampling and embedding settings, reuse embedding
+        caches when possible, build topic payloads, and report artifacts back to the task
+        manager.
+    """
+    device = getattr(embedder, "device", None) or getattr(
+        embedder, "_target_device", None
+    )
+    if device is None:
+        return "sentence-transformers"
+    return f"sentence-transformers:{device}"
 
 
 def _encode_embeddings_in_chunks(
@@ -222,7 +228,7 @@ def _embed_with_cache(
         # writes to a fresh cache file rather than reusing stale embeddings.
         model_id=cache_model_id
         or _embedder_cache_label(_TOPIC_EMBEDDER_REPO_ID, _TOPIC_EMBEDDER_REVISION),
-        provider_id=getattr(embedder, "provider", "cpu"),
+        provider_id=_embedder_provider_id(embedder),
     )
 
     cached_embeds, missing_idx = cache.lookup(docs)
@@ -309,9 +315,7 @@ def _embed_documents(
     """
     embedder_repo_id, embedder_revision = _select_embedder(language)
     embedder = _get_embedder(embedder_repo_id, embedder_revision)
-    embedding_backend = (
-        "mps" if getattr(embedder, "provider", "").upper() == "MPS" else "onnx"
-    )
+    embedding_backend = _embedder_provider_id(embedder)
     return _EmbeddedTopicDocuments(
         embedder=embedder,
         all_embeddings=_embed_with_cache(

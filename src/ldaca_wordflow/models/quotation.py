@@ -6,8 +6,31 @@ Split from models/__init__.py.
 from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional, Union
 from enum import Enum
+from typing_extensions import TypedDict
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 from .analysis_common import AnalysisSorting, AnalysisTaskMetadata, AnalysisTaskState, DetachNodeOption, PaginationInfo, SourceRowPagination
+
+
+class QuotationHitEntry(TypedDict, total=False):
+    """Fixed keys on a quotation hit row from ``_project_quotation_hit``.
+
+    Keys match the ``QUOTE_*`` constants in ``api/workspaces/analyses/generated_columns.py``.
+    Metadata columns from the source node vary per workspace and are *not* listed here.
+    """
+
+    QUOTE_speaker: str | None
+    QUOTE_speaker_start_idx: int | None
+    QUOTE_speaker_end_idx: int | None
+    QUOTE_quote: str | None
+    QUOTE_quote_start_idx: int | None
+    QUOTE_quote_end_idx: int | None
+    QUOTE_verb: str | None
+    QUOTE_verb_start_idx: int | None
+    QUOTE_verb_end_idx: int | None
+    QUOTE_quote_type: str | None
+    QUOTE_quote_token_count: int | None
+    QUOTE_is_floating_quote: bool | None
+    QUOTE_quote_row_idx: int | None
 
 class QuotationEngineType(str, Enum):
     """Enum used by API schema contracts to constrain quotation engine type values.
@@ -188,7 +211,7 @@ class QuotationAnalysisResponse(BaseModel):
         responses in the shape expected by frontend clients and tests.
     """
 
-    data: list[list[dict[str, Any]]]
+    data: list[list[dict[str, Any]]]  # inner dicts are QuotationHitEntry + dynamic metadata columns
     columns: list[str]
     metadata: QuotationMetadata
     pagination: SourceRowPagination

@@ -28,6 +28,7 @@ from ..core.utils import setup_user_folders
 from ..core.auth_service import cleanup_expired_sessions, create_user_session, get_or_create_user
 from ..models import AuthInfoResponse, GoogleIn, GoogleOut, User, UserResponse
 from ..settings import settings
+from ..core.exceptions import AccessDeniedError, InternalServiceError, InvalidInputError
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
@@ -159,15 +160,9 @@ async def _verify_and_create_session(credential: str) -> dict:
     - Local helpers, route handlers, or service methods in this module because they need this unit's "Verify a Google ID token and provision a local user session" behavior.
     """
     if not settings.multi_user:
-        raise HTTPException(
-            status_code=400,
-            detail="Google authentication not available in single-user mode",
-        )
+        raise InvalidInputError("Google authentication not available in single-user mode",)
     if not settings.google_client_id:
-        raise HTTPException(
-            status_code=500, detail="Google authentication not configured"
-        )
-
+        raise InternalServiceError("Google authentication not configured")
     try:
         info = id_token.verify_oauth2_token(
             credential, grequests.Request(), audience=settings.google_client_id
@@ -175,14 +170,12 @@ async def _verify_and_create_session(credential: str) -> dict:
         logger.info(f"Google auth successful for: {info.get('email')}")
     except ValueError as e:
         logger.error(f"Google token verification failed: {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid ID token: {e}")
+        raise InvalidInputError(f"Invalid ID token: {e}")
     except Exception as e:
         logger.error(f"Unexpected error during Google token verification: {e}")
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
-
+        raise InternalServiceError(f"Authentication error: {str(e)}")
     if not info.get("email_verified"):
-        raise HTTPException(status_code=400, detail="Email not verified")
-
+        raise InvalidInputError("Email not verified")
     user = await get_or_create_user(
         email=info.get("email"),
         name=info.get("name"),
@@ -222,8 +215,7 @@ async def google_auth_callback(
     if g_csrf_token:
         cookie_token = request.cookies.get("g_csrf_token")
         if cookie_token != g_csrf_token:
-            raise HTTPException(status_code=403, detail="CSRF token mismatch")
-
+            raise AccessDeniedError("CSRF token mismatch")
     result = await _verify_and_create_session(credential)
     token = result["session"]["access_token"]
 

@@ -19,6 +19,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 
 from ...core.auth import get_current_user
+from ...core.exceptions import AppError, BadGatewayError, InvalidInputError, NotFoundError
 from ...core.utils import (
     download_remote_sample_data,
     get_user_data_folder,
@@ -91,20 +92,14 @@ async def get_sample_data_catalogue(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(
-            status_code=503, detail="Sample data remote URL not configured."
-        )
-
+        raise AppError("Sample data remote URL not configured.")
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(f"{remote_base}/catalogue.json")
             resp.raise_for_status()
             catalogue = resp.json()
     except Exception:
-        raise HTTPException(
-            status_code=502, detail="Could not fetch sample data catalogue."
-        )
-
+        raise BadGatewayError("Could not fetch sample data catalogue.")
     user_id = current_user["id"]
     target_dir = get_user_data_folder(user_id) / "sample_data"
 
@@ -160,16 +155,12 @@ async def get_sample_data_readme(
     try:
         safe = PurePosixPath(path)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid path.")
+        raise InvalidInputError("Invalid path.")
     if safe.suffix.lower() != ".md" or any(part == ".." for part in safe.parts):
-        raise HTTPException(status_code=400, detail="Only .md files are permitted.")
-
+        raise InvalidInputError("Only .md files are permitted.")
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(
-            status_code=503, detail="Sample data remote URL not configured."
-        )
-
+        raise AppError("Sample data remote URL not configured.")
     url = f"{remote_base}/{safe}"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -177,9 +168,7 @@ async def get_sample_data_readme(
             resp.raise_for_status()
             return Response(content=resp.text, media_type="text/plain; charset=utf-8")
     except Exception:
-        raise HTTPException(status_code=502, detail="Could not fetch README.")
-
-
+        raise BadGatewayError("Could not fetch README.")
 @router.post("/import-sample-data", response_model=ImportSampleDataResponse)
 async def import_sample_data(
     background_tasks: BackgroundTasks,
@@ -210,8 +199,7 @@ async def import_sample_data(
     try:
         summary = import_sample_data_for_user(user_id)
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-
+        raise NotFoundError(str(e)) from e
     remote_url = (settings.sample_data_remote_url or "").strip()
     collection_ids: list[str] | None = (
         request.collection_ids if request.collection_ids else None

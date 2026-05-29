@@ -15,6 +15,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 
 from ...core.auth import get_current_user
+from ...core.exceptions import AccessDeniedError, FileNotFoundError, InternalServiceError, InvalidInputError, NotFoundError, ResourceConflictError
 from ...core.utils import (
     detect_file_type,
     get_user_data_folder,
@@ -121,7 +122,7 @@ def _resolve_user_file_path(relative_path: str, data_folder: Path) -> Path:
     """
     file_path = data_folder / relative_path
     if not validate_file_path(file_path, data_folder):
-        raise HTTPException(status_code=400, detail="Invalid file path")
+        raise InvalidInputError("Invalid file path")
     return file_path
 
 
@@ -209,8 +210,7 @@ async def create_folder(
 
     is_valid, reason = validate_workspace_name(request.name)
     if not is_valid:
-        raise HTTPException(status_code=400, detail=f"Invalid folder name: {reason}")
-
+        raise InvalidInputError(f"Invalid folder name: {reason}")
     parent_path = request.parent_path.strip()
     parent_folder = (
         data_folder
@@ -219,25 +219,16 @@ async def create_folder(
     )
 
     if not parent_folder.exists() or not parent_folder.is_dir():
-        raise HTTPException(
-            status_code=404, detail=f"Folder {parent_path or '.'} not found"
-        )
-
+        raise NotFoundError(f"Folder {parent_path or '.'} not found")
     folder_path = parent_folder / request.name.strip()
     if not validate_file_path(folder_path, data_folder):
-        raise HTTPException(status_code=400, detail="Invalid file path")
+        raise InvalidInputError("Invalid file path")
     if folder_path.exists():
-        raise HTTPException(
-            status_code=400, detail=f"Folder {request.name.strip()} already exists"
-        )
-
+        raise InvalidInputError(f"Folder {request.name.strip()} already exists")
     try:
         folder_path.mkdir(parents=False, exist_ok=False)
     except OSError as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to create folder: {str(exc)}"
-        ) from exc
-
+        raise InternalServiceError(f"Failed to create folder: {str(exc)}") from exc
     relative_path = folder_path.relative_to(data_folder)
     return {
         "message": "Folder created",
@@ -272,33 +263,20 @@ async def move_file(
     )
 
     if not source_path.exists() or not source_path.is_file():
-        raise HTTPException(
-            status_code=404, detail=f"File {request.source_path} not found"
-        )
+        raise FileNotFoundError(f"File {request.source_path} not found")
     if not target_directory.exists() or not target_directory.is_dir():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Folder {request.target_directory_path} not found",
-        )
-
+        raise NotFoundError(f"Folder {request.target_directory_path} not found",)
     destination_path = target_directory / source_path.name
     if not validate_file_path(destination_path, data_folder):
-        raise HTTPException(status_code=400, detail="Invalid file path")
+        raise InvalidInputError("Invalid file path")
     if destination_path.exists():
-        raise HTTPException(
-            status_code=400,
-            detail=f"File {destination_path.name} already exists in destination",
-        )
-
+        raise InvalidInputError(f"File {destination_path.name} already exists in destination",)
     original_source_path = source_path
     try:
         source_path.rename(destination_path)
         _delete_parent_folder_if_redundant(original_source_path, data_folder)
     except OSError as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to move file: {str(exc)}"
-        ) from exc
-
+        raise InternalServiceError(f"Failed to move file: {str(exc)}") from exc
     return {
         "message": "File moved",
         "path": _relative_path_for_api(destination_path.relative_to(data_folder)),
@@ -322,15 +300,11 @@ async def upload_file(file: UploadFile, current_user: dict = Depends(get_current
     data_folder = get_user_data_folder(user_id)
 
     if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
-
+        raise InvalidInputError("No filename provided")
     file_path = data_folder / file.filename
 
     if file_path.exists():
-        raise HTTPException(
-            status_code=409, detail=f"File {file.filename} already exists"
-        )
-
+        raise ResourceConflictError(f"File {file.filename} already exists")
     with open(file_path, "wb") as buffer:
         content = await file.read()
         buffer.write(content)
@@ -364,13 +338,9 @@ async def delete_file(filename: str, current_user: dict = Depends(get_current_us
     file_path = data_folder / filename
 
     if not validate_file_path(file_path, data_folder):
-        raise HTTPException(
-            status_code=403, detail="Access denied: file outside allowed directory"
-        )
-
+        raise AccessDeniedError("Access denied: file outside allowed directory")
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File {filename} not found")
-
+        raise FileNotFoundError(f"File {filename} not found")
     file_path.unlink()
     _delete_parent_folder_if_redundant(file_path, data_folder)
     return {"message": f"File {filename} deleted successfully"}

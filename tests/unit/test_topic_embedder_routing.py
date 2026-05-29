@@ -5,9 +5,15 @@ Locks in the routing decision without loading the actual model so the test is fa
 
 from __future__ import annotations
 
+import sys
+from types import SimpleNamespace
+
+from ldaca_wordflow.core import worker_tasks_topic_embedding as topic_embedding
 from ldaca_wordflow.core.worker_tasks_topic_embedding import (
     _TOPIC_EMBEDDERS_BY_LANGUAGE,
     _embedder_cache_label,
+    _embedder_provider_id,
+    _get_embedder,
     _select_embedder,
 )
 
@@ -61,3 +67,32 @@ def test_cache_label_format_includes_revision_prefix() -> None:
     # Critical contract: the two cache labels must be distinct so a shared
     # cache dir can hold embeddings for both models without collision.
     assert en_label != multi_label
+
+
+def test_get_embedder_uses_native_sentence_transformer(monkeypatch) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    class FakeSentenceTransformer:
+        device = "test-device"
+
+        def __init__(self, model_id: str, *, revision: str | None = None) -> None:
+            calls.append((model_id, revision))
+
+    original_cache = dict(topic_embedding._EMBEDDER_CACHE)
+    topic_embedding._EMBEDDER_CACHE.clear()
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+
+    try:
+        first = _get_embedder("sentence-transformers/test-model", revision="abc123")
+        second = _get_embedder("sentence-transformers/test-model", revision="abc123")
+    finally:
+        topic_embedding._EMBEDDER_CACHE.clear()
+        topic_embedding._EMBEDDER_CACHE.update(original_cache)
+
+    assert first is second
+    assert calls == [("sentence-transformers/test-model", "abc123")]
+    assert _embedder_provider_id(first) == "sentence-transformers:test-device"

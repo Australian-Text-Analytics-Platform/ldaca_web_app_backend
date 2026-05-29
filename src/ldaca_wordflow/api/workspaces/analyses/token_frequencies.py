@@ -47,6 +47,7 @@ from ....models import (
 from ..utils import ensure_task_synced
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
+from ....core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, TaskNotFoundError, WorkspaceNotFoundError
 
 router = APIRouter(prefix="/workspaces")
 logger = logging.getLogger(__name__)
@@ -119,8 +120,7 @@ async def clear_token_frequencies(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     current_ids = task_manager.get_current_task_ids("token_frequencies")
     if current_ids:
@@ -170,7 +170,7 @@ def _prepare_token_artifact_target(user_id: str, workspace_id: str) -> tuple[Pat
         user_id, workspace_id
     )
     if workspace_artifacts_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     artifact_prefix = f"token_frequencies_{uuid4()}"
     return workspace_artifacts_dir, artifact_prefix
 
@@ -248,10 +248,7 @@ def _token_artifacts_from_task(
     payload = _task_result_payload(task)
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
-        raise HTTPException(
-            status_code=404,
-            detail="Token-frequency artifacts are not available for this task",
-        )
+        raise NotFoundError("Token-frequency artifacts are not available for this task",)
     node_artifacts = artifacts.get("nodes")
     if not isinstance(node_artifacts, list):
         raise _invalid_artifact_manifest()
@@ -328,11 +325,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
     node_results: dict[str, dict] = {}
     for node_artifact in artifacts.nodes:
         if not node_artifact.token_parquet_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Token artifact missing for node {node_artifact.node_id}",
-            )
-
+            raise NotFoundError(f"Token artifact missing for node {node_artifact.node_id}",)
         token_df = cast(
             pl.DataFrame, pl.scan_parquet(node_artifact.token_parquet_path).collect()
         )
@@ -362,9 +355,7 @@ def _rebuild_token_result(task: AnalysisTask) -> dict:
     statistics_payload = None
     if artifacts.statistics_parquet_path is not None:
         if not artifacts.statistics_parquet_path.exists():
-            raise HTTPException(
-                status_code=404, detail="Token statistics artifact is missing"
-            )
+            raise NotFoundError("Token statistics artifact is missing")
         stats_df = cast(
             pl.DataFrame, pl.scan_parquet(artifacts.statistics_parquet_path).collect()
         )
@@ -441,7 +432,7 @@ async def token_frequencies_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id, ["token_frequencies", "token-frequencies"]
     )
@@ -468,11 +459,11 @@ async def token_frequencies_task_request(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     request = task.request
     return request.model_dump()
 
@@ -498,7 +489,7 @@ async def token_frequencies_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
 
     task = await ensure_task_synced(user_id, workspace_id, task_id, task_manager)
@@ -553,12 +544,11 @@ async def update_token_frequencies_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if not task:
-        raise HTTPException(status_code=404, detail="No token frequency task found")
-
+        raise NotFoundError("No token frequency task found")
     request_payload = task.request.model_dump()
 
     if updates is not None:
@@ -576,11 +566,7 @@ async def update_token_frequencies_task_result(
         task.request = AnalysisTokenFrequencyRequest(**request_payload)
         task_manager.save_task(task)
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to persist token frequency preferences: {exc}",
-        )
-
+        raise InternalServiceError(f"Failed to persist token frequency preferences: {exc}",)
     return {"state": "successful", "message": "saved"}
 
 
@@ -609,18 +595,13 @@ async def calculate_token_frequencies(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
 
     if not request.node_ids:
-        raise HTTPException(
-            status_code=400, detail="At least one node ID must be provided"
-        )
+        raise InvalidInputError("At least one node ID must be provided")
     if len(request.node_ids) > 2:
-        raise HTTPException(
-            status_code=400, detail="Maximum of 2 nodes can be compared"
-        )
-
+        raise InvalidInputError("Maximum of 2 nodes can be compared")
     requested_token_limit = getattr(request, "token_limit", None)
     effective_limit = (
         requested_token_limit
@@ -628,9 +609,7 @@ async def calculate_token_frequencies(
         else DEFAULT_TOKEN_LIMIT
     )
     if requested_token_limit is not None and requested_token_limit <= 0:
-        raise HTTPException(
-            status_code=400, detail="token_limit must be a positive integer"
-        )
+        raise InvalidInputError("token_limit must be a positive integer")
     tokenizer_model = (request.tokenizer_model or "").strip()
     requested_node_tokenizer_models = {
         node_id: model.strip()

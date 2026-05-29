@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from ...core.auth import get_current_user
 from ...models import FilterPreviewResponse, WorkspaceNodeInfo
 from .schema_filter import frontend_node_info
+from ...core.exceptions import InternalServiceError, InvalidInputError
 from .utils import (
     _create_and_persist_child_node,
     require_current_workspace,
@@ -48,10 +49,7 @@ async def join_nodes_preview(
         allowed_hows = {"inner", "left", "right", "full", "semi", "anti", "cross"}
         how_val = (how or "inner").lower()
         if how_val not in allowed_hows:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",
-            )
+            raise InvalidInputError("Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",)
         join_how = cast(
             Literal["inner", "left", "right", "full", "semi", "anti", "cross"],
             how_val,
@@ -64,10 +62,7 @@ async def join_nodes_preview(
             joined_lazy = left_lazy.join(right_lazy, how="cross")
         else:
             if not left_on or not right_on:
-                raise HTTPException(
-                    status_code=400,
-                    detail="left_on and right_on must be provided for non-cross joins",
-                )
+                raise InvalidInputError("left_on and right_on must be provided for non-cross joins",)
             joined_lazy = left_lazy.join(
                 right_lazy, left_on=left_on, right_on=right_on, how=join_how
             )
@@ -88,8 +83,7 @@ async def join_nodes_preview(
                 pl.DataFrame, joined_lazy.slice(offset, page_size).collect()
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
+            raise InternalServiceError(str(exc)) from exc
         preview_rows = preview_df.to_dicts()
         preview_columns = list(preview_df.columns)
         dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
@@ -120,9 +114,7 @@ async def join_nodes_preview(
     except KeyError:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
+        raise InternalServiceError(str(exc)) from exc
 @router.post("/nodes/join", response_model=WorkspaceNodeInfo)
 async def join_nodes(
     left_node_id: str,
@@ -145,10 +137,7 @@ async def join_nodes(
         allowed_hows = {"inner", "left", "right", "full", "semi", "anti", "cross"}
         how_val = (how or "inner").lower()
         if how_val not in allowed_hows:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",
-            )
+            raise InvalidInputError("Invalid join type. Allowed values: inner, left, right, full, semi, anti, cross",)
         join_how = cast(
             Literal["inner", "left", "right", "full", "semi", "anti", "cross"],
             how_val,
@@ -173,4 +162,4 @@ async def join_nodes(
     except KeyError:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise InternalServiceError(str(exc)) from exc

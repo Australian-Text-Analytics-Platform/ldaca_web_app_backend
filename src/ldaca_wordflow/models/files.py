@@ -5,7 +5,28 @@ Split from models/__init__.py.
 
 from __future__ import annotations
 from typing import Any, Dict, List, Literal, Optional, Union
+from typing_extensions import TypedDict
 from pydantic import BaseModel, Field, model_validator
+
+
+class TaskEntry(TypedDict, total=False):
+    """Dict shape of a serialized task from ``WorkerTaskManager._serialize_task``.
+
+    Keys match ``core/worker_task_manager.py:_serialize_task``.
+    """
+
+    task_id: str
+    task_type: str
+    name: str
+    user_id: str
+    workspace_id: str
+    state: str
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    progress: float
+    progress_message: str | None
+    parent_task_id: str | None
 
 class FileUploadResponse(BaseModel):
     """Response schema returned by API routes and consumed by generated clients for file upload response.
@@ -512,7 +533,7 @@ class TaskListResponse(BaseModel):
     """
 
     state: Literal["successful"]
-    data: list[dict[str, Any]]
+    data: list[TaskEntry]
     message: str
 
 

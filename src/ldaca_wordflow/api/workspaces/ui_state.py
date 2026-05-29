@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 
 from ...core.auth import get_current_user
 from ...core.workspace import workspace_manager
+from ...core.exceptions import InternalServiceError, WorkspaceNotFoundError
 
 router = APIRouter(prefix="/workspaces", tags=["workspace_ui_state"])
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ def _ui_state_path_for(user_id: str, workspace_id: str) -> Path:
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return Path(workspace_dir) / _UI_STATE_FILENAME
 
 
@@ -141,7 +142,5 @@ async def put_workspace_ui_state(
             workspace_id,
             exc,
         )
-        raise HTTPException(
-            status_code=500, detail="Failed to persist UI state"
-        ) from exc
+        raise InternalServiceError("Failed to persist UI state") from exc
     return payload

@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from ..core.auth import get_current_user
 from ..core.utils import get_user_snapshots_folder
+from ..core.exceptions import InternalServiceError, InvalidInputError, NotFoundError, ResourceConflictError
 from ..models import (
     SnapshotDeleteResponse,
     SnapshotListResponse,
@@ -138,12 +139,12 @@ def _confined_path(snapshots_dir: Path, filename: str) -> Path:
     """
     ok, reason = _validate_filename(filename)
     if not ok:
-        raise HTTPException(status_code=400, detail=f"invalid filename: {reason}")
+        raise InvalidInputError(f"invalid filename: {reason}")
     candidate = (snapshots_dir / filename).resolve()
     try:
         candidate.relative_to(snapshots_dir.resolve())
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="path traversal blocked") from exc
+        raise InvalidInputError("path traversal blocked") from exc
     return candidate
 
 
@@ -339,22 +340,17 @@ async def upload_snapshot(
     bundle_path = _confined_path(snapshots_dir, filename)
 
     if bundle_path.exists():
-        raise HTTPException(status_code=409, detail="snapshot filename already exists")
-
+        raise ResourceConflictError("snapshot filename already exists")
     bundle_bytes = await file.read()
     if not bundle_bytes:
-        raise HTTPException(status_code=400, detail="empty upload")
-
+        raise InvalidInputError("empty upload")
     # Write the bundle first; if anything below fails we still have the
     # zip as the canonical artifact (the lazy sidecar path will recover
     # on next list).
     try:
         bundle_path.write_bytes(bundle_bytes)
     except OSError as exc:
-        raise HTTPException(
-            status_code=500, detail=f"failed to write bundle: {exc}"
-        ) from exc
-
+        raise InternalServiceError(f"failed to write bundle: {exc}") from exc
     manifest = _read_manifest_from_zip(bundle_path)
     if manifest is None:
         # Refuse to keep a bundle whose manifest can't be parsed —
@@ -364,10 +360,7 @@ async def upload_snapshot(
             bundle_path.unlink()
         except OSError:
             pass
-        raise HTTPException(
-            status_code=400, detail="bundle has no readable manifest.json"
-        )
-
+        raise InvalidInputError("bundle has no readable manifest.json")
     manifest_sidecar, description_sidecar = _sidecar_paths(bundle_path)
     try:
         manifest_sidecar.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -398,7 +391,7 @@ async def download_snapshot(
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
     if not bundle_path.exists():
-        raise HTTPException(status_code=404, detail="snapshot not found")
+        raise NotFoundError("snapshot not found")
     return FileResponse(
         path=bundle_path,
         media_type="application/zip",
@@ -426,7 +419,7 @@ async def get_snapshot_description(
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
     if not bundle_path.exists():
-        raise HTTPException(status_code=404, detail="snapshot not found")
+        raise NotFoundError("snapshot not found")
     _, description_sidecar = _sidecar_paths(bundle_path)
     if description_sidecar.exists():
         try:
@@ -437,7 +430,7 @@ async def get_snapshot_description(
             return PlainTextResponse(content=content, media_type="text/markdown")
     manifest = _ensure_sidecar(bundle_path)
     if manifest is None:
-        raise HTTPException(status_code=500, detail="bundle has no readable manifest")
+        raise InternalServiceError("bundle has no readable manifest")
     content = _generate_description_md(manifest)
     try:
         description_sidecar.write_text(content, encoding="utf-8")
@@ -478,7 +471,7 @@ async def delete_snapshot(
     snapshots_dir = get_user_snapshots_folder(user["id"])
     bundle_path = _confined_path(snapshots_dir, filename)
     if not bundle_path.exists():
-        raise HTTPException(status_code=404, detail="snapshot not found")
+        raise NotFoundError("snapshot not found")
     _delete_bundle_with_sidecars(bundle_path)
     return {"deleted": [bundle_path.name]}
 

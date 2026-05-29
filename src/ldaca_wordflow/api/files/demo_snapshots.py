@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from ...core.auth import get_current_user
 from ...core.utils import get_user_snapshots_folder
+from ...core.exceptions import AppError, BadGatewayError
 from ...models import (
     DemoSnapshotEntry,
     DemoSnapshotImportResult,
@@ -96,29 +97,20 @@ async def get_demo_snapshots_catalogue(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(
-            status_code=503, detail="Sample data remote URL not configured."
-        )
-
+        raise AppError("Sample data remote URL not configured.")
     url = f"{remote_base}/{_DEMO_SNAPSHOT_REMOTE_DIR}/catalogue.json"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(url)
     except Exception:
-        raise HTTPException(
-            status_code=502, detail="Could not fetch demo-snapshot catalogue."
-        )
-
+        raise BadGatewayError("Could not fetch demo-snapshot catalogue.")
     if resp.status_code == 404:
         return DemoSnapshotsCatalogueResponse(schema_version=1, snapshots=[])
     try:
         resp.raise_for_status()
         catalogue = resp.json()
     except Exception:
-        raise HTTPException(
-            status_code=502, detail="Could not fetch demo-snapshot catalogue."
-        )
-
+        raise BadGatewayError("Could not fetch demo-snapshot catalogue.")
     user_id = current_user["id"]
     snapshots_dir = get_user_snapshots_folder(user_id)
 
@@ -189,10 +181,7 @@ async def import_demo_snapshots(
 
     remote_base = (settings.sample_data_remote_url or "").rstrip("/")
     if not remote_base:
-        raise HTTPException(
-            status_code=503, detail="Sample data remote URL not configured."
-        )
-
+        raise AppError("Sample data remote URL not configured.")
     catalogue_url = f"{remote_base}/{_DEMO_SNAPSHOT_REMOTE_DIR}/catalogue.json"
     try:
         async with httpx.AsyncClient(timeout=15) as client:
@@ -200,10 +189,7 @@ async def import_demo_snapshots(
             cat_resp.raise_for_status()
             catalogue = cat_resp.json()
     except Exception:
-        raise HTTPException(
-            status_code=502, detail="Could not fetch demo-snapshot catalogue."
-        )
-
+        raise BadGatewayError("Could not fetch demo-snapshot catalogue.")
     by_id: dict[str, dict] = {
         e.get("id", ""): e for e in catalogue.get("snapshots", []) if e.get("id")
     }

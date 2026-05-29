@@ -40,6 +40,7 @@ from .generated_columns import (
     compute_concordance_extraction_string,
 )
 from .page_size_estimation import DEFAULT_PAGE_SIZE_CANDIDATES, estimate_page_size
+from ....core.exceptions import NotFoundError
 
 # CJK languages — whole-word (``\b``-style) regex semantics don't apply
 # meaningfully because there's no whitespace word boundary between
@@ -1133,7 +1134,7 @@ def build_concordance_response(
     if resolve_error is not None:
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=404, detail=resolve_error)
+        raise NotFoundError(resolve_error)
     data: dict[str, Any] = {}
 
     # Pre-resolve page_size for non-materialized nodes so combined/separated views

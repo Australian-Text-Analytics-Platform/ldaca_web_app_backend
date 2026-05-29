@@ -63,6 +63,7 @@ from .generated_columns import (
     CONC_EXTRACTION_COLUMN,
 )
 from ..utils import _build_detach_options
+from ....core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, TaskNotFoundError, WorkspaceNotFoundError
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
 logger = logging.getLogger(__name__)
@@ -208,15 +209,11 @@ async def run_concordance(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
 
     if not request.node_ids:
-        raise HTTPException(
-            status_code=400, detail="At least one node ID must be provided"
-        )
-
+        raise InvalidInputError("At least one node ID must be provided")
     try:
         analysis_request = AnalysisConcordanceRequest(
             node_ids=request.node_ids,
@@ -268,9 +265,7 @@ async def run_concordance(
         response["metadata"] = {"task_id": task_id}
         return response
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to run concordance: {exc}")
-
-
+        raise InternalServiceError(f"Failed to run concordance: {exc}")
 @router.get("/concordance/tasks/current", response_model=CurrentAnalysisTasksResponse)
 async def concordance_current_tasks(
     current_user: dict = Depends(get_current_user),
@@ -288,7 +283,7 @@ async def concordance_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id,
         ["concordance_analysis", "concordance-analysis", "concordance"],
@@ -316,11 +311,11 @@ async def concordance_task_request(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     request = task.request
     return request.model_dump()
 
@@ -355,20 +350,15 @@ async def concordance_task_dispersion_bins(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None or not task.request:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     materialized_paths = getattr(task.request, "materialized_paths", None) or {}
     path = materialized_paths.get(node_id)
     if not path:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No materialised concordance for node {node_id}",
-        )
-
+        raise NotFoundError(f"No materialised concordance for node {node_id}",)
     node_columns = getattr(task.request, "node_columns", None) or {}
     document_column = node_columns.get(node_id)
 
@@ -405,7 +395,7 @@ async def concordance_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     result, _failure_message = _build_concordance_task_result(
         user_id, workspace_id, task_id, query
     )
@@ -440,7 +430,7 @@ async def concordance_task_result_post(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     result, failure_message = _build_concordance_task_result(
         user_id, workspace_id, task_id, query
     )
@@ -477,7 +467,7 @@ async def detach_concordance(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
     node = ws.nodes[node_id]
     node_data = node.data
@@ -527,8 +517,7 @@ async def detach_concordance(
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     try:
         task_info = await tm.submit_task(
             user_id=user_id,
@@ -572,11 +561,7 @@ async def detach_concordance(
         }
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Error submitting detach task: {exc}"
-        )
-
-
+        raise InternalServiceError(f"Error submitting detach task: {exc}")
 @router.post(
     "/nodes/{node_id}/concordance/dispersion-detach",
     response_model=AnalysisTaskActionResponse,
@@ -607,7 +592,7 @@ async def detach_concordance_dispersion(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
     node = ws.nodes[node_id]
     node_data = node.data
@@ -659,16 +644,11 @@ async def detach_concordance_dispersion(
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     if request.selected_bins is not None and (
         request.total_bins is None or request.total_bins <= 0
     ):
-        raise HTTPException(
-            status_code=400,
-            detail="total_bins must be a positive integer when selected_bins is provided",
-        )
-
+        raise InvalidInputError("total_bins must be a positive integer when selected_bins is provided",)
     try:
         child_task_id = str(uuid4())
         task_info = await tm.submit_task(
@@ -716,12 +696,7 @@ async def detach_concordance_dispersion(
             "metadata": {"task_id": task_info.id},
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error submitting dispersion detach task: {exc}",
-        )
-
-
+        raise InternalServiceError(f"Error submitting dispersion detach task: {exc}",)
 @router.post(
     "/nodes/{node_id}/concordance/materialize",
     response_model=AnalysisTaskActionResponse,
@@ -749,11 +724,11 @@ async def materialize_concordance(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     tm = workspace_manager.get_task_manager(user_id)
 
     if node_id not in ws.nodes:
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+        raise NotFoundError(f"Node {node_id} not found")
     node = ws.nodes[node_id]
     node_data = node.data
 
@@ -828,8 +803,7 @@ async def materialize_concordance(
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     try:
         child_task_id = str(uuid4())
         task_info = await tm.submit_task(
@@ -867,11 +841,7 @@ async def materialize_concordance(
             "metadata": {"task_id": task_info.id},
         }
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Error submitting materialize task: {exc}"
-        )
-
-
+        raise InternalServiceError(f"Error submitting materialize task: {exc}")
 @router.get(
     "/nodes/{node_id}/concordance/detach-options",
     response_model=ConcordanceDetachOptionsResponse,
@@ -899,8 +869,7 @@ async def concordance_detach_options(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     return _build_detach_options(

@@ -20,10 +20,10 @@ from typing import Any, cast
 import polars as pl
 from docworkspace import Node
 from docworkspace.workspace.core import Workspace
-from fastapi import HTTPException
-
 from ...analysis.models import AnalysisStatus
+from ...core.exceptions import InvalidInputError, NotFoundError, WorkspaceNotFoundError
 from ...core.workspace import workspace_manager
+from ...core.exceptions import InternalServiceError, InvalidInputError, NotFoundError, WorkspaceNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +83,7 @@ def _scan_workspace_parquet(parquet_path: Path):
     try:
         lazy_data: Any = pl.scan_parquet(absolute_path)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to reload parquet as LazyFrame: {exc}"
-        )
-
+        raise InternalServiceError(f"Failed to reload parquet as LazyFrame: {exc}")
     return lazy_data
 
 
@@ -226,26 +223,6 @@ def running(message: str = "running", metadata: dict | None = None):
     return success(data=None, message=message, state="running", metadata=metadata or {})
 
 
-def failed(message: str, error: Any = None, status_code: int = 400):
-    """Raise a structured HTTP error payload.
-
-    Steps:
-    - Normalize caller input into the representation this module expects.
-    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
-    - Return the compact value the caller uses for artifacts, validation, or response shaping.
-
-    Used by:
-    - workspace routes and helpers for uniform error surfaces because they need this unit's "Raise a structured HTTP error payload" behavior.
-
-    Why:
-    - Consolidates API error formatting in one helper.
-    """
-    detail = {"message": message}
-    if error is not None:
-        detail["error"] = str(error)
-    raise HTTPException(status_code=status_code, detail=detail)
-
-
 def stage_dataframe_as_lazy(
     data: pl.DataFrame,
     workspace_dir: Path,
@@ -271,19 +248,13 @@ def stage_dataframe_as_lazy(
     )
 
     if not isinstance(data, pl.DataFrame):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Expected Polars DataFrame for staging, got {type(data).__name__}",
-        )
+        raise InvalidInputError(f"Expected Polars DataFrame for staging, got {type(data).__name__}",)
     df = data
 
     try:
         df.write_parquet(parquet_path)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Failed to persist parquet for workspace: {exc}"
-        )
-
+        raise InternalServiceError(f"Failed to persist parquet for workspace: {exc}")
     return _scan_workspace_parquet(parquet_path)
 
 
@@ -310,11 +281,7 @@ def stage_parquet_artifact_as_lazy(
 
     source_path = Path(artifact_path)
     if not source_path.exists() or not source_path.is_file():
-        raise HTTPException(
-            status_code=404,
-            detail=f"Artifact parquet not found: {source_path}",
-        )
-
+        raise NotFoundError(f"Artifact parquet not found: {source_path}",)
     persisted_path = _allocate_workspace_data_path(
         workspace_dir,
         stem=_safe_workspace_data_stem(node_name or source_path.stem),
@@ -323,11 +290,7 @@ def stage_parquet_artifact_as_lazy(
     try:
         shutil.copy2(source_path, persisted_path)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to copy artifact parquet into workspace data: {exc}",
-        )
-
+        raise InternalServiceError(f"Failed to copy artifact parquet into workspace data: {exc}",)
     return _scan_workspace_parquet(persisted_path), persisted_path
 
 
@@ -335,7 +298,7 @@ def require_current_workspace(user_id: str) -> Workspace:
     """Resolve required current workspace, raising 404 if absent."""
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return workspace
 
 
@@ -343,7 +306,7 @@ def require_current_workspace_id(user_id: str) -> str:
     """Resolve required current workspace id, raising 404 if absent."""
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     return workspace_id
 
 
@@ -446,12 +409,9 @@ def _validate_existing_column(node: Node, column_name: str) -> None:
     """Raise 400 if column_name is absent from the node's schema."""
     schema_names = node.data.collect_schema().names()
     if column_name not in schema_names:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Node {node.name!r} has no column {column_name!r}; "
-                f"available columns: {sorted(schema_names)}"
-            ),
+        raise InvalidInputError(
+            f"Node {node.name!r} has no column {column_name!r}; "
+            f"available columns: {sorted(schema_names)}"
         )
 
 

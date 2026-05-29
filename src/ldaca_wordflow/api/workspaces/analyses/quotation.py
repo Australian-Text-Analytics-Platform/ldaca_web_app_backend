@@ -55,6 +55,7 @@ from . import SNAPSHOT_ALL_PAGE_SIZE_CAP, quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_tokenization_column_name
 from ..utils import _build_detach_options
+from ....core.exceptions import BadGatewayError, InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, ResourceConflictError, TaskNotFoundError, WorkspaceNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +173,7 @@ async def quotation_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id, ["quotation_analysis", "quotation-analysis", "quotation"]
     )
@@ -199,11 +200,11 @@ async def quotation_task_request(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     request = task.request
     return request.model_dump()
 
@@ -236,7 +237,7 @@ async def quotation_task_result(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if not task or not task.result:
@@ -308,12 +309,11 @@ async def update_quotation_task_result(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if not task or not task.result:
-        raise HTTPException(status_code=404, detail="No quotation analysis found")
-
+        raise NotFoundError("No quotation analysis found")
     base_request = task.request.model_dump()
     base_result = task.result.to_json()
 
@@ -344,11 +344,7 @@ async def update_quotation_task_result(
             task.complete(GenericAnalysisResult(base_result))
             task_manager.save_task(task)
         except Exception as exc:  # pragma: no cover
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to persist quotation preferences: {exc}",
-            )
-
+            raise InternalServiceError(f"Failed to persist quotation preferences: {exc}",)
         return {
             "state": "successful",
             "message": "saved",
@@ -358,10 +354,7 @@ async def update_quotation_task_result(
     node_id = base_request.get("node_id")
     column = base_request.get("column")
     if not node_id or not column:
-        raise HTTPException(
-            status_code=404, detail="No quotation analysis found for this workspace"
-        )
-
+        raise NotFoundError("No quotation analysis found for this workspace")
     engine_dict = base_request.get("engine") or {}
     engine_dict = {
         k: v for k, v in engine_dict.items() if k not in ("api_key", "model")
@@ -369,8 +362,7 @@ async def update_quotation_task_result(
     try:
         engine = QuotationEngineConfig.model_validate(engine_dict)
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(status_code=400, detail=f"Invalid engine config: {exc}")
-
+        raise InvalidInputError(f"Invalid engine config: {exc}")
     node = ws.nodes[node_id]
 
     normalized_page = (
@@ -416,11 +408,7 @@ async def update_quotation_task_result(
 
         task_manager.save_task(task)
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to persist quotation pagination update: {exc}",
-        )
-
+        raise InternalServiceError(f"Failed to persist quotation pagination update: {exc}",)
     return updated_result
 
 
@@ -446,15 +434,13 @@ async def get_quotation(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
 
     try:
         workspace = workspace_manager.get_current_workspace(user_id)
         if workspace is None:
-            raise HTTPException(status_code=404, detail="No active workspace selected")
-
+            raise NoActiveWorkspaceError("No active workspace selected")
         node = workspace.nodes[node_id]
         _enforce_quotation_language_gate(request.language, node)
 
@@ -516,11 +502,7 @@ async def get_quotation(
         if existing_task:
             existing_req = existing_task.request
             if existing_req.node_id != node_id or existing_req.column != request.column:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Clear current quotation results before starting a new quotation analysis",
-                )
-
+                raise ResourceConflictError("Clear current quotation results before starting a new quotation analysis",)
             task = existing_task
 
         else:
@@ -529,11 +511,7 @@ async def get_quotation(
             task_manager.set_current_task("quotation", task_id)
 
         if task is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to load quotation task",
-            )
-
+            raise InternalServiceError("Failed to load quotation task",)
         task.request = analysis_request
         task.complete(GenericAnalysisResult(result_payload))
         task_manager.save_task(task)
@@ -543,14 +521,12 @@ async def get_quotation(
     except HTTPException:
         raise
     except QuotationServiceError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
+        raise BadGatewayError(str(exc))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise InvalidInputError(str(exc))
     except Exception as exc:  # pragma: no cover
         logger.exception("Unexpected quotation error")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
-
-
+        raise InternalServiceError(f"Internal server error: {exc}")
 @router.get(
     "/nodes/{node_id}/quotation/detach-options",
     response_model=QuotationDetachOptionsResponse,
@@ -578,8 +554,7 @@ async def quotation_detach_options(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     return _build_detach_options(
@@ -622,8 +597,7 @@ async def detach_quotation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
     _enforce_quotation_language_gate(request.language, node)
     tm = workspace_manager.get_task_manager(user_id)
@@ -652,8 +626,7 @@ async def detach_quotation(
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     try:
         task_info = await tm.submit_task(
             user_id=user_id,
@@ -684,11 +657,7 @@ async def detach_quotation(
 
     except Exception as exc:
         logger.exception("Error submitting detach quotation task")
-        raise HTTPException(
-            status_code=500, detail=f"Error submitting detach task: {exc}"
-        )
-
-
+        raise InternalServiceError(f"Error submitting detach task: {exc}")
 @router.post(
     "/nodes/{node_id}/quotation/materialize", response_model=AnalysisTaskActionResponse
 )
@@ -715,10 +684,9 @@ async def materialize_quotation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     if node_id not in ws.nodes:
-        raise HTTPException(status_code=404, detail=f"Node {node_id} not found")
+        raise NotFoundError(f"Node {node_id} not found")
     node = ws.nodes[node_id]
     _enforce_quotation_language_gate(request.language, node)
     tm = workspace_manager.get_task_manager(user_id)
@@ -748,8 +716,7 @@ async def materialize_quotation(
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     try:
         child_task_id = str(uuid4())
         task_info = await tm.submit_task(
@@ -779,6 +746,4 @@ async def materialize_quotation(
         }
     except Exception as exc:
         logger.exception("Error submitting materialize quotation task")
-        raise HTTPException(
-            status_code=500, detail=f"Error submitting materialize task: {exc}"
-        )
+        raise InternalServiceError(f"Error submitting materialize task: {exc}")

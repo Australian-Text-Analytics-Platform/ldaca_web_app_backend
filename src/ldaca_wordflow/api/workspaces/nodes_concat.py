@@ -24,6 +24,7 @@ from ...models import (
     WorkspaceNodeInfo,
 )
 from .schema_filter import frontend_node_info
+from ...core.exceptions import InternalServiceError, InvalidInputError
 from .utils import (
     Node,
     _create_and_persist_child_node,
@@ -39,7 +40,7 @@ router = APIRouter(prefix="/workspaces", tags=["nodes"])
 def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
     """Resolve node IDs to workspace Node objects, validating count and duplicates."""
     if not node_ids:
-        raise HTTPException(status_code=400, detail="At least two node IDs are required")
+        raise InvalidInputError("At least two node IDs are required")
     ws = require_current_workspace(user_id)
     nodes: list[Node] = []
     seen: set[str] = set()
@@ -48,17 +49,12 @@ def _get_concat_nodes(user_id: str, node_ids: list[str]) -> list[Node]:
         if not node_id:
             continue
         if node_id in seen:
-            raise HTTPException(
-                status_code=400, detail=f"Duplicate node id '{node_id}' provided",
-            )
+            raise InvalidInputError(f"Duplicate node id '{node_id}' provided",)
         node = ws.nodes[node_id]
         nodes.append(node)
         seen.add(node_id)
     if len(nodes) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="At least two distinct nodes are required for concatenation",
-        )
+        raise InvalidInputError("At least two distinct nodes are required for concatenation",)
     return nodes
 
 
@@ -69,10 +65,7 @@ def _validate_and_align_concat_nodes(
     lazy_frames: list[pl.LazyFrame] = [node.data for node in nodes]
     base_columns, base_dtypes = _extract_lazy_schema(lazy_frames[0])
     if not base_columns:
-        raise HTTPException(
-            status_code=400, detail="Unable to determine schema for the first node.",
-        )
-
+        raise InvalidInputError("Unable to determine schema for the first node.",)
     select_expr = [pl.col(column) for column in base_columns]
     aligned_frames: list[pl.LazyFrame] = [lazy_frames[0].select(select_expr)]
 
@@ -104,8 +97,7 @@ def _validate_and_align_concat_nodes(
                 + "': "
                 + "; ".join(detail_parts)
             )
-            raise HTTPException(status_code=400, detail=detail)
-
+            raise InvalidInputError(detail)
         aligned_frames.append(lazy_frame.select(select_expr))
 
     return aligned_frames, base_columns, base_dtypes
@@ -208,9 +200,7 @@ async def concat_nodes_preview(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
+        raise InternalServiceError(str(exc)) from exc
 @router.post("/nodes/concat", response_model=WorkspaceNodeInfo)
 async def concat_nodes(
     request: ConcatRequest,
@@ -248,4 +238,4 @@ async def concat_nodes(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise InternalServiceError(str(exc)) from exc

@@ -320,6 +320,16 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
+def get_settings() -> Settings:
+    """Return the current global settings instance.
+
+    Exists so code can call ``get_settings()`` at runtime instead of relying
+    on the module-level ``settings`` singleton. This enables test fixtures to
+    override a single function instead of patching every import site.
+    """
+    return settings
+
+
 def reload_settings() -> Settings:
     """Refresh the global settings singleton from current env vars.
 

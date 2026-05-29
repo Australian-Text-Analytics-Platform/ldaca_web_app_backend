@@ -77,6 +77,26 @@ async def init_test_db():
         db.async_session_maker = original_session_maker
 
 
+_SETTINGS_PATCH_TARGETS: list[str] = [
+    "ldaca_wordflow.settings.settings",
+    "ldaca_wordflow.main.settings",
+    "ldaca_wordflow.api.auth.settings",
+    "ldaca_wordflow.core.auth.settings",
+    "ldaca_wordflow.core.utils.settings",
+    "ldaca_wordflow.core.user_folders.settings",
+    "ldaca_wordflow.core.sample_data.settings",
+]
+
+
+def _settings_patches(override):
+    """Return a list of started patch contexts for all settings import sites.
+
+    Centralises the multi-patch boilerplate so conftest fixtures don't
+    duplicate the target list.
+    """
+    return [patch(target, override) for target in _SETTINGS_PATCH_TARGETS]
+
+
 @pytest.fixture
 def settings_override(tmp_path: Path):
     """Provide MagicMock settings pointing to a temporary data root.
@@ -156,13 +176,7 @@ async def authenticated_client(settings_override):
         return mock_user
 
     patches = [
-        patch("ldaca_wordflow.settings.settings", settings_override),
-        patch("ldaca_wordflow.main.settings", settings_override),
-        patch("ldaca_wordflow.api.auth.settings", settings_override),
-        patch("ldaca_wordflow.core.auth.settings", settings_override),
-        patch("ldaca_wordflow.core.utils.settings", settings_override),
-        patch("ldaca_wordflow.core.user_folders.settings", settings_override),
-        patch("ldaca_wordflow.core.sample_data.settings", settings_override),
+        *_settings_patches(settings_override),
         patch("ldaca_wordflow.db.init_db"),
         patch("ldaca_wordflow.core.auth_service.cleanup_expired_sessions"),
     ]
@@ -191,13 +205,7 @@ async def test_client(settings_override):
     from ldaca_wordflow.main import app
 
     patches = [
-        patch("ldaca_wordflow.settings.settings", settings_override),
-        patch("ldaca_wordflow.main.settings", settings_override),
-        patch("ldaca_wordflow.api.auth.settings", settings_override),
-        patch("ldaca_wordflow.core.auth.settings", settings_override),
-        patch("ldaca_wordflow.core.utils.settings", settings_override),
-        patch("ldaca_wordflow.core.user_folders.settings", settings_override),
-        patch("ldaca_wordflow.core.sample_data.settings", settings_override),
+        *_settings_patches(settings_override),
         patch("ldaca_wordflow.db.init_db"),
         patch("ldaca_wordflow.core.auth_service.cleanup_expired_sessions"),
     ]

@@ -41,6 +41,7 @@ from ...models import (
 )
 from .schema_filter import frontend_node_info, project_visible
 from .utils import stage_dataframe_as_lazy, update_workspace
+from ...core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, WorkspaceNotFoundError
 
 router = APIRouter(prefix="/workspaces", tags=["workspace"])
 
@@ -269,11 +270,7 @@ def _export_node_artifact(
             collected_data = cast(pl.DataFrame, export_data.collect())
             collected_data.write_json(output_path)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to export node '{node_id}' as {fmt}: {exc}",
-        ) from exc
-
+        raise InternalServiceError(f"Failed to export node '{node_id}' as {fmt}: {exc}",) from exc
     return archive_name, output_path
 
 
@@ -300,8 +297,7 @@ async def delete_node_column(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     node.data = node.data.drop(column_name)
@@ -335,8 +331,7 @@ async def rename_node_column(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     trimmed_name = new_name.strip()
@@ -366,15 +361,13 @@ async def undo_node_operation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     try:
         node.undo()
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     update_workspace(user_id, workspace_id, best_effort=True)
     return frontend_node_info(node)
 
@@ -399,15 +392,13 @@ async def redo_node_operation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
 
     try:
         node.redo()
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     update_workspace(user_id, workspace_id, best_effort=True)
     return frontend_node_info(node)
 
@@ -529,47 +520,33 @@ async def add_node_to_workspace(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     # Load data file
     user_data_folder = get_user_data_folder(user_id)
     file_path = user_data_folder / filename
 
     if not file_path.exists():
-        raise HTTPException(status_code=400, detail=f"Data file not found: {filename}")
-
+        raise InvalidInputError(f"Data file not found: {filename}")
     # Load the data
     data = load_data_file(file_path, sheet_name=sheet_name)
 
     # Validate requested mode (lazy-only workflow)
     valid_modes = {"LazyFrame"}
     if mode not in valid_modes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode '{mode}'. Expected one of {sorted(list(valid_modes))}",
-        )
-
+        raise InvalidInputError(f"Invalid mode '{mode}'. Expected one of {sorted(list(valid_modes))}",)
     # Normalize to an eager Polars DataFrame
     if isinstance(data, pl.LazyFrame):
         eager_data: pl.DataFrame = cast(pl.DataFrame, data.collect())
     elif isinstance(data, pl.DataFrame):
         eager_data = data
     else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}",
-        )
-
+        raise InvalidInputError(f"Expected Polars DataFrame/LazyFrame from loader, got {type(data).__name__}",)
     eager_data, dtype_changes = normalize_dtypes(eager_data)
 
     # Resolve workspace folder and stage parquet copy
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Workspace folder not found for workspace {workspace_id}",
-        )
-
+        raise NotFoundError(f"Workspace folder not found for workspace {workspace_id}",)
     node_name = filename
     for ext in [
         ".csv",
@@ -602,11 +579,10 @@ async def add_node_to_workspace(
 
     if workspace_manager.get_current_workspace_id(user_id) != workspace_id:
         if not workspace_manager.set_current_workspace(user_id, workspace_id):
-            raise HTTPException(status_code=404, detail="Workspace not found")
+            raise WorkspaceNotFoundError("Workspace not found")
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
+        raise WorkspaceNotFoundError("Workspace not found")
     node = Node(
         data=lazy_data,
         name=node_name,
@@ -654,8 +630,7 @@ async def cast_node(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     column_name = cast_data.column
     target_type = cast_data.target_type
     datetime_format = cast_data.format
@@ -764,11 +739,7 @@ async def cast_node(
                     .alias(column_name)
                 )
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Casting to '{target_type}' is not yet supported. Supported: string, integer, float, datetime, categorical.",
-            )
-
+            raise InvalidInputError(f"Casting to '{target_type}' is not yet supported. Supported: string, integer, float, datetime, categorical.",)
         # Perform a small head() sample validation to surface conversion errors early
         try:
             sample_plan = lazyframe.head(50).with_columns(cast_expr)
@@ -846,7 +817,7 @@ async def export_nodes(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     fmt = format.lower()
     spec = EXPORT_FORMAT_SPECS.get(fmt)
     if spec is None:
@@ -860,8 +831,7 @@ async def export_nodes(
 
     ids = [nid.strip() for nid in node_ids.split(",") if nid.strip()]
     if not ids:
-        raise HTTPException(status_code=400, detail="No node_ids provided")
-
+        raise InvalidInputError("No node_ids provided")
     def build_timestamp_fragment() -> str:
         """Build timestamp fragment values used by workspace base routes.
 

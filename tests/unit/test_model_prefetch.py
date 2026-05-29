@@ -1,7 +1,7 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from ldaca_wordflow.core import model_prefetch as mp
-from ldaca_wordflow.core import mps_embedder
 from ldaca_wordflow.core import quotation_extractor as qe
 
 
@@ -85,22 +85,19 @@ def test_start_model_prefetch_spawns_daemon_thread(monkeypatch, tmp_path):
     assert isinstance(prefetch_names, list)
 
 
-def test_topic_prefetch_falls_back_when_mps_probe_fails(monkeypatch):
-    called = {"mps": False, "onnx": False}
+def test_topic_prefetch_loads_native_sentence_transformer(monkeypatch):
+    calls: list[tuple[str, str | None]] = []
 
-    def fail_probe() -> bool:
-        raise RuntimeError("torch registry unavailable")
+    class FakeSentenceTransformer:
+        def __init__(self, model_id: str, *, revision: str | None = None) -> None:
+            calls.append((model_id, revision))
 
-    def fake_mps_prefetch() -> None:
-        called["mps"] = True
-
-    def fake_onnx_prefetch() -> None:
-        called["onnx"] = True
-
-    monkeypatch.setattr(mps_embedder, "is_mps_available", fail_probe)
-    monkeypatch.setattr(mp, "_prefetch_topic_embedder_mps", fake_mps_prefetch)
-    monkeypatch.setattr(mp, "_prefetch_topic_embedder_onnx", fake_onnx_prefetch)
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
 
     mp._prefetch_topic_embedder()
 
-    assert called == {"mps": False, "onnx": True}
+    assert calls == [(mp._TOPIC_EMBEDDER_REPO_ID, mp._TOPIC_EMBEDDER_REVISION)]

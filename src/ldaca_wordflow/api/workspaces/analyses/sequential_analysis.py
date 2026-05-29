@@ -45,6 +45,7 @@ from ....models import (
 )
 from ..utils import ensure_task_synced, update_workspace
 from .current_tasks import get_current_task_ids_for_analysis
+from ....core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, ResourceConflictError, TaskNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -115,11 +116,7 @@ def _coerce_period_bound(value: Any, *, column_type: str, time_dtype: Any) -> An
         try:
             return float(value)
         except (TypeError, ValueError) as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid numeric period bound: {value!r}",
-            ) from exc
-
+            raise InvalidInputError(f"Invalid numeric period bound: {value!r}",) from exc
     if isinstance(value, datetime | date):
         parsed: datetime | date = value
     elif isinstance(value, str):
@@ -127,16 +124,9 @@ def _coerce_period_bound(value: Any, *, column_type: str, time_dtype: Any) -> An
         try:
             parsed = datetime.fromisoformat(normalized)
         except ValueError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid datetime period bound: {value!r}",
-            ) from exc
+            raise InvalidInputError(f"Invalid datetime period bound: {value!r}",) from exc
     else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported datetime period bound: {value!r}",
-        )
-
+        raise InvalidInputError(f"Unsupported datetime period bound: {value!r}",)
     if time_dtype == pl.Date and isinstance(parsed, datetime):
         return parsed.date()
     return parsed
@@ -167,11 +157,7 @@ def _build_group_filter_expression(
         value_expr: pl.Expr | None = None
         for column_name, raw_value in group_selection.values.items():
             if schema.get(column_name) is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Group column '{column_name}' is not available on the source node",
-                )
-
+                raise InvalidInputError(f"Group column '{column_name}' is not available on the source node",)
             column_expr = pl.col(column_name)
             if raw_value is None:
                 current_expr = column_expr.is_null()
@@ -210,7 +196,7 @@ def _get_active_workspace(user_id: str) -> tuple[str, Any]:
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return workspace_id, ws
 
 
@@ -552,10 +538,7 @@ async def preview_sequential_analysis(
         node_data = node.data
 
         if request.group_by_columns and len(request.group_by_columns) > 3:
-            raise HTTPException(
-                status_code=400, detail="Maximum 3 group by columns allowed"
-            )
-
+            raise InvalidInputError("Maximum 3 group by columns allowed")
         sequential_result = _run_sequential_analysis(
             node_data,
             time_column=request.time_column,
@@ -591,9 +574,7 @@ async def preview_sequential_analysis(
         return payload
     except Exception as exc:  # pragma: no cover
         logger.error("Sequential analysis preview error: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
-
-
+        raise InternalServiceError(f"Internal server error: {exc}")
 @router.post(
     "/nodes/{node_id}/sequential-analysis",
     response_model=SequentialAnalysisResponse,
@@ -634,10 +615,7 @@ async def run_sequential_analysis(
             existing_req_dict.pop("task_id", None)
 
             if existing_req_dict != current_req_dict:
-                raise HTTPException(
-                    status_code=409,
-                    detail="Clear current sequential analysis results before starting a new run",
-                )
+                raise ResourceConflictError("Clear current sequential analysis results before starting a new run",)
         except HTTPException:
             raise
         except Exception as exc:
@@ -659,10 +637,7 @@ async def run_sequential_analysis(
 
         if request.group_by_columns:
             if len(request.group_by_columns) > 3:
-                raise HTTPException(
-                    status_code=400, detail="Maximum 3 group by columns allowed"
-                )
-
+                raise InvalidInputError("Maximum 3 group by columns allowed")
         inferred_type = column_type_lookup.get(request.time_column)
         numeric_types = {"integer", "float"}
         if (
@@ -703,11 +678,7 @@ async def run_sequential_analysis(
             request.column_type == "datetime"
             and request.frequency not in valid_frequencies
         ):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid frequency '{request.frequency}'. Valid options: {valid_frequencies}",
-            )
-
+            raise InvalidInputError(f"Invalid frequency '{request.frequency}'. Valid options: {valid_frequencies}",)
         sequential_result = _run_sequential_analysis(
             node_data,
             time_column=request.time_column,
@@ -755,11 +726,7 @@ async def run_sequential_analysis(
             task_manager.set_current_task("sequential_analysis", task_id)
 
         if task is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to load sequential analysis task",
-            )
-
+            raise InternalServiceError("Failed to load sequential analysis task",)
         task.request = req_model
         task.complete(GenericAnalysisResult(result_payload))
         task_manager.save_task(task)
@@ -769,9 +736,7 @@ async def run_sequential_analysis(
 
     except Exception as e:  # pragma: no cover
         logger.error("Unexpected sequential analysis error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
-
-
+        raise InternalServiceError(f"Internal server error: {e}")
 @router.get(
     "/sequential-analysis/tasks/current",
     response_model=CurrentAnalysisTasksResponse,
@@ -792,7 +757,7 @@ async def sequential_analysis_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id, ["sequential_analysis", "sequential-analysis"]
     )
@@ -819,11 +784,11 @@ async def sequential_analysis_task_request(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     request = task.request
     return request.model_dump()
 
@@ -849,13 +814,12 @@ async def sequential_analysis_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
 
     task = await ensure_task_synced(user_id, workspace_id, task_id, task_manager)
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     result = task.result
     if result is None:
         return {"state": "pending", "metadata": {"task_id": task_id}}
@@ -892,12 +856,11 @@ async def update_sequential_analysis_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if not task or not task.result:
-        raise HTTPException(status_code=404, detail="No sequential analysis found")
-
+        raise NotFoundError("No sequential analysis found")
     result_payload = task.result.to_json()
     if not isinstance(result_payload, dict):
         result_payload = {}
@@ -909,10 +872,7 @@ async def update_sequential_analysis_task_result(
     if updates is not None and updates.chart_type is not None:
         candidate = updates.chart_type
         if not isinstance(candidate, str) or candidate not in VALID_CHART_TYPES:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid chart type. Valid options are: line, bar, area",
-            )
+            raise InvalidInputError("Invalid chart type. Valid options are: line, bar, area",)
         chart_type = candidate
 
     result_payload["chart_type"] = chart_type
@@ -951,17 +911,11 @@ async def detach_sequential_analysis_task(
     workspace_id, ws = _get_active_workspace(user_id)
 
     if not request.selected_periods:
-        raise HTTPException(
-            status_code=400, detail="At least one selected period is required"
-        )
-
+        raise InvalidInputError("At least one selected period is required")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None or task.request is None:
-        raise HTTPException(
-            status_code=404, detail="Sequential analysis task not found"
-        )
-
+        raise NotFoundError("Sequential analysis task not found")
     stored_request = task.request
     node_id = getattr(stored_request, "node_id", None)
     time_column = getattr(stored_request, "time_column", None)
@@ -969,26 +923,17 @@ async def detach_sequential_analysis_task(
     case_sensitive = bool(getattr(stored_request, "case_sensitive", True))
 
     if not isinstance(node_id, str) or not node_id:
-        raise HTTPException(
-            status_code=400, detail="Sequential analysis task is missing node_id"
-        )
+        raise InvalidInputError("Sequential analysis task is missing node_id")
     if not isinstance(time_column, str) or not time_column:
-        raise HTTPException(
-            status_code=400, detail="Sequential analysis task is missing time_column"
-        )
+        raise InvalidInputError("Sequential analysis task is missing time_column")
     if node_id not in ws.nodes:
-        raise HTTPException(status_code=404, detail="Source node not found")
-
+        raise NotFoundError("Source node not found")
     source_node = ws.nodes[node_id]
     source_lazy = source_node.data
     schema = source_lazy.collect_schema()
     time_dtype = schema.get(time_column)
     if time_dtype is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Time column '{time_column}' is not available on the source node",
-        )
-
+        raise InvalidInputError(f"Time column '{time_column}' is not available on the source node",)
     filter_expr: pl.Expr | None = None
     for selected_period in request.selected_periods:
         period_start = _coerce_period_bound(
@@ -1009,10 +954,7 @@ async def detach_sequential_analysis_task(
         )
 
     if filter_expr is None:
-        raise HTTPException(
-            status_code=400, detail="No valid period filters were provided"
-        )
-
+        raise InvalidInputError("No valid period filters were provided")
     group_expr = _build_group_filter_expression(
         visible_groups=request.visible_groups,
         schema=schema,

@@ -25,6 +25,7 @@ from ...models import (
     ReplaceRequest,
 )
 from .utils import _paginated_lazy_preview, require_current_workspace, update_workspace
+from ...core.exceptions import InternalServiceError, InvalidInputError
 
 router = APIRouter(prefix="/workspaces", tags=["nodes"])
 
@@ -92,8 +93,7 @@ async def replace_preview(
             replaced_lazy, page, page_size
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     return FilterPreviewResponse(
         data=data_rows,
         columns=columns,
@@ -124,14 +124,12 @@ async def replace_apply(
         if dtype is not None:
             dtype_str = str(dtype)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     try:
         node.data = updated_data
         update_workspace(user_id, workspace_id)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
+        raise InternalServiceError(str(exc)) from exc
     return ReplaceApplyResponse(
         state="successful",
         node_id=node_id,

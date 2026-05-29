@@ -23,6 +23,7 @@ from ...core.polars_expr_validator import (
     validate_polars_expr_code,
 )
 from ...core.utils import stringify_unsafe_integers
+from ...core.exceptions import InvalidInputError
 from ...models import (
     FilterPreviewResponse,
     PolarsExpressionApplyResponse,
@@ -166,9 +167,7 @@ def _apply_expression_context(
         aggs = [e for item in items for e in _exec_polars_expr(item.code)]
         return lazy.group_by(keys).agg(aggs)
 
-    raise HTTPException(status_code=400, detail=f"Unknown context: {context}")
-
-
+    raise InvalidInputError(f"Unknown context: {context}")
 @router.post("/nodes/{node_id}/expression/preview")
 async def polars_expression_preview(
     node_id: str,
@@ -185,10 +184,9 @@ async def polars_expression_preview(
     try:
         result_lazy = _apply_expression_context(lazy_data, request)
     except PolarsExprValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise InvalidInputError(str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     data_rows, columns, dtypes, pagination = _paginated_lazy_preview(
         result_lazy, page, page_size
     )
@@ -217,10 +215,9 @@ async def polars_expression_apply(
     try:
         result_lazy = _apply_expression_context(node.data, request)
     except PolarsExprValidationError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise InvalidInputError(str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     if (
         request.context == PolarsExpressionContext.with_columns
         and not request.new_node_name

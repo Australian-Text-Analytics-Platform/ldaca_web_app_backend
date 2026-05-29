@@ -54,6 +54,7 @@ from ....models import (
 from ..utils import ensure_task_synced, update_workspace
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
+from ....core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, NotFoundError, ResourceConflictError, TaskNotFoundError, WorkspaceNotFoundError
 from .generated_columns import (
     TOPIC_COLUMN,
     TOPIC_MEANING_COLUMN,
@@ -107,7 +108,7 @@ def _prepare_topic_artifact_target(user_id: str, workspace_id: str) -> tuple[Pat
         user_id, workspace_id
     )
     if workspace_artifacts_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     artifact_prefix = f"topic_modeling_{uuid4()}"
     return workspace_artifacts_dir, artifact_prefix
 
@@ -142,17 +143,11 @@ def _topic_artifacts_from_task(task: AnalysisTask) -> dict:
     payload = _task_result_payload(task)
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
-        raise HTTPException(
-            status_code=404,
-            detail="Topic modeling artifacts are not available for this task",
-        )
+        raise NotFoundError("Topic modeling artifacts are not available for this task",)
     node_artifacts = artifacts.get("nodes")
     meanings_path = artifacts.get("topic_meanings_parquet_path")
     if not isinstance(node_artifacts, list) or not isinstance(meanings_path, str):
-        raise HTTPException(
-            status_code=500,
-            detail="Topic modeling artifact manifest is invalid",
-        )
+        raise InternalServiceError("Topic modeling artifact manifest is invalid",)
     return artifacts
 
 
@@ -323,12 +318,9 @@ async def _require_completed_topic_task(
         user_id, workspace_id, task_id, get_task_manager(user_id)
     )
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     if task.status != AnalysisStatus.COMPLETED:
-        raise HTTPException(
-            status_code=409,
-            detail="Topic modeling task is not completed",
-        )
+        raise ResourceConflictError("Topic modeling task is not completed",)
     return task
 
 
@@ -353,8 +345,7 @@ async def clear_topic_modeling_results(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     current_id = task_manager.get_current_task_ids("topic_modeling")
     if current_id:
@@ -499,13 +490,9 @@ async def run_topic_modeling(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     if not request.node_ids:
-        raise HTTPException(
-            status_code=400, detail="At least one node ID must be provided"
-        )
-
+        raise InvalidInputError("At least one node ID must be provided")
     node_infos: list[dict[str, object]] = []
     for node_id in request.node_ids:
         node = ws.nodes[node_id]
@@ -555,11 +542,7 @@ async def run_topic_modeling(
 
         workspace_dir = update_workspace(user_id, workspace_id, ws)
         if workspace_dir is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to persist workspace before topic modeling",
-            )
-
+            raise InternalServiceError("Failed to persist workspace before topic modeling",)
         artifact_dir, artifact_prefix = _prepare_topic_artifact_target(
             user_id, workspace_id
         )
@@ -651,7 +634,7 @@ async def topic_modeling_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id, ["topic_modeling", "topic-modeling"]
     )
@@ -678,11 +661,11 @@ async def topic_modeling_task_request(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     request = task.request
     return request.model_dump()
 
@@ -712,15 +695,13 @@ async def topic_modeling_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task = await ensure_task_synced(
         user_id, workspace_id, task_id, get_task_manager(user_id)
     )
 
     if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     if task.status == AnalysisStatus.RUNNING:
         return TopicModelingResponse(
             state="running",
@@ -779,41 +760,24 @@ async def update_topic_modeling_task_result(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task = await _require_completed_topic_task(user_id, workspace_id, task_id)
     task_manager = get_task_manager(user_id)
     if not task.result:
-        raise HTTPException(
-            status_code=409,
-            detail="Topic modeling task is not completed",
-        )
-
+        raise ResourceConflictError("Topic modeling task is not completed",)
     request_payload = task.request.model_dump()
     if request_payload.get("topic_size_mode") != "exact":
-        raise HTTPException(
-            status_code=409,
-            detail="Only exact topic modeling results can be re-aggregated",
-        )
-
+        raise ResourceConflictError("Only exact topic modeling results can be re-aggregated",)
     requested_topic_count = updates.topic_size_value
     if isinstance(requested_topic_count, bool) or not isinstance(
         requested_topic_count, int
     ):
-        raise HTTPException(
-            status_code=400,
-            detail="topic_size_value must be an integer",
-        )
-
+        raise InvalidInputError("topic_size_value must be an integer",)
     payload = _task_result_payload(task)
     artifacts = _topic_artifacts_from_task(task)
     exact_artifact_path = artifacts.get("exact_reduction_artifact_path")
     if not isinstance(exact_artifact_path, str) or not exact_artifact_path:
-        raise HTTPException(
-            status_code=409,
-            detail="This exact topic-modeling result cannot be re-aggregated",
-        )
-
+        raise ResourceConflictError("This exact topic-modeling result cannot be re-aggregated",)
     node_artifacts = artifacts.get("nodes") or []
     node_infos = [
         {
@@ -826,11 +790,7 @@ async def update_topic_modeling_task_result(
         if isinstance(node_payload, dict)
     ]
     if len(node_infos) != len(node_artifacts):
-        raise HTTPException(
-            status_code=500,
-            detail="Topic modeling artifact manifest is invalid",
-        )
-
+        raise InternalServiceError("Topic modeling artifact manifest is invalid",)
     try:
         updated_payload = reaggregate_exact_topic_modeling_result(
             artifact_path=exact_artifact_path,
@@ -843,13 +803,9 @@ async def update_topic_modeling_task_result(
             random_seed=int(request_payload.get("random_seed") or 42),
         )
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise InvalidInputError(str(exc)) from exc
     except Exception as exc:  # pragma: no cover
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to re-aggregate exact topic model: {exc}",
-        ) from exc
-
+        raise InternalServiceError(f"Failed to re-aggregate exact topic model: {exc}",) from exc
     existing_meta = cast(
         dict[str, object],
         payload.get("meta") if isinstance(payload.get("meta"), dict) else {},
@@ -945,8 +901,7 @@ async def topic_modeling_detach_options(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task = await _require_completed_topic_task(user_id, workspace_id, task_id)
 
     artifacts = _topic_artifacts_from_task(task)
@@ -1017,8 +972,7 @@ async def detach_topic_modeling(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task = await _require_completed_topic_task(user_id, workspace_id, task_id)
 
     artifacts = _topic_artifacts_from_task(task)
@@ -1030,10 +984,7 @@ async def detach_topic_modeling(
     }
     meanings_path = Path(str(artifacts.get("topic_meanings_parquet_path")))
     if not meanings_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Topic meanings artifact is missing",
-        )
+        raise NotFoundError("Topic meanings artifact is missing",)
     selected_topic_ids = sorted(
         {int(topic_id) for topic_id in (request.topic_ids or [])}
     )
@@ -1075,23 +1026,15 @@ async def detach_topic_modeling(
 
     target_node_ids = request.node_ids or list(assignments_by_node_id.keys())
     if not target_node_ids:
-        raise HTTPException(status_code=400, detail="No node IDs provided for detach")
-
+        raise InvalidInputError("No node IDs provided for detach")
     detached_nodes: list[TopicModelingDetachedNode] = []
     for node_id in target_node_ids:
         artifact_payload = assignments_by_node_id.get(node_id)
         if not artifact_payload:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Node {node_id} is not available in topic artifact manifest",
-            )
-
+            raise InvalidInputError(f"Node {node_id} is not available in topic artifact manifest",)
         assignments_path = Path(str(artifact_payload.get("assignments_parquet_path")))
         if not assignments_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"Topic assignments artifact missing for node {node_id}",
-            )
+            raise NotFoundError(f"Topic assignments artifact missing for node {node_id}",)
         assignments_lf = pl.scan_parquet(assignments_path)
 
         # Filter assignments to selected topics if topic_ids specified
@@ -1127,18 +1070,10 @@ async def detach_topic_modeling(
         original_columns = list(source_data.collect_schema().names())
         selected_columns = list((request.selected_columns or {}).get(node_id) or [])
         if not selected_columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No columns selected for node {node_id}",
-            )
-
+            raise InvalidInputError(f"No columns selected for node {node_id}",)
         invalid = [col for col in selected_columns if col not in original_columns]
         if invalid:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid selected columns for node {node_id}: {invalid}",
-            )
-
+            raise InvalidInputError(f"Invalid selected columns for node {node_id}: {invalid}",)
         topic_column_name = _resolve_topic_column_name(
             request.topic_column_name or TOPIC_COLUMN,
             set(original_columns) | set(selected_columns),

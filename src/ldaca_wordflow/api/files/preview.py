@@ -35,6 +35,7 @@ from ...core.utils import (
 )
 from ...models import FileInfoResponse, FilePreviewRequest, FilePreviewResponse
 from .crud import _resolve_user_file_path
+from ...core.exceptions import AccessDeniedError, FileNotFoundError, InternalServiceError, InvalidInputError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -266,12 +267,9 @@ async def unified_file_preview(
     file_path = data_folder / req.filename
 
     if not validate_file_path(file_path, data_folder):
-        raise HTTPException(
-            status_code=403, detail="Access denied: file outside allowed directory"
-        )
+        raise AccessDeniedError("Access denied: file outside allowed directory")
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File {req.filename} not found")
-
+        raise FileNotFoundError(f"File {req.filename} not found")
     file_type = detect_file_type(file_path.name)
     supported_types = _get_supported_types_by_extension(file_type)
 
@@ -290,8 +288,7 @@ async def unified_file_preview(
             try:
                 sheet_names = _list_excel_sheet_names(file_path)
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
-
+                raise InternalServiceError(str(exc)) from exc
             payload = req.payload or {}
             requested_sheet = payload.get("sheet_name")
             selected_sheet = requested_sheet or (
@@ -306,8 +303,7 @@ async def unified_file_preview(
                         pl.read_excel(file_path, sheet_id=0)
                     )
             except Exception as exc:
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
-
+                raise InternalServiceError(str(exc)) from exc
             total_rows = int(base_df.height)
             df = base_df.slice(offset, page_size)
 
@@ -346,11 +342,7 @@ async def unified_file_preview(
             selected_sheet=selected_sheet,
         )
     except Exception as e:
-        raise HTTPException(
-            status_code=400, detail=f"Error generating preview: {str(e)}"
-        )
-
-
+        raise InvalidInputError(f"Error generating preview: {str(e)}")
 # ── File info ──────────────────────────────────────────────────────────────
 
 
@@ -372,13 +364,9 @@ async def get_file_info(filename: str, current_user: dict = Depends(get_current_
     file_path = data_folder / filename
 
     if not validate_file_path(file_path, data_folder):
-        raise HTTPException(
-            status_code=403, detail="Access denied: file outside allowed directory"
-        )
-
+        raise AccessDeniedError("Access denied: file outside allowed directory")
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File {filename} not found")
-
+        raise FileNotFoundError(f"File {filename} not found")
     stat = file_path.stat()
     file_type = detect_file_type(filename)
 
@@ -415,19 +403,13 @@ async def get_raw_file(
     file_path = _resolve_user_file_path(path, data_folder)
 
     if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail=f"File {path} not found")
-
+        raise FileNotFoundError(f"File {path} not found")
     try:
         content = file_path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=400, detail="File is not valid UTF-8 text"
-        ) from exc
+        raise InvalidInputError("File is not valid UTF-8 text") from exc
     except OSError as exc:
-        raise HTTPException(
-            status_code=500, detail=f"Error reading file: {str(exc)}"
-        ) from exc
-
+        raise InternalServiceError(f"Error reading file: {str(exc)}") from exc
     media_type = "text/markdown" if file_path.suffix.lower() == ".md" else "text/plain"
     return Response(content=content, media_type=media_type)
 
@@ -453,13 +435,9 @@ async def download_file(filename: str, current_user: dict = Depends(get_current_
     file_path = data_folder / filename
 
     if not validate_file_path(file_path, data_folder):
-        raise HTTPException(
-            status_code=403, detail="Access denied: file outside allowed directory"
-        )
-
+        raise AccessDeniedError("Access denied: file outside allowed directory")
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File {filename} not found")
-
+        raise FileNotFoundError(f"File {filename} not found")
     def iterfile():
         """Stream file content in chunks for download.
 

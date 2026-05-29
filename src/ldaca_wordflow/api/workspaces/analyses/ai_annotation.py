@@ -59,6 +59,7 @@ from ..utils import update_workspace
 from .ai_annotation_core import classify_texts, list_models
 from .cleanup import clear_previous_completed_analysis_task
 from .current_tasks import get_current_task_ids_for_analysis
+from ....core.exceptions import InternalServiceError, InvalidInputError, NoActiveWorkspaceError, TaskNotFoundError, WorkspaceNotFoundError
 
 router = APIRouter(prefix="/workspaces", tags=["ai-annotation"])
 logger = logging.getLogger(__name__)
@@ -240,7 +241,7 @@ def _workspace_data_dir(user_id: str, workspace_id: str) -> Path:
 
     workspace_dir = workspace_manager.get_workspace_dir(user_id, workspace_id)
     if workspace_dir is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise WorkspaceNotFoundError("Workspace not found")
     workspace_data_dir = workspace_dir / "data"
     workspace_data_dir.mkdir(parents=True, exist_ok=True)
     return workspace_data_dir
@@ -264,8 +265,7 @@ def _distinct_annotation_values(
 
     ws = workspace_manager.get_current_workspace(user_id)
     if ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node_data = ws.nodes[node_id].data
     values = (
         node_data.select(pl.col(annotation_column))
@@ -342,13 +342,9 @@ async def run_ai_annotation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     if not request.node_ids:
-        raise HTTPException(
-            status_code=400, detail="At least one node ID must be provided"
-        )
-
+        raise InvalidInputError("At least one node ID must be provided")
     for node_id in request.node_ids:
         node = ws.nodes[node_id]
         node.data
@@ -390,8 +386,7 @@ async def run_ai_annotation(
 
     saved_task = task_manager.get_task(task_id)
     if saved_task is None:
-        raise HTTPException(status_code=500, detail="Failed to save task")
-
+        raise InternalServiceError("Failed to save task")
     response_data = await _build_response(
         request=request,
         task_id=task_id,
@@ -424,8 +419,7 @@ async def clear_ai_annotation(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     task_manager = get_task_manager(user_id)
     current_ids = task_manager.get_current_task_ids("ai_annotation")
     for tid in current_ids:
@@ -459,7 +453,7 @@ async def ai_annotation_current_tasks(
     user_id = current_user["id"]
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     if not workspace_id:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
+        raise NoActiveWorkspaceError("No active workspace selected")
     return await get_current_task_ids_for_analysis(
         user_id, ["ai_annotation", "ai-annotation"]
     )
@@ -487,7 +481,7 @@ async def ai_annotation_task_request(
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
+        raise TaskNotFoundError("Task not found")
     return task.request.model_dump()
 
 
@@ -516,8 +510,7 @@ async def ai_annotation_task_result(
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     return await _build_response(
         request=task.request,
         task_id=task_id,
@@ -551,8 +544,7 @@ async def ai_annotation_task_result_post(
     task_manager = get_task_manager(user_id)
     task = task_manager.get_task(task_id)
     if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
+        raise TaskNotFoundError("Task not found")
     page = query.page or 1
     page_size = query.page_size or 20
     sort_by = query.sort_by
@@ -609,8 +601,7 @@ async def detach_ai_annotation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
     node_data = node.data
 
@@ -673,11 +664,7 @@ async def detach_ai_annotation(
     try:
         ws.add_node(new_node)
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to add detached node: {exc}",
-        )
-
+        raise InternalServiceError(f"Failed to add detached node: {exc}",)
     update_workspace(user_id, workspace_id, best_effort=True)
 
     return {
@@ -715,8 +702,7 @@ async def save_ai_annotation(
     workspace_id = workspace_manager.get_current_workspace_id(user_id)
     ws = workspace_manager.get_current_workspace(user_id)
     if not workspace_id or ws is None:
-        raise HTTPException(status_code=404, detail="No active workspace selected")
-
+        raise NoActiveWorkspaceError("No active workspace selected")
     node = ws.nodes[node_id]
     node_data = node.data
 

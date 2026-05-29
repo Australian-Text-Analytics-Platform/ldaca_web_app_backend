@@ -26,52 +26,23 @@ dependencies = [
     "aiosqlite>=0.21.0",
     "bertopic>=0.17.3",
     "duckdb>=1.4.0",
-    "onnxruntime>=1.18.0",
-    "tokenizers>=0.21.0",
-    "fastapi-users[sqlalchemy]>=14.0.1", # Includes fastapi, python-multipart, sqlalchemy
-    "fastapi[standard]>=0.135.0",        # Includes uvicorn, pydantic, starlette
+    "fastapi-users[sqlalchemy]>=14.0.1",        # Includes fastapi, python-multipart, sqlalchemy
+    "fastapi[standard]>=0.135.0",               # Includes uvicorn, pydantic, starlette
     "fastexcel>=0.18.0",
-    "xlsxwriter>=3.2.0",                 # Required by polars DataFrame.write_excel for xlsx export
-    "google-auth-oauthlib>=1.2.2",       # Includes google-auth
+    "xlsxwriter>=3.2.0",                        # Required by polars DataFrame.write_excel for xlsx export
+    "google-auth-oauthlib>=1.2.2",              # Includes google-auth
     "httpx>=0.27.0",
     "pydantic-settings>=2.0.0",
-    "psutil>=6.1.0",                     # Process management for proper cleanup of child processes
+    "orjson>=3.10.0",
+    "psutil>=6.1.0",                            # Process management for proper cleanup of child processes
     "docworkspace>=0.2.8",
-    # Polars 1.40 splits the Rust runtime into feature tiers; the default
-    # `polars-runtime-32` lacks Categorical/Decimal/etc. support, which
-    # breaks LazyFrame.deserialize() for plans containing those dtypes.
-    # `rtcompat` pulls in `polars-runtime-compat` (full feature set).
-    "polars[rtcompat]>=1.40.0",
-    # polars-text 0.2.0 shipped the multilingual tokenizer additions:
-    # Lindera Jieba ZH (`model="lindera:jieba"`), Lindera JA + KO
-    # (`model="lindera:ja-ipadic"` etc.), offset-aware tokenization, and
-    # Unicode-aware sentence/word counts.
-    # 0.2.1 is the perf release: single-sweep byte→char conversion (the
-    # Lindera regression fix), `to_lowercase` short-circuit for case-free
-    # backends, and a flat list-of-struct builder. On a 13k-row JP corpus
-    # the Lindera path drops from 1.43s → 0.23s (~6×) with identical
-    # token output. 0.3.0 consolidates tokenization around `tokenize()` returning
-    # List[Struct{token,start,end}] and adds the path-backed cache parameter
-    # used by `core.tokens_cache`, so pin >=0.3.0.
-    # Older wheels (<=0.1.7) fall through to `load_hf_tokenizer` for the
-    # lindera model IDs, which then tries to fetch them as HF Hub model repos
-    # and dies with "Failed to fetch tokenizer.json for lindera:ja-ipadic"
-    # the first time a derived JA/KO tokens column gets lazily evaluated
-    # (e.g. on a concordance call). Serialized plan source-path rebasing now
-    # lives in polars-source-utils via docworkspace, keeping polars-text's
-    # tokenizer build separate from the broad polars-plan feature surface.
     "polars-text>=0.3.0",
     "pyarrow>=16.0.0",
     "rocrate-tabular>=0.1.4",
     "tbb>=2022.3.1 ; sys_platform != 'darwin'",
     "openai>=2.26.0",
     "spacy>=3.7.0",
-    # bertopic requires `sentence-transformers` with no version floor.  On
-    # Python 3.14 uv's resolver backtracks to the ancient 2.2.2 sdist, which
-    # imports the removed `cached_download` symbol from huggingface_hub and
-    # crashes on first use.  3.0.0 is the first release that uses the
-    # modern hf_hub_download API.
-    "sentence-transformers>=3.0.0",
+    "sentence-transformers>=0.4.1",
 ]
 
 [project.optional-dependencies]

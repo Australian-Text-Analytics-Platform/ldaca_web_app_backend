@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...core.auth import get_current_user
 from ...models import FilterPreviewResponse, FilterRequest, NodeOperationResponse, PaginationInfo
+from ...core.exceptions import InvalidInputError
 from .utils import (
     _coerce_scalar,
     _create_and_persist_child_node,
@@ -230,16 +231,14 @@ async def filter_preview(
         schema_map: dict[str, Any] = dict(lazy_data.collect_schema().items())
         filter_expr = _build_filter_expression(request, column_dtypes=schema_map)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     try:
         filtered_lazy = lazy_data.filter(filter_expr)
         data_rows, columns, dtypes, pagination = _paginated_lazy_preview(
             filtered_lazy, page, page_size
         )
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
+        raise InvalidInputError(str(exc)) from exc
     return FilterPreviewResponse(
         data=data_rows,
         columns=columns,
