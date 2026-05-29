@@ -1201,15 +1201,15 @@ class TestWorkspaceAPI:
 
         with (
             patch(
-                "ldaca_wordflow.api.workspaces.workspace_manager.get_current_workspace",
+                "ldaca_wordflow.api.workspaces.utils.workspace_manager.get_current_workspace",
                 return_value=mock_workspace,
             ),
             patch(
-                "ldaca_wordflow.api.workspaces.nodes.Node",
+                "ldaca_wordflow.api.workspaces.utils.Node",
                 return_value=joined_node,
             ),
             patch(
-                "ldaca_wordflow.api.workspaces.nodes.update_workspace",
+                "ldaca_wordflow.api.workspaces.utils.update_workspace",
                 return_value=None,
             ),
         ):

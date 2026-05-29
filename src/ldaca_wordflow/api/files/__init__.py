@@ -14,13 +14,6 @@ Flow:
 
 from pathlib import Path
 
-import polars as pl
-
-try:
-    import fastexcel
-except ImportError:
-    fastexcel = None  # type: ignore[assignment]
-
 from fastapi import APIRouter
 
 from ...core.auth import get_current_user

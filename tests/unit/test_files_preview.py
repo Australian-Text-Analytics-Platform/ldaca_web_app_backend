@@ -99,7 +99,7 @@ def test_excel_preview_handles_dataframe_return_for_sheet_listing(client, tmp_pa
             return pl.DataFrame({"col_a": [1, 2], "col_b": ["x", "y"]})
         raise AssertionError("Unexpected read_excel call signature")
 
-    with patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel):
+    with patch("ldaca_wordflow.api.files.preview.pl.read_excel", side_effect=fake_read_excel):
         resp = client.post(
             "/api/files/preview",
             json={"filename": "single_sheet.xlsx", "page": 0, "page_size": 1},
@@ -134,7 +134,7 @@ def test_excel_preview_handles_dict_return_for_sheet_id_zero(client, tmp_path):
             return sheet_df
         raise AssertionError("Unexpected read_excel call signature")
 
-    with patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel):
+    with patch("ldaca_wordflow.api.files.preview.pl.read_excel", side_effect=fake_read_excel):
         resp = client.post(
             "/api/files/preview",
             json={
@@ -180,8 +180,8 @@ def test_excel_preview_returns_sheet_names_for_selector(client, tmp_path):
             return FakeReader()
 
     with (
-        patch("ldaca_wordflow.api.files.fastexcel", FakeFastExcel),
-        patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel),
+        patch("ldaca_wordflow.api.files.preview.fastexcel", FakeFastExcel),
+        patch("ldaca_wordflow.api.files.preview.pl.read_excel", side_effect=fake_read_excel),
     ):
         resp = client.post(
             "/api/files/preview",
@@ -226,8 +226,8 @@ def test_excel_preview_sheet_names_xml_fallback_without_fastexcel(client, tmp_pa
         raise AssertionError("Unexpected read_excel call signature")
 
     with (
-        patch("ldaca_wordflow.api.files.fastexcel", None),
-        patch("ldaca_wordflow.api.files.pl.read_excel", side_effect=fake_read_excel),
+        patch("ldaca_wordflow.api.files.preview.fastexcel", None),
+        patch("ldaca_wordflow.api.files.preview.pl.read_excel", side_effect=fake_read_excel),
     ):
         resp = client.post(
             "/api/files/preview",

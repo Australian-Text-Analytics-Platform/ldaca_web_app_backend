@@ -100,7 +100,7 @@ def test_list_files_serializes_empty_directory_children_as_empty_list(
     client: TestClient,
 ):
     with patch(
-        "ldaca_wordflow.api.files._build_file_tree",
+        "ldaca_wordflow.api.files.crud._build_file_tree",
         return_value=[
             {
                 "name": "Empty Folder",
