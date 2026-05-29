@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
 
 from ..analysis.models import BaseAnalysisRequest
+from .analysis_common import DetachNodeOption
 
 # =============================================================================
 # AUTHENTICATION MODELS
@@ -1918,22 +1919,7 @@ class ConcordanceMaterializeRequest(BaseModel):
     parent_task_id: str
 
 
-class ConcordanceDetachNodeOption(BaseModel):
-    """Option schema used by API routes and clients for concordance detach node option.
-
-    Used by:
-    - backend API routes, backend request/response models because they need a stable JSON
-      contract shared by route handlers, generated clients, and tests.
-
-    Flow: validate incoming API fields, apply defaults or validators, and serialize route
-        responses in the shape expected by frontend clients and tests.
-    """
-
-    node_id: str
-    node_name: str
-    text_column: Optional[str] = None
-    available_columns: List[str]
-    disabled_columns: List[str] = Field(default_factory=list)
+ConcordanceDetachNodeOption = DetachNodeOption  # shared base, kept for backwards compat
 
 
 class ConcordanceDetachOptionsResponse(BaseModel):
@@ -2080,22 +2066,7 @@ class QuotationMaterializeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class QuotationDetachNodeOption(BaseModel):
-    """Option schema used by API routes and clients for quotation detach node option.
-
-    Used by:
-    - backend API routes, backend request/response models because they need a stable JSON
-      contract shared by route handlers, generated clients, and tests.
-
-    Flow: validate incoming API fields, apply defaults or validators, and serialize route
-        responses in the shape expected by frontend clients and tests.
-    """
-
-    node_id: str
-    node_name: str
-    text_column: Optional[str] = None
-    available_columns: List[str]
-    disabled_columns: List[str] = Field(default_factory=list)
+QuotationDetachNodeOption = DetachNodeOption  # shared base, kept for backwards compat
 
 
 class QuotationDetachOptionsResponse(BaseModel):
@@ -2857,19 +2828,7 @@ class AnalysisSorting(BaseModel):
     descending: bool
 
 
-class NodeDataSorting(BaseModel):
-    """API schema used by routes and generated clients for node data sorting.
-
-    Used by:
-    - backend request/response models because they need a stable JSON contract shared by
-      route handlers, generated clients, and tests.
-
-    Flow: validate incoming API fields, apply defaults or validators, and serialize route
-        responses in the shape expected by frontend clients and tests.
-    """
-
-    sort_by: str | None = None
-    descending: bool
+NodeDataSorting = AnalysisSorting  # structurally identical, kept for backwards compat
 
 
 class NodeDataFiltering(BaseModel):
@@ -3709,22 +3668,7 @@ class TopicModelingDetachRequest(BaseModel):
     topic_meanings_override: Optional[List[TopicMeaningOverrideItem]] = None
 
 
-class TopicModelingDetachNodeOption(BaseModel):
-    """Option schema used by API routes and clients for topic modeling detach node option.
-
-    Used by:
-    - backend API routes, backend request/response models because they need a stable JSON
-      contract shared by route handlers, generated clients, and tests.
-
-    Flow: validate incoming API fields, apply defaults or validators, and serialize route
-        responses in the shape expected by frontend clients and tests.
-    """
-
-    node_id: str
-    node_name: str
-    text_column: Optional[str] = None
-    available_columns: List[str]
-    disabled_columns: List[str] = Field(default_factory=list)
+TopicModelingDetachNodeOption = DetachNodeOption  # shared base, kept for backwards compat
 
 
 class TopicModelingDetachOptionsResponse(BaseModel):

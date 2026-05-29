@@ -35,6 +35,11 @@ CONC_R1_FREQ_COLUMN = "CONC_r1_freq"
 # aggregation uses for the per-document join, exposed per-hit so the user
 # can opt the column into both the table view and the per-hit detach.
 CONC_EXTRACTION_COLUMN = "CONC_extraction"
+CONC_DOC_HITS_COLUMN = "CONC_doc_hits"
+CONC_HIT_COUNT_COLUMN = "CONC_hit_count"
+CONC_HIT_LINE_MARKERS_COLUMN = "CONC_hit_line_markers"
+CONC_HIT_LINE_TEXT_COLUMN = "CONC_hit_line_text"
+CONC_HIT_START_INDICES_COLUMN = "CONC_hit_start_indices"
 
 CORE_CONCORDANCE_COLUMNS = (
     CONC_LEFT_CONTEXT_COLUMN,
@@ -387,3 +392,19 @@ def quotation_struct_projection(struct_column: str) -> tuple[pl.Expr, ...]:
         .alias(QUOTE_IS_FLOATING_COLUMN),
         pl.col(struct_column).struct.field("quote_row_idx").alias(QUOTE_ROW_IDX_COLUMN),
     )
+
+
+def compute_concordance_extraction_cols(
+    node: "Node",
+    document_column: str,
+) -> list[pl.Expr]:
+    """Compute extraction columns for a concordance detach node."""
+    return [concordance_extraction_expr(document_column)]
+
+
+def compute_dispersion_detach_aggregation(
+    node: "Node",
+    document_column: str,
+) -> list[pl.Expr]:
+    """Compute dispersion detach aggregation for a concordance detach node."""
+    return []

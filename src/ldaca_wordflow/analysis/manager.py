@@ -417,17 +417,7 @@ class TaskManager:
         return self.store.get_descendant_task_ids(task_id)
 
     def clear_all(self) -> list[str]:
-        """Clear all state used by analysis task storage.
-
-        Called by:
-        - `TaskManager` instances owned by backend services, routes, and tests because they need
-          a backend boundary that validates inputs before delegating to workspace or worker
-          state.
-
-        Flow: normalize request payloads, update per-user task maps, maintain current-tab
-            pointers, and walk parent-child links for cleanup.
-        """
-
+        """Clear all tasks for this user (used by test fixtures)."""
         to_remove = [task.task_id for task in self.store.get_all_tasks()]
         for task_id in to_remove:
             self.clear_task(task_id)

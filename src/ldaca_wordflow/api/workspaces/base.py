@@ -268,8 +268,6 @@ def _export_node_artifact(
             # remains the single explicit eager export path.
             collected_data = cast(pl.DataFrame, export_data.collect())
             collected_data.write_json(output_path)
-    except HTTPException:
-        raise
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -812,8 +810,6 @@ async def cast_node(
             ),
         }
 
-    except HTTPException:
-        raise
     except Exception as cast_error:
         raise HTTPException(
             status_code=400,

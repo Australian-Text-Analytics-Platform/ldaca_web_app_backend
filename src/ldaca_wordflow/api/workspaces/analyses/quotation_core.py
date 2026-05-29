@@ -835,3 +835,46 @@ async def _compute_materialized_quotation_page(
         },
         "materialized": True,
     }
+
+
+def collect_non_empty_quotation_corpus(
+    node_data: pl.LazyFrame,
+    document_column: str,
+    extra_columns: list[str],
+) -> tuple[list[str], dict[str, list], dict[str, Any]]:
+    """Filter a lazy corpus to non-empty documents and extract needed columns.
+
+    Used by:
+    - quotation detach and materialize routes because they need the filtered document
+      corpus and additional metadata columns for worker task payloads.
+
+    Flow:
+    - Filter rows where the document column is non-empty, collect the result, and return
+      the document texts alongside extra column data and dtypes for worker serialization.
+    """
+    corpus_df = cast(
+        pl.DataFrame,
+        node_data.select(
+            [pl.col(document_column)] + [pl.col(col) for col in extra_columns]
+        )
+        .filter(
+            pl.col(document_column)
+            .cast(pl.Utf8, strict=False)
+            .str.strip_chars()
+            .str.len_chars()
+            .fill_null(0)
+            > 0
+        )
+        .collect(),
+    )
+    node_corpus = [
+        str(value) if value is not None else ""
+        for value in corpus_df.get_column(document_column).to_list()
+    ]
+    extra_columns_data: dict[str, list] = {}
+    extra_columns_dtypes: dict[str, Any] = {}
+    for col in extra_columns:
+        series = corpus_df.get_column(col)
+        extra_columns_data[col] = series.to_list()
+        extra_columns_dtypes[col] = series.dtype
+    return node_corpus, extra_columns_data, extra_columns_dtypes

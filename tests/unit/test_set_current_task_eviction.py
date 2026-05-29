@@ -13,6 +13,7 @@ import asyncio
 from concurrent.futures import Future
 from datetime import datetime
 from pathlib import Path
+import uuid
 
 import polars as pl
 import pytest
@@ -20,8 +21,8 @@ from ldaca_wordflow.analysis.manager import TaskManager
 from ldaca_wordflow.analysis.models import BaseAnalysisRequest
 from ldaca_wordflow.core import utils as core_utils
 from ldaca_wordflow.core import workspace as workspace_module
+from ldaca_wordflow.core import user_folders as user_folders_mod
 from ldaca_wordflow.core.analysis_cache import materialized_cache_path
-from ldaca_wordflow.core.utils import generate_workspace_id
 from ldaca_wordflow.core.worker_task_manager import TaskInfo
 from ldaca_wordflow.core.workspace import WorkspaceManager
 
@@ -32,7 +33,7 @@ def _bootstrap_workspace(
     """Create a workspace dir and register it as current for the user."""
     from docworkspace import Workspace
 
-    workspace_id = generate_workspace_id()
+    workspace_id = str(uuid.uuid4())
     target_dir = manager._resolve_workspace_dir(
         user_id=user_id, workspace_id=workspace_id, workspace_name=name
     )

@@ -11,6 +11,7 @@ Flow: normalize inputs, delegate to the owning backend state or service boundary
 """
 
 from .core.workspace import workspace_manager
-from .main import app, start_server
+from .main import app
+from .server_launcher import start_server
 
 __all__ = ["app", "workspace_manager", "start_server"]

@@ -29,6 +29,7 @@ from ldaca_wordflow.core.oni_client import (
     jsonld_value,
 )
 from ldaca_wordflow.settings import settings
+from .worker_utils import worker_task
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,7 @@ def _write_documents_to_parquet(
     pl.DataFrame(rows).write_parquet(parquet_path)
 
 
+@worker_task
 def run_ldaca_import_task(
     configure_worker_environment,
     user_id: str,

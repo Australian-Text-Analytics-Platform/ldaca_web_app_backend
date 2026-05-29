@@ -5,7 +5,7 @@ Locks in the routing decision without loading the actual model so the test is fa
 
 from __future__ import annotations
 
-from ldaca_wordflow.core.worker_tasks_topic import (
+from ldaca_wordflow.core.worker_tasks_topic_embedding import (
     _TOPIC_EMBEDDERS_BY_LANGUAGE,
     _embedder_cache_label,
     _select_embedder,

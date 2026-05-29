@@ -7,7 +7,11 @@ import numpy as np
 import pandas as pd
 import polars as pl
 import pytest
-from ldaca_wordflow.core import worker_tasks_topic
+from ldaca_wordflow.core import (
+    worker_tasks_topic,
+    worker_tasks_topic_embedding,
+    worker_tasks_topic_result,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -85,7 +89,7 @@ def test_run_topic_modeling_task_emits_representative_words_as_list_string(
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -190,7 +194,7 @@ def test_run_topic_modeling_task_payload_carries_full_top_n_words(
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -308,7 +312,7 @@ def test_run_topic_modeling_task_can_load_corpora_from_workspace(tmp_path, monke
     docworkspace_module.Workspace = FakeWorkspace
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -348,12 +352,11 @@ def test_encode_embeddings_in_chunks_preserves_document_order(monkeypatch):
                 [[len(doc), index] for index, doc in enumerate(docs)], dtype=float
             )
 
-    monkeypatch.setattr(worker_tasks_topic, "_EMBEDDING_CHUNK_SIZE", 2)
-
-    embeddings = worker_tasks_topic._encode_embeddings_in_chunks(
+    monkeypatch.setattr(worker_tasks_topic_embedding, "_EMBEDDING_CHUNK_SIZE", 2)
+    embeddings = worker_tasks_topic_embedding._encode_embeddings_in_chunks(
         FakeEmbedder(),
         ["a", "bb", "ccc", "dddd", "eeeee"],
-        chunk_size=worker_tasks_topic._EMBEDDING_CHUNK_SIZE,
+        chunk_size=worker_tasks_topic_embedding._EMBEDDING_CHUNK_SIZE,
     )
 
     assert encode_calls == [["a", "bb"], ["ccc", "dddd"], ["eeeee"]]
@@ -406,7 +409,7 @@ def test_run_topic_modeling_task_classic_pipeline_meta(tmp_path, monkeypatch):
     bertopic_utils_module.select_topic_representation = fake_select_topic_representation
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -544,7 +547,7 @@ def test_run_topic_modeling_task_sampling_reduces_corpus(tmp_path, monkeypatch):
     bertopic_utils_module.select_topic_representation = fake_select
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -669,7 +672,7 @@ def test_run_topic_modeling_task_exact_mode_calls_reduce_topics(tmp_path, monkey
     bertopic_utils_module.select_topic_representation = fake_select
 
     monkeypatch.setattr(
-        worker_tasks_topic, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
+        worker_tasks_topic_embedding, "_get_embedder", lambda *args, **kwargs: FakeEmbedder()
     )
     monkeypatch.setitem(sys.modules, "bertopic", bertopic_module)
     monkeypatch.setitem(sys.modules, "bertopic._utils", bertopic_utils_module)
@@ -731,7 +734,7 @@ def test_reaggregate_exact_topic_modeling_result_counts_outlier_in_reduce_target
             reduce_topics_calls.append(nr_topics)
 
     monkeypatch.setattr(
-        worker_tasks_topic,
+        worker_tasks_topic_result,
         "_load_exact_reduction_artifact",
         lambda _path: {
             "topic_model": FakeTopicModel(),
@@ -741,12 +744,12 @@ def test_reaggregate_exact_topic_modeling_result_counts_outlier_in_reduce_target
         },
     )
     monkeypatch.setattr(
-        worker_tasks_topic,
+        worker_tasks_topic_result,
         "_build_topic_result_payload",
         lambda **_kwargs: {"topics": [], "corpus_sizes": [4], "meta": {}},
     )
 
-    result = worker_tasks_topic.reaggregate_exact_topic_modeling_result(
+    result = worker_tasks_topic_result.reaggregate_exact_topic_modeling_result(
         artifact_path="/tmp/exact.pkl",
         existing_artifacts={},
         node_infos=[

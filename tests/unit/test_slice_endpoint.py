@@ -96,7 +96,7 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch):
     original_node = DummyNode("node_base", df.lazy(), "base_node")
     manager = FakeWorkspaceManager({"node_base": original_node})
     monkeypatch.setattr(nodes_api, "workspace_manager", manager)
-    monkeypatch.setattr(nodes_api, "Node", DummyNode)
+    monkeypatch.setattr(workspace_utils, "Node", DummyNode)
     monkeypatch.setattr(workspace_utils, "workspace_manager", manager)
     return manager
 

@@ -107,15 +107,6 @@ class Settings(BaseSettings):
         description="Maximum documents sent per request to the remote quotation service",
     )
 
-    # CORS Configuration
-    cors_allow_origin_regex: str = Field(
-        default=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
-        description="Regex for allowed origins (dynamic localhost/127.0.0.1 with any port)",
-    )
-    cors_allow_credentials: bool = Field(
-        default=True, description="CORS allow credentials"
-    )
-
     # Authentication Configuration
     multi_user: bool = Field(default=False, description="Multi-user mode enabled")
 
@@ -210,14 +201,16 @@ class Settings(BaseSettings):
         """
         return Path(self.data_root)
 
-    def get_user_data_folder(self) -> Path:
-        """Return user data base folder path under data root.
+    def get_users_root_folder(self) -> Path:
+        """Return the parent users root folder path (``.../users/``) under data root.
+
+        Why:
+        - Returns the parent of all per-user folders, distinct from per-user data folders
+          returned by ``user_folders.get_user_data_folder()``.
 
         Used by:
-        - user/file/workspace folder helpers because workspace flows need user-scoped paths,
-          nodes, artifacts, and task state to stay synchronized.
-        Why:
-        - Keeps all user-owned storage rooted under one configurable path.
+        - startup, file/workspace folder helpers because workspace flows need user-scoped
+          paths, nodes, artifacts, and task state to stay synchronized.
 
         Flow: read environment-backed settings, normalize path/list/debug values, and return
             concrete runtime configuration for startup and services.

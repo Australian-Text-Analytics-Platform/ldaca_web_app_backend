@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None):
     if use_frontend:
         _open_browser_after_delay(effective_port)
 
-    from .main import start_server
+    from .server_launcher import start_server
 
     start_server(
         backend=use_backend,

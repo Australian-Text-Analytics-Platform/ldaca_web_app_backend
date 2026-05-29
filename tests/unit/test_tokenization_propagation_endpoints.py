@@ -87,6 +87,16 @@ def single_parent(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(workspace_utils, "workspace_manager", manager)
     monkeypatch.setattr(workspace_utils, "update_workspace", lambda *a, **k: None)
     monkeypatch.setattr(nodes_api, "update_workspace", lambda *a, **k: None)
+    from ldaca_wordflow.api.workspaces import (
+        nodes_crud,
+        nodes_concat,
+        nodes_expression,
+        nodes_filter,
+        nodes_join,
+        nodes_slice,
+    )
+    for mod in (nodes_crud, nodes_concat, nodes_expression, nodes_filter, nodes_join, nodes_slice):
+        monkeypatch.setattr(mod, "update_workspace", lambda *a, **k: None)
     return manager, parent
 
 
@@ -100,6 +110,16 @@ def two_parents(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(workspace_utils, "workspace_manager", manager)
     monkeypatch.setattr(workspace_utils, "update_workspace", lambda *a, **k: None)
     monkeypatch.setattr(nodes_api, "update_workspace", lambda *a, **k: None)
+    from ldaca_wordflow.api.workspaces import (
+        nodes_crud,
+        nodes_concat,
+        nodes_expression,
+        nodes_filter,
+        nodes_join,
+        nodes_slice,
+    )
+    for mod in (nodes_crud, nodes_concat, nodes_expression, nodes_filter, nodes_join, nodes_slice):
+        monkeypatch.setattr(mod, "update_workspace", lambda *a, **k: None)
     return manager, parent_a, parent_b
 
 

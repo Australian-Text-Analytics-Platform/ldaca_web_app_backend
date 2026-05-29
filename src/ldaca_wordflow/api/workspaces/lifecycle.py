@@ -16,6 +16,7 @@ import logging
 import re
 import shutil
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -24,7 +25,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from ...core.auth import get_current_user
-from ...core.utils import generate_workspace_id, validate_workspace_name
+from ...core.utils import validate_workspace_name
 from ...core.workspace import workspace_manager
 from ...models import (
     CurrentWorkspaceResponse,
@@ -589,7 +590,7 @@ async def upload_workspace_zip(
             ):
                 workspace_id = incoming_id
             else:
-                workspace_id = generate_workspace_id()
+                workspace_id = str(uuid.uuid4())
 
             workspace_name = (
                 incoming_name

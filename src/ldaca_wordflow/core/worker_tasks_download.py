@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+from .worker_utils import worker_task
 
 
 def _safe_download_name(name: str) -> str:
@@ -37,6 +38,7 @@ def _safe_download_name(name: str) -> str:
     return cleaned or "workspace"
 
 
+@worker_task
 def run_workspace_download_task(
     configure_worker_environment,
     user_id: str,

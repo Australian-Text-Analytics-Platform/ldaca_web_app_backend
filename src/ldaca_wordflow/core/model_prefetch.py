@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from .worker_tasks_topic import (
+from .worker_tasks_topic_embedding import (
     _TOPIC_EMBEDDER_REPO_ID,
     _TOPIC_EMBEDDER_REVISION,
 )

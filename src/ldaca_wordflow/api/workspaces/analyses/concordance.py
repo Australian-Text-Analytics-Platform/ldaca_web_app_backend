@@ -49,6 +49,7 @@ from ....models import (
     CurrentAnalysisTasksResponse,
 )
 from .cleanup import clear_previous_completed_analysis_task
+from . import SNAPSHOT_ALL_PAGE_SIZE_CAP
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     DEFAULT_CONCORDANCE_PAGE,
@@ -61,19 +62,13 @@ from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import (
     CONC_EXTRACTION_COLUMN,
 )
+from ..utils import _build_detach_options
 
 router = APIRouter(prefix="/workspaces", tags=["concordance"])
 logger = logging.getLogger(__name__)
 
 
-#: Server-side hard cap when the client requests ``page_size: "all"``
-#: (snapshot-view capture path). Matches the frontend hard cap in
-#: ``frontend/src/features/snapshot-view/caps.ts``. A client asking
-#: for the whole result will get at most this many rows; the frontend
-#: pre-checks total row count and refuses to issue an "all" request
-#: when the result exceeds it, so this cap doubles as a defensive
-#: silent-truncation guard for hand-crafted requests.
-SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000
+# Server-side hard cap: shared from api/workspaces/analyses/__init__.py
 
 
 class ConcordanceResultQuery(BaseModel):
@@ -907,38 +902,15 @@ async def concordance_detach_options(
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
     node = ws.nodes[node_id]
-    node_data = node.data
 
-    available_schema_columns = node_data.collect_schema().names()
-    mandatory_columns = list(CORE_CONCORDANCE_COLUMNS)
-    mandatory_set = set(mandatory_columns)
-    # `CONC_extraction` is a generated column (raw KWIC window) — opt-in for
-    # detach. Surfaced here as a user-pickable option, not a mandatory one,
-    # so it appears in the column picker between the text column and the
-    # source metadata columns.
-    optional_columns = [
-        col
-        for col in [column, CONC_EXTRACTION_COLUMN, *available_schema_columns]
-        if col not in mandatory_set
-    ]
-    ordered_available_columns = list(
-        dict.fromkeys(mandatory_columns + optional_columns)
-    )
-    ordered_available_columns = [
-        column,
-        *[col for col in ordered_available_columns if col != column],
-    ]
-    node_option = ConcordanceDetachNodeOption(
+    return _build_detach_options(
+        workspace=ws,
+        node=node,
         node_id=node_id,
-        node_name=getattr(node, "name", None) or node_id,
-        text_column=column,
-        available_columns=ordered_available_columns,
-        disabled_columns=mandatory_columns,
-    )
-
-    return ConcordanceDetachOptionsResponse(
-        state="successful",
+        column=column,
+        mandatory_columns=list(CORE_CONCORDANCE_COLUMNS),
+        extraction_column=CONC_EXTRACTION_COLUMN,
+        node_option_class=ConcordanceDetachNodeOption,
+        detach_options_response_class=ConcordanceDetachOptionsResponse,
         message="Concordance detach options loaded",
-        data={"nodes": [node_option]},
-        metadata=None,
     )

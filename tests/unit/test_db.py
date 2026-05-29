@@ -1,8 +1,10 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
 from ldaca_wordflow import db
+from ldaca_wordflow.core import auth_service
+from ldaca_wordflow.models import db as model_db
 from sqlalchemy import select
 
 
@@ -14,13 +16,13 @@ def _unique_email(prefix: str) -> str:
 async def test_get_or_create_user_creates_then_updates_existing_user():
     email = _unique_email("db-user")
 
-    created = await db.get_or_create_user(
+    created = await auth_service.get_or_create_user(
         email=email,
         name="Test User",
         picture="https://example.com/avatar.jpg",
         google_id="google-123",
     )
-    updated = await db.get_or_create_user(
+    updated = await auth_service.get_or_create_user(
         email=email,
         name="Updated User",
         picture="https://example.com/new-avatar.jpg",
@@ -38,20 +40,20 @@ async def test_get_or_create_user_creates_then_updates_existing_user():
 
 @pytest.mark.anyio
 async def test_create_user_session_replaces_old_session_and_validates_latest_token():
-    user = await db.get_or_create_user(
+    user = await auth_service.get_or_create_user(
         email=_unique_email("session-user"),
         name="Session User",
         picture="https://example.com/avatar.jpg",
         google_id="session-google-id",
     )
 
-    first_session = await db.create_user_session(user["id"])
-    second_session = await db.create_user_session(user["id"])
+    first_session = await auth_service.create_user_session(user["id"])
+    second_session = await auth_service.create_user_session(user["id"])
 
     assert first_session["access_token"] != second_session["access_token"]
-    assert await db.validate_access_token(first_session["access_token"]) is None
+    assert await auth_service.validate_access_token(first_session["access_token"]) is None
 
-    validated = await db.validate_access_token(second_session["access_token"])
+    validated = await auth_service.validate_access_token(second_session["access_token"])
     assert validated is not None
     assert validated["id"] == user["id"]
     assert validated["email"] == user["email"]
@@ -61,12 +63,12 @@ async def test_create_user_session_replaces_old_session_and_validates_latest_tok
 
 @pytest.mark.anyio
 async def test_validate_access_token_returns_none_for_missing_token():
-    assert await db.validate_access_token("missing-token") is None
+    assert await auth_service.validate_access_token("missing-token") is None
 
 
 @pytest.mark.anyio
 async def test_cleanup_expired_sessions_removes_only_expired_rows():
-    user = await db.get_or_create_user(
+    user = await auth_service.get_or_create_user(
         email=_unique_email("cleanup-user"),
         name="Cleanup User",
         picture="https://example.com/avatar.jpg",
@@ -79,29 +81,29 @@ async def test_cleanup_expired_sessions_removes_only_expired_rows():
     async with db.async_session_maker() as session:
         session.add_all(
             [
-                db.UserSession(
+                model_db.UserSession(
                     user_id=user_id,
                     access_token=expired_token,
                     refresh_token=None,
-                    expires_at=datetime.now(UTC).replace(tzinfo=None)
+                    expires_at=auth_service._utc_now_naive()
                     - timedelta(hours=1),
                 ),
-                db.UserSession(
+                model_db.UserSession(
                     user_id=user_id,
                     access_token=active_token,
                     refresh_token=None,
-                    expires_at=datetime.now(UTC).replace(tzinfo=None)
+                    expires_at=auth_service._utc_now_naive()
                     + timedelta(hours=1),
                 ),
             ]
         )
         await session.commit()
 
-    await db.cleanup_expired_sessions()
+    await auth_service.cleanup_expired_sessions()
 
     async with db.async_session_maker() as session:
         remaining_tokens = (
-            (await session.execute(select(db.UserSession.access_token))).scalars().all()
+            (await session.execute(select(model_db.UserSession.access_token))).scalars().all()
         )
 
     assert expired_token not in remaining_tokens

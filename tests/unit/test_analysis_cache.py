@@ -7,6 +7,7 @@ task_id can legitimately occur under different users.
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,6 @@ from ldaca_wordflow.core.analysis_cache import (
     cleanup_workspace_caches,
     materialized_cache_path,
 )
-from ldaca_wordflow.core.utils import generate_workspace_id
 from ldaca_wordflow.core.workspace import WorkspaceManager
 
 TASK_A = "11111111-1111-1111-1111-111111111111"
@@ -36,7 +36,7 @@ def _bootstrap_workspace(
     """
     from docworkspace import Workspace
 
-    workspace_id = generate_workspace_id()
+    workspace_id = str(uuid.uuid4())
     target_dir = manager._resolve_workspace_dir(
         user_id=user_id, workspace_id=workspace_id, workspace_name=name
     )

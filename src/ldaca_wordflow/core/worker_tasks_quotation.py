@@ -21,6 +21,7 @@ from ..api.workspaces.analyses.generated_columns import (
     QUOTE_QUOTE_COLUMN,
 )
 from .analysis_cache import materialized_cache_path
+from .worker_utils import worker_task
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,7 @@ def _build_quotation_occurrence_dataframe(
     return quote_df, output_columns + generated_columns
 
 
+@worker_task
 def run_quotation_detach_task(
     configure_worker_environment,
     workspace_dir: str,
@@ -263,6 +265,7 @@ def run_quotation_detach_task(
         }
 
 
+@worker_task
 def run_quotation_materialize_task(
     configure_worker_environment,
     workspace_dir: str,

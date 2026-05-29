@@ -47,7 +47,7 @@ class TestSettings:
         """Test path convenience methods"""
         test_settings = Settings()
 
-        assert isinstance(test_settings.get_user_data_folder(), Path)
+        assert isinstance(test_settings.get_users_root_folder(), Path)
         assert test_settings.get_sample_data_folder() is None
         assert isinstance(test_settings.get_database_backup_folder(), Path)
 
@@ -57,12 +57,10 @@ class TestSettings:
             os.environ,
             {
                 "DEBUG": "true",
-                "CORS_ALLOW_CREDENTIALS": "false",
             },
         ):
             test_settings = Settings()
             assert test_settings.debug
-            assert not test_settings.cors_allow_credentials
 
         with patch.dict(
             os.environ,
@@ -77,12 +75,10 @@ class TestSettings:
             os.environ,
             {
                 "DEBUG": "1",
-                "CORS_ALLOW_CREDENTIALS": "0",
             },
         ):
             test_settings = Settings()
             assert test_settings.debug
-            assert not test_settings.cors_allow_credentials
 
 
 class TestGlobalSettings:

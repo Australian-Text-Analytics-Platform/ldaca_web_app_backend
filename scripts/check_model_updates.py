@@ -1,6 +1,6 @@
 """Optional release-time check for the pinned topic-modelling embedder.
 
-Compares the SHA pinned in `worker_tasks_topic._TOPIC_EMBEDDER_REVISION`
+Compares the SHA pinned in `worker_tasks_topic_embedding._TOPIC_EMBEDDER_REVISION`
 against the current `main` revision on HuggingFace Hub. If a newer revision
 is available, prompts the developer whether to update the pin in source.
 
@@ -24,7 +24,7 @@ PINNED_FILE = (
     / "src"
     / "ldaca_wordflow"
     / "core"
-    / "worker_tasks_topic.py"
+    / "worker_tasks_topic_embedding.py"
 )
 PIN_PATTERN = re.compile(r'(_TOPIC_EMBEDDER_REVISION\s*=\s*")([0-9a-f]+)(")')
 

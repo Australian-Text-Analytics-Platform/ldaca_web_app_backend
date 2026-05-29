@@ -170,13 +170,13 @@ def test_mps_embedder_from_pretrained_returns_instance():
 
 
 # ---------------------------------------------------------------------------
-# _get_embedder routing (worker_tasks_topic)
+# _get_embedder routing (worker_tasks_topic_embedding)
 # ---------------------------------------------------------------------------
 
 
 def test_get_embedder_uses_mps_when_available():
     """_get_embedder should return an MpsEmbedder instance when MPS is available."""
-    import ldaca_wordflow.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic_embedding as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()
@@ -202,7 +202,7 @@ def test_get_embedder_uses_mps_when_available():
 
 def test_get_embedder_uses_onnx_when_mps_unavailable():
     """_get_embedder should fall through to OnnxEmbedder when MPS is absent."""
-    import ldaca_wordflow.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic_embedding as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()
@@ -227,7 +227,7 @@ def test_get_embedder_uses_onnx_when_mps_unavailable():
 
 def test_get_embedder_caches_result():
     """_get_embedder should return the same instance on subsequent calls."""
-    import ldaca_wordflow.core.worker_tasks_topic as wtt
+    import ldaca_wordflow.core.worker_tasks_topic_embedding as wtt
 
     original_cache = dict(wtt._EMBEDDER_CACHE)
     wtt._EMBEDDER_CACHE.clear()

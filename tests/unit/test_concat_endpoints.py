@@ -128,7 +128,7 @@ def fake_workspace_manager(monkeypatch: pytest.MonkeyPatch, sample_nodes):
 
     manager = FakeWorkspaceManager(sample_nodes)
     monkeypatch.setattr(nodes_api, "workspace_manager", manager)
-    monkeypatch.setattr(nodes_api, "Node", DummyNode)
+    monkeypatch.setattr(workspace_utils, "Node", DummyNode)
     monkeypatch.setattr(workspace_utils, "workspace_manager", manager)
     return manager
 

@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -6,7 +7,6 @@ import polars as pl
 from docworkspace import Workspace
 from ldaca_wordflow.api.workspaces.utils import stage_dataframe_as_lazy
 from ldaca_wordflow.core import utils as core_utils
-from ldaca_wordflow.core.utils import generate_workspace_id
 from ldaca_wordflow.core.workspace import WorkspaceManager
 
 
@@ -41,7 +41,7 @@ def test_workspace_manager_does_not_change_cwd(tmp_path, monkeypatch):
 
     manager = WorkspaceManager()
     ws = Workspace(name="Workspace")
-    ws.id = generate_workspace_id()
+    ws.id = str(uuid.uuid4())
     ws.modified_at = datetime.now().isoformat()
     target_dir = manager._resolve_workspace_dir(
         user_id="test",

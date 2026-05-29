@@ -1,20 +1,20 @@
 """Regression tests for workspace_manager document metadata handling."""
 
+import uuid
 from datetime import datetime
 from unittest.mock import patch
 
 import polars as pl
 from docworkspace import Node, Workspace
-from ldaca_wordflow.core.utils import generate_workspace_id
 from ldaca_wordflow.core.workspace import workspace_manager
 
 
 def test_add_node_preserves_document_metadata(settings_override):
     """Ensure document column metadata persists for lazy nodes."""
 
-    with patch("ldaca_wordflow.core.utils.settings", settings_override):
+    with patch("ldaca_wordflow.core.user_folders.settings", settings_override):
         workspace = Workspace(name="docdf_ws")
-        workspace.id = generate_workspace_id()
+        workspace.id = str(uuid.uuid4())
         workspace.description = "LazyFrame workspace"
         workspace.modified_at = datetime.now().isoformat()
         target_dir = workspace_manager._resolve_workspace_dir(

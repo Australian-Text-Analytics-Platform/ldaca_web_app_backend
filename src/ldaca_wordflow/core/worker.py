@@ -598,10 +598,10 @@ TASK_REGISTRY: dict[str, Any] = {
     "token_frequencies": token_frequencies_task,
 }
 
-_worker_pool: WorkerTaskManager | None = None
+_worker_pool: WorkerPool | None = None
 
 
-def get_worker_pool(max_workers: int = 2) -> "WorkerTaskManager":
+def get_worker_pool(max_workers: int = 2) -> "WorkerPool":
     """Return worker pool data used by background worker process orchestration.
 
     Used by:
@@ -615,11 +615,11 @@ def get_worker_pool(max_workers: int = 2) -> "WorkerTaskManager":
 
     global _worker_pool
     if _worker_pool is None:
-        _worker_pool = WorkerTaskManager(max_workers=max_workers)
+        _worker_pool = WorkerPool(max_workers=max_workers)
     return _worker_pool
 
 
-class WorkerTaskManager:
+class WorkerPool:
     """Simple process-pool task manager for CPU-heavy operations.
 
     Used by:
@@ -632,10 +632,10 @@ class WorkerTaskManager:
     """
 
     def __init__(self, max_workers: int = 2):
-        """Initialize WorkerTaskManager state used by background worker process orchestration.
+        """Initialize WorkerPool state used by background worker process orchestration.
 
         Called by:
-        - `WorkerTaskManager` construction in backend services and tests because tests need the
+        - `WorkerPool` construction in backend services and tests because tests need the
           same observable contract that production routes and workers rely on.
 
         Flow: configure the child-process environment, delegate to the registered task
@@ -648,10 +648,10 @@ class WorkerTaskManager:
         self.is_running = False
 
     def start(self) -> None:
-        """Start WorkerTaskManager resources used by background worker process orchestration.
+        """Start WorkerPool resources used by background worker process orchestration.
 
         Called by:
-        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+        - `WorkerPool` instances owned by backend services, routes, and tests because
           they need a backend boundary that validates inputs before delegating to workspace or
           worker state.
 
@@ -668,7 +668,7 @@ class WorkerTaskManager:
         """Submit background work to the pool used by task routes.
 
         Called by:
-        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+        - `WorkerPool` instances owned by backend services, routes, and tests because
           they need a backend boundary that validates inputs before delegating to workspace or
           worker state.
 
@@ -684,10 +684,10 @@ class WorkerTaskManager:
         return self.executor.submit(_pid_reporting_wrapper, task_func, **kwargs)
 
     def shutdown(self, wait: bool = True, timeout: float | None = None) -> None:
-        """Shutdown WorkerTaskManager resources used by background worker process orchestration.
+        """Shutdown WorkerPool resources used by background worker process orchestration.
 
         Called by:
-        - `WorkerTaskManager` instances owned by backend services, routes, and tests because
+        - `WorkerPool` instances owned by backend services, routes, and tests because
           they need a backend boundary that validates inputs before delegating to workspace or
           worker state.
 

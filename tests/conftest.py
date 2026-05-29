@@ -161,8 +161,10 @@ async def authenticated_client(settings_override):
         patch("ldaca_wordflow.api.auth.settings", settings_override),
         patch("ldaca_wordflow.core.auth.settings", settings_override),
         patch("ldaca_wordflow.core.utils.settings", settings_override),
+        patch("ldaca_wordflow.core.user_folders.settings", settings_override),
+        patch("ldaca_wordflow.core.sample_data.settings", settings_override),
         patch("ldaca_wordflow.db.init_db"),
-        patch("ldaca_wordflow.db.cleanup_expired_sessions"),
+        patch("ldaca_wordflow.core.auth_service.cleanup_expired_sessions"),
     ]
 
     for p in patches:
@@ -194,8 +196,10 @@ async def test_client(settings_override):
         patch("ldaca_wordflow.api.auth.settings", settings_override),
         patch("ldaca_wordflow.core.auth.settings", settings_override),
         patch("ldaca_wordflow.core.utils.settings", settings_override),
+        patch("ldaca_wordflow.core.user_folders.settings", settings_override),
+        patch("ldaca_wordflow.core.sample_data.settings", settings_override),
         patch("ldaca_wordflow.db.init_db"),
-        patch("ldaca_wordflow.db.cleanup_expired_sessions"),
+        patch("ldaca_wordflow.core.auth_service.cleanup_expired_sessions"),
     ]
 
     for p in patches:
@@ -222,6 +226,8 @@ def files_test_client(tmp_path: Path):
         patch("ldaca_wordflow.main.init_db"),
         patch("ldaca_wordflow.main.cleanup_expired_sessions"),
         patch("ldaca_wordflow.core.utils.settings") as mock_utils_settings,
+        patch("ldaca_wordflow.core.user_folders.settings") as mock_user_folders_settings,
+        patch("ldaca_wordflow.core.sample_data.settings") as mock_sample_data_settings,
     ):
         mock_settings.debug = False
         mock_settings.cors_allow_origin_regex = r"http://localhost(:\d+)?"
@@ -236,6 +242,15 @@ def files_test_client(tmp_path: Path):
         mock_utils_settings.get_data_root.return_value = tmp_path
         mock_utils_settings.user_data_folder = "users"
         mock_utils_settings.multi_user = True
+
+        mock_user_folders_settings.get_data_root.return_value = tmp_path
+        mock_user_folders_settings.user_data_folder = "users"
+        mock_user_folders_settings.multi_user = True
+
+        mock_sample_data_settings.get_data_root.return_value = tmp_path
+        mock_sample_data_settings.user_data_folder = "users"
+        mock_sample_data_settings.multi_user = True
+        mock_sample_data_settings.get_sample_data_folder.return_value = tmp_path / "sample_data"
 
         (tmp_path / "users").mkdir(parents=True, exist_ok=True)
         (tmp_path / "sample_data").mkdir(parents=True, exist_ok=True)

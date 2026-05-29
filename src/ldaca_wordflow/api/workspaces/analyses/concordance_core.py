@@ -18,7 +18,6 @@ from functools import partial
 from typing import Any, Optional, cast
 
 import polars as pl
-from fastapi import HTTPException
 
 from ....core.i18n import effective_language
 from ....core.utils import stringify_unsafe_integers
@@ -395,7 +394,7 @@ def resolve_node_sources(
     user_id: str,
     workspace_id: str,
     request: dict[str, Any],
-) -> tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, dict[str, Any]], dict[str, str], dict[str, str], str | None]:
     """Resolve workspace nodes into validated concordance source metadata.
 
     Steps:
@@ -408,6 +407,8 @@ def resolve_node_sources(
 
     Why:
     - Centralizes node lookup, label mapping, and LazyFrame/type validation.
+    - Returns a 4-tuple (sources, label_map, labels, error). When error is not None the
+      first three values are empty fallbacks.
     """
     node_ids = request.get("node_ids") or []
     node_columns = request.get("node_columns") or {}
@@ -417,10 +418,10 @@ def resolve_node_sources(
     node_labels: dict[str, str] = {}
     if workspace_manager.get_current_workspace_id(user_id) != workspace_id:
         if not workspace_manager.set_current_workspace(user_id, workspace_id):
-            raise HTTPException(status_code=404, detail="Workspace not found")
+            return {}, {}, {}, "Workspace not found"
     workspace = workspace_manager.get_current_workspace(user_id)
     if workspace is None:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        return {}, {}, {}, "Workspace not found"
 
     for node_id in node_ids:
         node = workspace.nodes[node_id]
@@ -434,10 +435,6 @@ def resolve_node_sources(
         tokenization_column: Optional[str] = None
         if hasattr(node, "find_tokenization_column"):
             tokenization_column = node.find_tokenization_column(column)
-        # Per-node effective language drives Bug-4 ``whole_word`` suppression
-        # downstream — at the per-node iteration we know which language each
-        # node actually is, so we can keep the request's global toggle and
-        # selectively no-op it on CJK nodes when the lazy plan is built.
         node_language = effective_language(request.get("language"), node)
         node_sources[node_id] = {
             "lf": node_data,
@@ -449,7 +446,7 @@ def resolve_node_sources(
             "user_id": user_id,
         }
 
-    return node_sources, label_to_node_map, node_labels
+    return node_sources, label_to_node_map, node_labels, None
 
 
 def compute_concordance_page(
@@ -1130,9 +1127,13 @@ def build_concordance_response(
 
     node_ids = request.get("node_ids") or []
 
-    node_sources, label_to_node_map, _node_labels = resolve_node_sources(
+    node_sources, label_to_node_map, _node_labels, resolve_error = resolve_node_sources(
         user_id, workspace_id, request
     )
+    if resolve_error is not None:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail=resolve_error)
     data: dict[str, Any] = {}
 
     # Pre-resolve page_size for non-materialized nodes so combined/separated views

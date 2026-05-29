@@ -2,6 +2,7 @@
 Tests for core utilities
 """
 
+import uuid
 from pathlib import Path
 from typing import cast
 from unittest.mock import MagicMock, patch
@@ -13,24 +14,21 @@ from zoneinfo import ZoneInfo
 
 from ldaca_wordflow.core.utils import (
     detect_file_type,
-    generate_workspace_id,
     get_user_data_folder,
     get_user_workspace_folder,
     load_data_file,
     normalize_dtypes,
     read_zip_file,
     setup_user_folders,
-    validate_file_path,
 )
 
 
 class TestUserFolders:
     """Test user folder management functions"""
 
-    @patch("ldaca_wordflow.core.utils.settings")
+    @patch("ldaca_wordflow.core.user_folders.settings")
     def test_get_user_data_folder(self, mock_settings, temp_dir):
         """Test getting user data folder"""
-        # New path scheme: base under DATA_ROOT / user_data_folder
         mock_settings.get_data_root.return_value = temp_dir
         mock_settings.user_data_folder = "users"
 
@@ -41,7 +39,7 @@ class TestUserFolders:
         assert folder == expected_path
         assert folder.exists()
 
-    @patch("ldaca_wordflow.core.utils.settings")
+    @patch("ldaca_wordflow.core.user_folders.settings")
     def test_get_user_workspace_folder(self, mock_settings, temp_dir):
         """Test getting user workspace folder"""
         mock_settings.get_data_root.return_value = temp_dir
@@ -54,12 +52,11 @@ class TestUserFolders:
         assert folder == expected_path
         assert folder.exists()
 
-    @patch("ldaca_wordflow.core.utils.settings")
+    @patch("ldaca_wordflow.core.user_folders.settings")
     def test_setup_user_folders(self, mock_settings, temp_dir):
         """Test setting up complete user folder structure (no auto sample copy)"""
         mock_settings.get_data_root.return_value = temp_dir
         mock_settings.user_data_folder = "users"
-        # Previously sample data would be copied automatically; now it should NOT.
         sample_data_dir = temp_dir / "sample_data"
         sample_data_dir.mkdir()
         (sample_data_dir / "test_file.txt").write_text("test content")
@@ -68,12 +65,10 @@ class TestUserFolders:
         user_id = "test_user_123"
         folders = setup_user_folders(user_id)
 
-        # Check returned paths
         assert "user_folder" in folders
         assert "user_data" in folders
         assert "user_workspaces" in folders
 
-        # Check actual folder structure
         user_folder = temp_dir / "users" / f"user_{user_id}"
         user_data = user_folder / "user_data"
         user_workspaces = user_folder / "user_workspaces"
@@ -82,7 +77,6 @@ class TestUserFolders:
         assert user_folder.exists()
         assert user_data.exists()
         assert user_workspaces.exists()
-        # Sample data should NOT be auto copied now
         assert not sample_data_copy.exists()
 
 
@@ -132,17 +126,6 @@ class TestFileOperations:
         assert "age" in columns
         assert "city" in columns
 
-    @pytest.fixture()
-    def sample_zip_file(self, temp_dir):
-        """Provide a sample ZIP archive for tests."""
-        from zipfile import ZipFile
-
-        target = temp_dir / "sample.zip"
-        with ZipFile(target, "w") as zf:
-            zf.writestr("a.txt", "hello")
-            zf.writestr("b.txt", "world")
-        return target
-
     def test_read_zip_file_returns_legacy_text_schema(self, temp_dir):
         """ZIP text ingestion should expose legacy file metadata columns."""
         from zipfile import ZipFile
@@ -170,8 +153,6 @@ class TestFileOperations:
             },
         ]
 
-    """Test data loading functionality"""
-
     def test_load_json_file(self, sample_json_file):
         """Test loading a JSON file"""
         df = load_data_file(sample_json_file)
@@ -185,12 +166,11 @@ class TestFileOperations:
             columns = list(df.columns)
 
         assert actual_df.shape[0] == 3
-
         assert "name" in columns
         assert "age" in columns
         assert "city" in columns
 
-    @patch("ldaca_wordflow.core.utils.pl.read_excel")
+    @patch("ldaca_wordflow.core.data_loading.pl.read_excel")
     def test_load_excel_file_selects_requested_sheet(self, mock_read_excel, temp_dir):
         """load_data_file should request and return the selected Excel sheet."""
 
@@ -206,7 +186,7 @@ class TestFileOperations:
         assert isinstance(result, pl.DataFrame)
         assert result.to_dicts() == expected.to_dicts()
 
-    @patch("ldaca_wordflow.core.utils.pl.read_excel")
+    @patch("ldaca_wordflow.core.data_loading.pl.read_excel")
     def test_load_excel_file_dict_result_uses_selected_sheet(
         self, mock_read_excel, temp_dir
     ):
@@ -223,53 +203,6 @@ class TestFileOperations:
 
         assert isinstance(result, pl.DataFrame)
         assert result.to_dicts() == [{"value": 2}]
-
-
-class TestUtilityFunctions:
-    """Test general utility functions"""
-
-    def test_generate_workspace_id(self):
-        """Test workspace ID generation"""
-        workspace_id = generate_workspace_id()
-
-        assert isinstance(workspace_id, str)
-        assert len(workspace_id) == 36  # UUID4 length
-        assert workspace_id.count("-") == 4  # UUID4 format
-
-    def test_generate_unique_workspace_ids(self):
-        """Test that generated workspace IDs are unique"""
-        ids = [generate_workspace_id() for _ in range(100)]
-        assert len(set(ids)) == 100  # All should be unique
-
-    def test_validate_file_path_valid(self, temp_dir):
-        """Test file path validation with valid path"""
-        user_folder = temp_dir / "user_data"
-        user_folder.mkdir()
-
-        valid_file = user_folder / "data.csv"
-        valid_file.touch()
-
-        assert validate_file_path(valid_file, user_folder) is True
-
-    def test_validate_file_path_invalid(self, temp_dir):
-        """Test file path validation with path outside user folder"""
-        user_folder = temp_dir / "user_data"
-        user_folder.mkdir()
-
-        external_file = temp_dir / "external.csv"
-        external_file.touch()
-
-        assert validate_file_path(external_file, user_folder) is False
-
-    def test_validate_file_path_traversal_attempt(self, temp_dir):
-        """Test file path validation prevents path traversal"""
-        user_folder = temp_dir / "user_data"
-        user_folder.mkdir()
-
-        # Attempt path traversal
-        malicious_path = user_folder / ".." / "secret.txt"
-
-        assert validate_file_path(malicious_path, user_folder) is False
 
 
 class TestNormalizeDtypes:
@@ -299,7 +232,6 @@ class TestNormalizeDtypes:
         assert change["to_dtype"] == str(pl.Datetime("us", "UTC"))
         assert "naive" in change["reason"]
         assert "ns" in change["reason"]
-        # Naive 10:00 is interpreted as 10:00 UTC, not converted.
         assert normalized["ts"][0] == datetime(2026, 5, 17, 10, 0, 0, tzinfo=timezone.utc)
 
     def test_aware_datetime_converted_to_utc(self):
@@ -311,7 +243,6 @@ class TestNormalizeDtypes:
         assert normalized.schema["ts"] == pl.Datetime("us", "UTC")
         assert len(changes) == 1
         assert "Australia/Sydney" in changes[0]["reason"]
-        # 20:00 Sydney (UTC+10) → 10:00 UTC.
         assert normalized["ts"][0] == sydney_ts.astimezone(timezone.utc)
 
     def test_unsigned_and_narrow_signed_integers_promoted_to_int64(self):

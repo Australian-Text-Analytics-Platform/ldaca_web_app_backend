@@ -32,7 +32,7 @@ from ....analysis.results import GenericAnalysisResult
 from ....core.auth import get_current_user
 from ....core.i18n import effective_language
 from ....core.utils import get_user_cache_folder
-from ....core.worker_tasks_topic import reaggregate_exact_topic_modeling_result
+from ....core.worker_tasks_topic_result import reaggregate_exact_topic_modeling_result
 from ....core.workspace import workspace_manager
 from ....models import (
     AnalysisClearResponse,

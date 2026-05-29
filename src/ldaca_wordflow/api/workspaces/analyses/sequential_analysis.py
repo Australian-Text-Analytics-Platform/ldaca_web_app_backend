@@ -589,8 +589,6 @@ async def preview_sequential_analysis(
                 "case_sensitive": request.case_sensitive,
             }
         return payload
-    except HTTPException:
-        raise
     except Exception as exc:  # pragma: no cover
         logger.error("Sequential analysis preview error: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {exc}")
@@ -769,8 +767,6 @@ async def run_sequential_analysis(
         result_payload["metadata"] = {"task_id": task.task_id}
         return result_payload
 
-    except HTTPException:
-        raise
     except Exception as e:  # pragma: no cover
         logger.error("Unexpected sequential analysis error: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error: {e}")

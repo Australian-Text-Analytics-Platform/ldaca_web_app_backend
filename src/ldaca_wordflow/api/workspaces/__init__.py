@@ -13,18 +13,23 @@ Flow:
 - Create the package-level workspace router consumed by `main.py`.
 - Include lifecycle, node, base, analysis, and UI-state subrouters in one place.
 - Re-export the workspace manager so existing tests can patch the historical path.
-
-Refactor note:
-- Router includes are manually enumerated; if module count grows, consider
-    declarative router registration to reduce merge conflicts.
 """
 
 from fastapi import APIRouter
 
 from ...core.workspace import (
-    workspace_manager,  # re-export for test patches expecting api.workspaces.workspace_manager
+    workspace_manager,
 )
-from . import base, lifecycle, nodes, ui_state
+from . import base, lifecycle, ui_state
+from . import (
+    nodes_concat,
+    nodes_crud,
+    nodes_expression,
+    nodes_filter,
+    nodes_join,
+    nodes_replace,
+    nodes_slice,
+)
 from .analyses import (
     ai_annotation,
     concordance,
@@ -34,10 +39,15 @@ from .analyses import (
     topic_modeling,
 )
 
-# Aggregate routers. Subrouters already define their own prefixes.
 router = APIRouter()
 router.include_router(lifecycle.router)
-router.include_router(nodes.router)
+router.include_router(nodes_filter.router)
+router.include_router(nodes_slice.router)
+router.include_router(nodes_replace.router)
+router.include_router(nodes_concat.router)
+router.include_router(nodes_join.router)
+router.include_router(nodes_expression.router)
+router.include_router(nodes_crud.router)
 router.include_router(base.router)
 router.include_router(token_frequencies.router)
 router.include_router(sequential_analysis.router)

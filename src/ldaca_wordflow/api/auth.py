@@ -25,7 +25,7 @@ from ..core.auth import (
     get_current_user_from_token,
 )
 from ..core.utils import setup_user_folders
-from ..db import cleanup_expired_sessions, create_user_session, get_or_create_user
+from ..core.auth_service import cleanup_expired_sessions, create_user_session, get_or_create_user
 from ..models import AuthInfoResponse, GoogleIn, GoogleOut, User, UserResponse
 from ..settings import settings
 
@@ -190,7 +190,7 @@ async def _verify_and_create_session(credential: str) -> dict:
         google_id=info.get("sub"),
     )
     user_folders = setup_user_folders(user["id"])
-    from ..db import update_user_folder_path
+    from ..core.auth_service import update_user_folder_path
 
     await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
 
@@ -432,7 +432,7 @@ async def cilogon_callback(
         google_id=userinfo.get("sub"),  # reuse google_id column for OIDC sub
     )
     user_folders = setup_user_folders(user["id"])
-    from ..db import update_user_folder_path
+    from ..core.auth_service import update_user_folder_path
 
     await update_user_folder_path(user["id"], str(user_folders["user_folder"]))
 

@@ -18,10 +18,12 @@ from pathlib import Path
 from typing import Any, Callable, cast
 
 from .analysis_helpers import sanitize_stop_words
+from .worker_utils import worker_task
 
 logger = logging.getLogger(__name__)
 
 
+@worker_task
 def run_token_frequencies_task(
     configure_worker_environment,
     user_id: str,

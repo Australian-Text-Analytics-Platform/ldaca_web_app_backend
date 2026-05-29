@@ -13,7 +13,7 @@ import logging
 
 from fastapi import Header, HTTPException
 
-from ..db import validate_access_token
+from ..core.auth_service import validate_access_token
 from ..settings import settings
 
 logger = logging.getLogger(__name__)

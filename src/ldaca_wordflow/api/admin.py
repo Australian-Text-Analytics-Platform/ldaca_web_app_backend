@@ -10,13 +10,14 @@ Flow:
 """
 
 import logging
-from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from ..core.auth import get_current_user
-from ..db import User, UserSession, async_session_maker, cleanup_expired_sessions
+from ..core.auth_service import _utc_now_naive, cleanup_expired_sessions
+from ..db import async_session_maker
+from ..models.db import User, UserSession
 from ..settings import settings
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ async def list_users(current_user: dict = Depends(get_current_user)):
             session_result = await session.execute(
                 select(UserSession)
                 .where(UserSession.user_id == user.id)
-                .where(UserSession.expires_at > datetime.now(UTC).replace(tzinfo=None))
+                .where(UserSession.expires_at > _utc_now_naive())
             )
             active_sessions = len(session_result.scalars().all())
 

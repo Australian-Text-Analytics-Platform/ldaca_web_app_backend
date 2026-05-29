@@ -53,17 +53,7 @@ def is_mps_available() -> bool:
 
 
 def get_active_provider_id() -> str:
-    """Return the provider ID string that _get_embedder will use.
-
-    Used by the embedding-cache clear endpoint so it clears the right file.
-
-    Used by:
-    - backend tests because tests need the same observable contract that production routes
-      and workers rely on.
-
-    Flow: normalize inputs, delegate to the owning backend state or service boundary, and
-        return serialized values or existing domain errors to callers.
-    """
+    """Return the provider ID string that _get_embedder will use."""
     if is_mps_available():
         return "MPS"
     from .onnx_embedder import _select_providers

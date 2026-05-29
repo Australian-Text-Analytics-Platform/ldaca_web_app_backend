@@ -51,9 +51,10 @@ from ....models import (
     QuotationResultQuery,
 )
 from ....settings import settings
-from . import quotation_core as qcore
+from . import SNAPSHOT_ALL_PAGE_SIZE_CAP, quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_tokenization_column_name
+from ..utils import _build_detach_options
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +67,7 @@ CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
 # requests ``page_size: 'all'``. Mirrors the concordance constant of
 # the same name so the front-end's capture-time guards translate
 # cleanly across tools.
-SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000
+# This constant is shared via api/workspaces/analyses/__init__.py
 
 # Quotation extractor is English-only. Vendored GenderGapTracker rules / spaCy
 # model only work for English; running them on other
@@ -149,50 +150,6 @@ async def _compute_on_demand_page(
         compute_quote_dataframe_fn=compute_quote_dataframe_fn,
         materialized_path=materialized_path,
     )
-
-
-def _collect_non_empty_quotation_corpus(
-    node_data: pl.LazyFrame,
-    document_column: str,
-    extra_columns: list[str],
-) -> tuple[list[str], dict[str, list], dict[str, Any]]:
-    """Collect non empty quotation corpus data for quotation analysis routes.
-
-    Steps:
-    - Normalize caller input into the representation this module expects.
-    - Delegate stateful, expensive, or validating work to the owning manager/helper when needed.
-    - Return the compact value the caller uses for artifacts, validation, or response shaping.
-
-    Called by:
-    - Local helpers, route handlers, or service methods in this module because they need this unit's "Collect non empty quotation corpus data for quotation analysis routes" behavior.
-    """
-
-    corpus_df = cast(
-        pl.DataFrame,
-        node_data.select(
-            [pl.col(document_column)] + [pl.col(col) for col in extra_columns]
-        )
-        .filter(
-            pl.col(document_column)
-            .cast(pl.Utf8, strict=False)
-            .str.strip_chars()
-            .str.len_chars()
-            .fill_null(0)
-            > 0
-        )
-        .collect(),
-    )
-    node_corpus = [
-        str(value) if value is not None else ""
-        for value in corpus_df.get_column(document_column).to_list()
-    ]
-    extra_columns_data: dict[str, list] = {}
-    extra_columns_dtypes: dict[str, Any] = {}
-    for col in extra_columns:
-        series = corpus_df.get_column(col)
-        extra_columns_data[col] = series.to_list()
-        extra_columns_dtypes[col] = series.dtype
-    return node_corpus, extra_columns_data, extra_columns_dtypes
 
 
 router = APIRouter(prefix="/workspaces", tags=["quotation"])
@@ -624,40 +581,18 @@ async def quotation_detach_options(
         raise HTTPException(status_code=404, detail="No active workspace selected")
 
     node = ws.nodes[node_id]
-    node_data = node.data
 
-    # Temporary dynamic token columns have no user-facing role in detach
-    # payloads, so filter them if a caller supplied a hydrated plan.
-    available_schema_columns = [
-        c
-        for c in node_data.collect_schema().names()
-        if not is_tokenization_column_name(c)
-    ]
-    mandatory_set = set(CORE_QUOTATION_COLUMNS)
-    # `QUOTE_extraction` is a generated column (raw source-document text)
-    # offered as an opt-in pick — placed between the text column and the
-    # source metadata columns so users see it next to the canonical fields.
-    optional_columns = [
-        col
-        for col in [column, QUOTE_EXTRACTION_COLUMN, *available_schema_columns]
-        if col not in mandatory_set
-    ]
-    ordered_available_columns = list(
-        dict.fromkeys([column, *CORE_QUOTATION_COLUMNS, *optional_columns])
-    )
-    node_option = QuotationDetachNodeOption(
+    return _build_detach_options(
+        workspace=ws,
+        node=node,
         node_id=node_id,
-        node_name=getattr(node, "name", None) or node_id,
-        text_column=column,
-        available_columns=ordered_available_columns,
-        disabled_columns=CORE_QUOTATION_COLUMNS,
-    )
-
-    return QuotationDetachOptionsResponse(
-        state="successful",
+        column=column,
+        mandatory_columns=list(CORE_QUOTATION_COLUMNS),
+        extraction_column=QUOTE_EXTRACTION_COLUMN,
+        node_option_class=QuotationDetachNodeOption,
+        detach_options_response_class=QuotationDetachOptionsResponse,
         message="Quotation detach options loaded",
-        data={"nodes": [node_option]},
-        metadata=None,
+        schema_filter=lambda c: not is_tokenization_column_name(c),
     )
 
 
@@ -710,7 +645,7 @@ async def detach_quotation(
             columns_to_select.append(col)
 
     node_corpus, extra_columns_data, extra_columns_dtypes = (
-        _collect_non_empty_quotation_corpus(
+        qcore.collect_non_empty_quotation_corpus(
             node_data, request.column, columns_to_select
         )
     )
@@ -806,7 +741,7 @@ async def materialize_quotation(
     ]
 
     node_corpus, extra_columns_data, extra_columns_dtypes = (
-        _collect_non_empty_quotation_corpus(
+        qcore.collect_non_empty_quotation_corpus(
             node_data, request.column, extra_metadata_columns
         )
     )

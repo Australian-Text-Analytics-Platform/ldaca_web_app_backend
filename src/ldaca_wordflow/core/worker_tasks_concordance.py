@@ -36,6 +36,7 @@ from ..api.workspaces.analyses.generated_columns import (
     concordance_struct_projection,
 )
 from .analysis_cache import materialized_cache_path
+from .worker_utils import worker_task
 
 # The dispersion-detach output reuses `CONC_extraction` as the column name
 # for the per-document multi-line joined string. It carries the same KWIC
@@ -264,6 +265,7 @@ def _build_tokens_concordance_occurrence_dataframe(
     return df, output_columns
 
 
+@worker_task
 def run_concordance_detach_task(
     configure_worker_environment,
     workspace_dir: str,
@@ -628,6 +630,7 @@ def _aggregate_hits_per_document(
     return grouped.select(output_columns), output_columns
 
 
+@worker_task
 def run_concordance_dispersion_detach_task(
     configure_worker_environment,
     workspace_dir: str,
@@ -838,6 +841,7 @@ def run_concordance_dispersion_detach_task(
         }
 
 
+@worker_task
 def run_concordance_materialize_task(
     configure_worker_environment,
     workspace_dir: str,

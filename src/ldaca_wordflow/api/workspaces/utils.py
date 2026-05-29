@@ -10,19 +10,26 @@ Flow:
 """
 
 import logging
+import math
 import re
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import polars as pl
+from docworkspace import Node
+from docworkspace.workspace.core import Workspace
 from fastapi import HTTPException
 
 from ...analysis.models import AnalysisStatus
 from ...core.workspace import workspace_manager
 
 logger = logging.getLogger(__name__)
+
+ISO_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?(Z|[+\-]\d{2}:?\d{2})$"
+)
 
 
 def _safe_workspace_data_stem(name: str) -> str:
@@ -324,11 +331,262 @@ def stage_parquet_artifact_as_lazy(
     return _scan_workspace_parquet(persisted_path), persisted_path
 
 
+def require_current_workspace(user_id: str) -> Workspace:
+    """Resolve required current workspace, raising 404 if absent."""
+    workspace = workspace_manager.get_current_workspace(user_id)
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
+def require_current_workspace_id(user_id: str) -> str:
+    """Resolve required current workspace id, raising 404 if absent."""
+    workspace_id = workspace_manager.get_current_workspace_id(user_id)
+    if not workspace_id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace_id
+
+
+def _parse_temporal(value: Any) -> Any:
+    """Parse ISO-like datetime strings into datetime objects."""
+    if isinstance(value, str) and ISO_PATTERN.match(value):
+        s = value
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        if re.search(r"([+\-]\d{2})(\d{2})$", s):
+            s = re.sub(r"([+\-]\d{2})(\d{2})$", r"\1:\2", s)
+        try:
+            return datetime.fromisoformat(s)
+        except Exception:
+            return value
+    return value
+
+
+def _coerce_scalar(value: Any) -> Any:
+    """Coerce string scalars into bool/int/float when safe."""
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered in {"true", "false"}:
+            return lowered == "true"
+        try:
+            if "." in value:
+                return float(value)
+            return int(value)
+        except Exception:
+            return value
+    return value
+
+
+def _serialize_column_scalar(value: Any) -> str | int | float | bool:
+    """Serialize a column scalar to a JSON-safe primitive."""
+    if isinstance(value, str | int | float | bool):
+        return value
+    return str(value)
+
+
+def _make_temporal_literal(value: datetime, column_dtype: Any) -> pl.Expr:
+    """Build a polars literal matching the column's datetime dtype."""
+    if isinstance(column_dtype, pl.Datetime):
+        column_tz = getattr(column_dtype, "time_zone", None)
+        if column_tz is None and value.tzinfo is not None:
+            value = value.replace(tzinfo=None)
+        elif column_tz is not None and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return pl.lit(value).cast(column_dtype)
+    if isinstance(column_dtype, pl.Date):
+        return pl.lit(value.date()).cast(column_dtype)
+    return pl.lit(value)
+
+
+def _is_string_list_dtype(dtype: Any) -> bool:
+    """Return True when dtype is exactly a list of strings."""
+    return dtype == pl.List(pl.String) or dtype == pl.List(pl.Utf8)
+
+
+def _extract_lazy_schema(lazy_frame: pl.LazyFrame) -> tuple[list[str], dict[str, str]]:
+    """Collect LazyFrame schema without collecting row data."""
+    schema_dict = dict(lazy_frame.collect_schema().items())
+    columns = list(schema_dict.keys())
+    dtypes = {col: str(dtype) for col, dtype in schema_dict.items()}
+    return columns, dtypes
+
+
+def _propagated_tokenization(
+    parents: Node | list[Node], result_lf: pl.LazyFrame,
+) -> dict[str, Any]:
+    """Return parent tokenization metadata whose source column survived."""
+    if isinstance(parents, list):
+        sources = parents
+    else:
+        sources = [parents]
+    try:
+        result_columns = set(result_lf.collect_schema().names())
+    except Exception:
+        result_columns = None
+    merged: dict[str, Any] = {}
+    for parent in sources:
+        tokenization = getattr(parent, "tokenization", None)
+        if not isinstance(tokenization, dict):
+            continue
+        for source_column, meta in tokenization.items():
+            if not isinstance(source_column, str) or not isinstance(meta, dict):
+                continue
+            if result_columns is not None and source_column not in result_columns:
+                continue
+            existing = merged.get(source_column)
+            if existing is not None and existing != meta:
+                raise ValueError(
+                    f"Conflicting tokenization metadata for column {source_column!r}."
+                )
+            merged[source_column] = meta
+    return merged
+
+
+def _validate_existing_column(node: Node, column_name: str) -> None:
+    """Raise 400 if column_name is absent from the node's schema."""
+    schema_names = node.data.collect_schema().names()
+    if column_name not in schema_names:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Node {node.name!r} has no column {column_name!r}; "
+                f"available columns: {sorted(schema_names)}"
+            ),
+        )
+
+
+def _paginated_lazy_preview(
+    lazyframe: pl.LazyFrame, page: int, page_size: int,
+) -> tuple[list[dict[str, Any]], list[str], dict[str, str], Any]:
+    """Slice a LazyFrame for paginated preview and return data + metadata."""
+    try:
+        total_rows_df = cast(
+            pl.DataFrame, lazyframe.select(pl.len().alias("_len")).collect(),
+        )
+        total_rows_series = total_rows_df.to_series(0)
+        total_rows = int(total_rows_series.item()) if total_rows_series.len() else 0
+    except Exception:
+        total_rows = 0
+
+    total_pages = math.ceil(total_rows / page_size) if total_rows else 0
+    normalized_page = min(max(page, 1), total_pages or 1)
+    start_idx = (normalized_page - 1) * page_size if total_rows else 0
+
+    preview_df = cast(
+        pl.DataFrame, lazyframe.slice(start_idx, page_size).collect(),
+    )
+    columns = list(preview_df.columns)
+    dtypes = {col: str(dtype) for col, dtype in preview_df.schema.items()}
+    data_rows = preview_df.to_dicts()
+
+    from ...models import PaginationInfo
+
+    pagination = PaginationInfo(
+        page=normalized_page, page_size=page_size, total_rows=total_rows,
+        total_pages=total_pages, has_next=normalized_page < total_pages,
+        has_prev=normalized_page > 1 and total_rows > 0,
+    )
+    return data_rows, columns, dtypes, pagination
+
+
+def _create_and_persist_child_node(
+    *,
+    workspace: Workspace,
+    data: pl.LazyFrame,
+    name: str,
+    operation: str,
+    parents: list[Node],
+    user_id: str,
+    workspace_id: str,
+    tokenization: dict[str, Any] | None = None,
+    document: str | None = None,
+) -> Node:
+    """Create a Node, add it to the workspace, persist, and return it."""
+    if tokenization is None:
+        tokenization = _propagated_tokenization(parents, data)
+    new_node = Node(
+        data=data, name=name, workspace=workspace, operation=operation,
+        parents=parents, tokenization=tokenization, document=document,
+    )
+    workspace.add_node(new_node)
+    update_workspace(user_id, workspace_id)
+    return new_node
+
+
 __all__ = [
     "success",
     "running",
     "failed",
-    "update_workspace",
+    "_build_detach_options",
+    "_coerce_scalar",
+    "_create_and_persist_child_node",
+    "_extract_lazy_schema",
+    "_is_string_list_dtype",
+    "_make_temporal_literal",
+    "_paginated_lazy_preview",
+    "_parse_temporal",
+    "_propagated_tokenization",
+    "_serialize_column_scalar",
+    "_validate_existing_column",
+    "ensure_task_synced",
+    "require_current_workspace",
+    "require_current_workspace_id",
     "stage_dataframe_as_lazy",
     "stage_parquet_artifact_as_lazy",
+    "update_workspace",
 ]
+
+
+def _build_detach_options(
+    workspace,
+    node,
+    node_id: str,
+    column: str,
+    *,
+    mandatory_columns: list[str],
+    extraction_column: str,
+    node_option_class,
+    detach_options_response_class,
+    message: str,
+    schema_filter=None,
+    task_metadata=None,
+):
+    """Build a shared detach-options response for analysis tool endpoints.
+
+    Used by:
+    - concordance and quotation detach-options route handlers because they need
+      a shared response builder that avoids duplicating column-ordering logic.
+
+    Steps:
+    - Collect available schema columns, optionally filtering transient internals.
+    - Order columns as: text column first, mandatory generated columns, then optional metadata.
+    - Build the node option and wrap it in the correct tool-specific response model.
+    """
+    raw_columns = node.data.collect_schema().names()
+    if schema_filter:
+        raw_columns = [c for c in raw_columns if schema_filter(c)]
+
+    mandatory_set = set(mandatory_columns)
+    optional_columns = [
+        col
+        for col in [column, extraction_column, *raw_columns]
+        if col not in mandatory_set
+    ]
+    ordered_available_columns = list(
+        dict.fromkeys([column, *mandatory_columns, *optional_columns])
+    )
+
+    node_option = node_option_class(
+        node_id=node_id,
+        node_name=getattr(node, "name", None) or node_id,
+        text_column=column,
+        available_columns=ordered_available_columns,
+        disabled_columns=mandatory_columns,
+    )
+
+    return detach_options_response_class(
+        state="successful",
+        message=message,
+        data={"nodes": [node_option]},
+        metadata=task_metadata,
+    )
