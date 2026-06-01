@@ -63,6 +63,29 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Documentation (tutorials / info / references)
+    docs_remote_base_url: str | None = Field(
+        default="https://australian-text-analytics-platform.github.io/ldaca-wordflow-docs/v0.5",
+        description=(
+            "Base URL for the version-pinned docs site. On startup the backend "
+            "fetches registry.json and, when its meta.version differs from the "
+            "locally cached copy, quietly mirrors the markdown + image assets into "
+            "the docs cache dir in the background. The bundled docs (shipped inside "
+            "the app) remain the offline fallback. Set to empty string to disable "
+            "and serve bundled docs only — useful for the legacy line / air-gapped "
+            "installs. Must match the frontend's VITE_DOCS_BASE_URL minor-version path."
+        ),
+    )
+    docs_cache_dir: str | Path | None = Field(
+        default=None,
+        description=(
+            "Override for the docs mirror cache directory. Defaults to "
+            "~/.cache/ldaca_wordflow/docs (same convention as the spaCy model "
+            "cache). Disposable/regenerable: wiping it just falls back to the "
+            "bundled docs until the next background sync."
+        ),
+    )
+
     # Server Configuration
     server_host: str = Field(default="0.0.0.0", description="Server host")
     backend_port: int = Field(default=8001, description="Backend server port")
@@ -178,6 +201,21 @@ class Settings(BaseSettings):
         if not self.sample_data:
             return None
         return Path(self.sample_data)
+
+    def get_docs_cache_dir(self) -> Path:
+        """Return the writable docs-mirror cache directory.
+
+        Used by:
+        - the background docs sync and the /docs serving route
+
+        Why:
+        - Centralizes the cache location. Defaults to ~/.cache/ldaca_wordflow/docs
+          (matching the spaCy model cache convention) so it lives in the OS cache
+          tree — regenerable from the bundle, safe to purge.
+        """
+        if self.docs_cache_dir:
+            return Path(self.docs_cache_dir)
+        return Path.home() / ".cache" / "ldaca_wordflow" / "docs"
 
     def get_database_backup_folder(self) -> Path:
         """Return database backup folder path under data root.

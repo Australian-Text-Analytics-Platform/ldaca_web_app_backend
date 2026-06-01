@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import IO, Any, cast
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import API routers
@@ -120,6 +120,15 @@ async def lifespan(app: FastAPI):
     from .core.model_prefetch import start_model_prefetch
 
     start_model_prefetch()
+
+    # Mirror the version-pinned docs site in the background. The desktop app's
+    # webview CSP blocks the remote docs host, so it reads docs over localhost
+    # from this backend; this keeps that copy fresh, with the bundled docs as
+    # the offline fallback. Best-effort and non-blocking; no-op when
+    # docs_remote_base_url is empty.
+    from .core.docs_sync import start_docs_sync
+
+    start_docs_sync()
 
     # Sweep orphaned tokens-cache parquets at startup. Cheap on a fresh
     # install (no manifest, no files) and bounded on long-running ones by
@@ -462,6 +471,33 @@ async def status():
             "admin": "Administrative functions and monitoring",
         },
     }
+
+
+@app.get("/docs/{doc_path:path}")
+async def serve_doc(doc_path: str):
+    """Serve a documentation file (markdown body or image asset).
+
+    Used by:
+    - the desktop app's DocumentView, which fetches docs over localhost because
+      its webview CSP blocks the remote docs host.
+
+    Why:
+    - Returns the locally mirrored/synced copy when present, falling back to the
+      docs bundled inside the app. This is the single source of truth the
+      desktop frontend reads from, decoupling doc freshness from app releases.
+
+    Registered before ``_mount_frontend`` appends the SPA catch-all, so it wins
+    over the generic ``/{path}`` handler. Distinct from FastAPI's ``/api/docs``
+    (Swagger UI).
+    """
+    from starlette.responses import FileResponse
+
+    from .core.docs_sync import resolve_doc_file
+
+    resolved = resolve_doc_file(doc_path)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return FileResponse(str(resolved))
 
 
 # ---------------------------------------------------------------------------
