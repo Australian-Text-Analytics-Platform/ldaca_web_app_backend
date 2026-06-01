@@ -118,12 +118,13 @@ def _build_group_filter_expression(
             column_expr = pl.col(column_name)
             if raw_value is None:
                 current_expr = column_expr.is_null()
-            elif (
-                not case_sensitive
-                and isinstance(raw_value, str)
-                and schema.get(column_name) in {pl.String, pl.Utf8}
-            ):
-                current_expr = column_expr.str.to_lowercase() == raw_value.lower()
+            elif not case_sensitive and isinstance(raw_value, str):
+                # Cast to the string equivalent first so non-String columns
+                # (Categorical/Enum/numeric) fold for the comparison too —
+                # matches the case-folding applied during aggregation above.
+                current_expr = (
+                    column_expr.cast(pl.String).str.to_lowercase() == raw_value.lower()
+                )
             else:
                 current_expr = column_expr == pl.lit(raw_value)
 
@@ -275,11 +276,19 @@ def _run_sequential_analysis(
     # Determine grouping columns
     group_cols = ["time_period"] + (group_by_columns or [])
 
-    # Lowercase group-by column values for case-insensitive grouping
+    # Case-fold group-by values for case-insensitive grouping. Cast to the
+    # string equivalent first so EVERY group column folds — not just plain
+    # String columns. Low-cardinality group fields (party/stance/outlet, …) are
+    # commonly Categorical/Enum, and `.str.to_lowercase()` only works on String;
+    # without the cast a multi-group key like "party - stance" left the
+    # Categorical part un-folded, so series that differ only in case (e.g.
+    # "lnp - Yes" vs "lnp - yes") never rebucketed together. Numeric/datetime
+    # group columns have no case to fold — stringifying them is a harmless no-op
+    # for the toggle and mirrors the snapshot viewer's groupKeyFor, which
+    # already `String(raw).toLowerCase()`s every value.
     if not case_sensitive and group_by_columns:
         for col_name in group_by_columns:
-            if df.schema.get(col_name) == pl.String or df.schema.get(col_name) == pl.Utf8:
-                df = df.with_columns(pl.col(col_name).str.to_lowercase())
+            df = df.with_columns(pl.col(col_name).cast(pl.String).str.to_lowercase())
 
     # Perform aggregation
     result_df = df.group_by(group_cols).agg(
