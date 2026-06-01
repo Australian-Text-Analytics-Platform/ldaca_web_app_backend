@@ -1,0 +1,2 @@
+import{_ as e}from"./es2015-CY3x_6-1.js";var t=e(`ellipsis`,[[`circle`,{cx:`12`,cy:`12`,r:`1`,key:`41hilf`}],[`circle`,{cx:`19`,cy:`12`,r:`1`,key:`1wjl8i`}],[`circle`,{cx:`5`,cy:`12`,r:`1`,key:`1pcz8c`}]]);export{t};
+//# sourceMappingURL=ellipsis-Bph4_6J8.js.map

@@ -1,0 +1,2 @@
+import{i as e,r as t}from"./env-BqfdBR7l.js";import{w as n}from"./utils-BhOrzQzm.js";import{n as r}from"./HelpIcon-KhjkcBR_.js";var i=n();e();var a=t(),o=e=>{let t=(0,i.c)(2),n;return t[0]===e?n=t[1]:(n=(0,a.jsx)(r,{kind:`info`,...e}),t[0]=e,t[1]=n),n};export{o as t};
+//# sourceMappingURL=InfoIcon-Cz_KfZG9.js.map

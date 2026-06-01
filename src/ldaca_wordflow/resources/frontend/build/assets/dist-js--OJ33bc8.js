@@ -1,0 +1,2 @@
+import{invoke as e}from"./core-CxACu_rD.js";async function t(t={}){return typeof t==`object`&&Object.freeze(t),await e(`plugin:dialog|open`,{options:t})}export{t as open};
+//# sourceMappingURL=dist-js--OJ33bc8.js.map
