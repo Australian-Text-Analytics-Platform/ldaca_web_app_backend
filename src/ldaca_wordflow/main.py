@@ -27,7 +27,6 @@ from .api.auth import router as auth_router
 from .api.config import router as config_router
 from .api.files import router as files_router
 from .api.preferences import router as preferences_router
-from .api.snapshots import router as snapshots_router
 from .api.tasks import router as tasks_router
 from .api.workspaces import router as workspaces_router
 
@@ -157,7 +156,6 @@ app.include_router(auth_router, prefix="/api", tags=["authentication"])
 app.include_router(config_router, prefix="/api", tags=["configuration"])
 app.include_router(files_router, prefix="/api", tags=["file_management"])
 app.include_router(preferences_router, prefix="/api", tags=["preferences"])
-app.include_router(snapshots_router, prefix="/api", tags=["snapshots"])
 app.include_router(tasks_router, prefix="/api", tags=["task_streaming"])
 app.include_router(workspaces_router, prefix="/api", tags=["workspace_management"])
 app.include_router(admin_router, prefix="/api", tags=["administration"])

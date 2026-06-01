@@ -70,22 +70,6 @@ def get_user_cache_folder(user_id: str) -> Path:
     return cache_folder
 
 
-def get_user_snapshots_folder(user_id: str) -> Path:
-    """Return the user's snapshot-bundle folder, creating it if missing.
-
-    Sibling of ``embeddings/`` under ``user_cache/``. Created lazily the
-    first time demo-mode capture writes a snapshot; disabling demo mode
-    does NOT clear the folder — see ``docs/snapshot-view/plan.md`` §3.6.
-
-    Used by:
-    - backend API routes, backend request/response models because they need a stable JSON
-      contract shared by route handlers, generated clients, and tests.
-    """
-    snapshots_folder = get_user_cache_folder(user_id) / "snapshots"
-    snapshots_folder.mkdir(parents=True, exist_ok=True)
-    return snapshots_folder
-
-
 def validate_file_path(file_path: Path, user_folder: Path) -> bool:
     """Validate that a file path is within the user's allowed directory.
 

@@ -19,7 +19,7 @@ Flow:
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional, Union, cast
+from typing import Any, Optional, cast
 from uuid import uuid4
 
 import polars as pl
@@ -49,7 +49,6 @@ from ....models import (
     CurrentAnalysisTasksResponse,
 )
 from .cleanup import clear_previous_completed_analysis_task
-from . import SNAPSHOT_ALL_PAGE_SIZE_CAP
 from .concordance_core import (
     CORE_CONCORDANCE_COLUMNS,
     DEFAULT_CONCORDANCE_PAGE,
@@ -69,9 +68,6 @@ router = APIRouter(prefix="/workspaces", tags=["concordance"])
 logger = logging.getLogger(__name__)
 
 
-# Server-side hard cap: shared from api/workspaces/analyses/__init__.py
-
-
 class ConcordanceResultQuery(BaseModel):
     """Query overrides for reading persisted concordance results.
 
@@ -81,11 +77,6 @@ class ConcordanceResultQuery(BaseModel):
 
     Why:
     - Allows pagination and sorting updates without recomputing concordance.
-    - ``page_size`` accepts the literal string ``"all"`` for the
-      snapshot-view capture flow — translated server-side to
-      ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` rows by
-      :func:`_apply_result_query_overrides`. Downstream code continues
-      to see an ``int`` for ``page_size``.
 
         Flow:
         - FastAPI/Pydantic parses optional GET query parameters or POST body overrides.
@@ -97,7 +88,7 @@ class ConcordanceResultQuery(BaseModel):
     combined: Optional[bool] = None
     page: Optional[int] = None
     page_number: Optional[int] = None
-    page_size: Optional[Union[int, Literal["all"]]] = None
+    page_size: Optional[int] = None
     sort_by: Optional[str] = None
     descending: Optional[bool] = None
     show_metadata: Optional[bool] = None
@@ -126,12 +117,7 @@ def _apply_result_query_overrides(
     if page is not None:
         normalized_request["page"] = page
     if query.page_size is not None:
-        if query.page_size == "all":
-            # Snapshot-view capture path: deliver the whole result up to
-            # the server-side hard cap. Downstream code expects an int.
-            normalized_request["page_size"] = SNAPSHOT_ALL_PAGE_SIZE_CAP
-        else:
-            normalized_request["page_size"] = query.page_size
+        normalized_request["page_size"] = query.page_size
     if query.sort_by is not None:
         normalized_request["sort_by"] = query.sort_by
     if query.descending is not None:

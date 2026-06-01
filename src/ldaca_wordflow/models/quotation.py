@@ -4,7 +4,7 @@ Split from models/__init__.py.
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional
 from enum import Enum
 from typing_extensions import TypedDict
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, model_validator
@@ -266,10 +266,7 @@ class QuotationResultQuery(BaseModel):
     """
 
     page: Optional[int] = None
-    # Accepts the literal ``'all'`` for the snapshot capture path —
-    # server caps at ``SNAPSHOT_ALL_PAGE_SIZE_CAP`` (see
-    # api/workspaces/analyses/quotation.py).
-    page_size: Optional[Union[int, Literal["all"]]] = None
+    page_size: Optional[int] = None
     sort_by: Optional[str] = None
     descending: Optional[bool] = None
     context_length: Optional[int] = None

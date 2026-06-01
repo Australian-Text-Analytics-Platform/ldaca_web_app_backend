@@ -8,7 +8,3 @@ Used by:
 Why:
 - Centralizes analysis-related route modules under one package boundary.
 """
-
-# Server-side result-page cap for snapshot captures requesting ``page_size="all"``.
-# Shared across concordance.py and quotation.py.
-SNAPSHOT_ALL_PAGE_SIZE_CAP = 500_000

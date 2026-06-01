@@ -28,7 +28,7 @@ state. It should resolve the user's workspace through `workspace_manager`.
 - folder creation,
 - upload, move, delete, and raw download,
 - preview for CSV, JSON, Parquet, IPC, Excel, and text-like data,
-- sample-data and demo-snapshot import,
+- sample-data import,
 - LDaCA RO-Crate import through a background worker task.
 
 LDaCA import is backed by the LDaCA Data Portal Oni API. The files router

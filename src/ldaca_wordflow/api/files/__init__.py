@@ -20,14 +20,13 @@ from ...core.auth import get_current_user
 from ...core.oni_client import OniClient
 from ...core.workspace import workspace_manager
 from ...settings import settings
-from . import crud, demo_snapshots, ldaca, preview, sample_data, tasks
+from . import crud, ldaca, preview, sample_data, tasks
 from .crud import _build_file_tree
 
 router = APIRouter(prefix="/files", tags=["files"])
 router.include_router(ldaca.router)
 router.include_router(crud.router)
 router.include_router(sample_data.router)
-router.include_router(demo_snapshots.router)
 router.include_router(tasks.router)
 router.include_router(preview.router)
 

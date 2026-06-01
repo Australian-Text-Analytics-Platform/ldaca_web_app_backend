@@ -51,7 +51,7 @@ from ....models import (
     QuotationResultQuery,
 )
 from ....settings import settings
-from . import SNAPSHOT_ALL_PAGE_SIZE_CAP, quotation_core as qcore
+from . import quotation_core as qcore
 from .current_tasks import get_current_task_ids_for_analysis
 from .generated_columns import QUOTE_EXTRACTION_COLUMN, is_tokenization_column_name
 from ..utils import _build_detach_options
@@ -63,12 +63,6 @@ DEFAULT_CONTEXT_LENGTH = qcore.DEFAULT_CONTEXT_LENGTH
 DEFAULT_PAGE_SIZE = qcore.DEFAULT_PAGE_SIZE
 DEFAULT_DESCENDING = qcore.DEFAULT_DESCENDING
 CORE_QUOTATION_COLUMNS = list(qcore.CORE_QUOTATION_COLUMNS)
-
-# Hard cap on the rows returned when the snapshot capture path
-# requests ``page_size: 'all'``. Mirrors the concordance constant of
-# the same name so the front-end's capture-time guards translate
-# cleanly across tools.
-# This constant is shared via api/workspaces/analyses/__init__.py
 
 # Quotation extractor is English-only. Vendored GenderGapTracker rules / spaCy
 # model only work for English; running them on other
@@ -369,17 +363,7 @@ async def update_quotation_task_result(
         max(1, int(query.page)) if isinstance(query.page, int) and query.page else 1
     )
 
-    # Snapshot capture path passes the literal ``'all'`` so we ship
-    # the entire result in one response; cap at SNAPSHOT_ALL_PAGE_SIZE_CAP
-    # so a pathological materialised parquet can't blow the response
-    # budget. Other callers pass an int (or omit it for default sizing).
-    effective_page_size: Optional[int]
-    if query.page_size == "all":
-        effective_page_size = SNAPSHOT_ALL_PAGE_SIZE_CAP
-    elif query.page_size is None:
-        effective_page_size = None
-    else:
-        effective_page_size = int(query.page_size)
+    effective_page_size = int(query.page_size) if query.page_size is not None else None
 
     page_payload = await _compute_on_demand_page(
         node,
@@ -698,8 +682,7 @@ async def materialize_quotation(
     # the source rows back to each quote-row, so they're visible there).
     # Without this, the materialised parquet only carries the document
     # column + QUOTE_* derivatives, and the table loses all metadata
-    # the moment the user clicks Process All — and the snapshot capture
-    # inherits the same loss.
+    # the moment the user clicks Process All.
     source_schema = node_data.collect_schema()
     source_columns = list(source_schema.names())
     extra_metadata_columns = [

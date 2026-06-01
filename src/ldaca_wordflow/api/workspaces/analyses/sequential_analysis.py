@@ -503,7 +503,7 @@ async def preview_sequential_analysis(
     request: SequentialAnalysisRequest,
     include_data: bool = Query(
         False,
-        description="If true, returns the full aggregated rows (as the standard endpoint does) in addition to the row count. The Trends snapshot capture sets this; the snapshot-dialog dry-run leaves it off.",
+        description="If true, returns the full aggregated rows in addition to the row count.",
     ),
     current_user: dict = Depends(get_current_user),
 ):
@@ -516,19 +516,15 @@ async def preview_sequential_analysis(
     - Shape the response payload or raise the HTTP error the client should see.
 
     Used by:
-    - Trends snapshot-capture dialog ("Verify actual row count") — because they need this unit's "Run the aggregation server-side but skip task registration and" behavior.
-      ``include_data=false`` returns just the row count.
-    - Trends snapshot capture itself — ``include_data=true`` returns because they need this unit's "Run the aggregation server-side but skip task registration and" behavior.
-      the full result (matching the regular endpoint's payload shape)
-      without disturbing the live task store. The captured rows ship
-      verbatim into the snapshot bundle.
+        - frontend preview/count checks because they need row-count feedback without registering
+            or replacing the live analysis task.
+        - callers that pass ``include_data=true`` because they need the same aggregated rows the
+            regular endpoint produces without mutating task state.
 
     Why a separate endpoint rather than a flag on the existing one:
     the existing endpoint is task-aware (rejects conflicting requests,
     inherits chart_type, writes the result into the task store). All
-    of that machinery is wrong for a snapshot capture or a preview —
-    each is a pure query for a specific captured config, not a
-    competing analysis run.
+        of that machinery is wrong for a pure preview query.
     """
     user_id = current_user["id"]
     _workspace_id, ws = _get_active_workspace(user_id)
@@ -544,8 +540,7 @@ async def preview_sequential_analysis(
             time_column=request.time_column,
             group_by_columns=request.group_by_columns,
             frequency=request.frequency,
-            # Sort is cheap and lets snapshot data ship chronologically
-            # ordered when ``include_data=true``.
+            # Sort is cheap and gives include-data preview callers chronological rows.
             sort_by_time=include_data,
             column_type=request.column_type,
             numeric_origin=request.numeric_origin,

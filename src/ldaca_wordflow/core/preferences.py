@@ -105,7 +105,5 @@ def merge_preferences(
         overrides["default_tokenizer_model"] = update.default_tokenizer_model
     if "ldaca_oni_api_token" in update.model_fields_set:
         overrides["ldaca_oni_api_token"] = update.ldaca_oni_api_token
-    if update.demo_snapshots_enabled is not None:
-        overrides["demo_snapshots_enabled"] = update.demo_snapshots_enabled
     merged = current.model_copy(update=overrides)
     return merged.validated()
