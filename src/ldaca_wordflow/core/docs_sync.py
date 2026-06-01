@@ -46,6 +46,15 @@ _INDEX_FILES = (
     "references/index.md",
 )
 
+# Forward-compat placeholders: the frontend already supports a `warning` doc type
+# (DocumentView's DOC_CONFIG → warnings/index.md, openWarningTarget, the warning
+# DocLinkIcon kind), but no warning anchors exist yet and the docs site doesn't
+# publish a warnings index. Mirror it best-effort so it's ready the moment the
+# docs site adds it — fetched as optional, so a 404 until then stays quiet (the
+# `warning` registry section, if/when populated, is mirrored by the section loop
+# below at no cost).
+_OPTIONAL_INDEX_FILES = ("warnings/index.md",)
+
 # Markdown ``![alt](path "title")`` and raw ``<img src="path">``.
 _MD_IMG_RE = re.compile(r"!\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+[^)]*)?\)")
 _HTML_IMG_RE = re.compile(r"<img\b[^>]*?\bsrc\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
@@ -146,7 +155,9 @@ def _read_cached_version() -> str | None:
 def _collect_markdown_files(registry: dict) -> set[str]:
     """All markdown doc paths: every registry entry's ``file`` + index files."""
     files: set[str] = set(_INDEX_FILES)
-    for section in ("tutorial", "info", "reference"):
+    # `warning` is included for forward-compat: it's a no-op until registry.json
+    # actually carries a warning section, then those docs mirror automatically.
+    for section in ("tutorial", "warning", "info", "reference"):
         entries = registry.get(section) if isinstance(registry, dict) else None
         if not isinstance(entries, dict):
             continue
@@ -183,13 +194,24 @@ def _collect_image_refs(markdown: str) -> set[str]:
     return out
 
 
-def _download(client, url: str) -> bytes | None:
-    """GET ``url`` returning its bytes, or ``None`` on any failure (logged)."""
+def _download(client, url: str, *, optional: bool = False) -> bytes | None:
+    """GET ``url`` returning its bytes, or ``None`` on failure.
+
+    ``optional`` downgrades a miss to a debug log — used for placeholder docs
+    (e.g. the warnings index) that may not be published yet, so their absence
+    doesn't surface as a warning on every sync.
+    """
     try:
         resp = client.get(url)
+        if optional and resp.status_code == 404:
+            logger.debug("[docs-sync] optional doc not published yet: %s", url)
+            return None
         resp.raise_for_status()
         return resp.content
     except Exception:
+        if optional:
+            logger.debug("[docs-sync] optional doc unavailable: %s", url)
+            return None
         logger.warning("[docs-sync] could not download %s", url)
         return None
 
@@ -265,6 +287,13 @@ def sync_docs() -> None:
         with httpx.Client(timeout=60, follow_redirects=True) as client:
             for rel in sorted(md_files):
                 data = _download(client, f"{base}/{rel}")
+                if data is None:
+                    continue
+                _write_file(staging / rel, data)
+                assets |= _collect_image_refs(data.decode("utf-8", "replace"))
+            # Best-effort placeholders that may not exist on the remote yet.
+            for rel in _OPTIONAL_INDEX_FILES:
+                data = _download(client, f"{base}/{rel}", optional=True)
                 if data is None:
                     continue
                 _write_file(staging / rel, data)

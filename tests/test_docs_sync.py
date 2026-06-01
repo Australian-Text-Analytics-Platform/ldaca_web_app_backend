@@ -139,6 +139,28 @@ def test_resolve_doc_file_rejects_traversal(docs_cache):
     assert docs_sync.resolve_doc_file("") is None
 
 
+def test_warning_section_mirrored_and_absent_warning_index_is_quiet(
+    docs_cache, monkeypatch
+):
+    cache_dir, _calls = docs_cache
+    # warnings/index.md is intentionally NOT in REMOTE_FILES -> the optional
+    # placeholder fetch 404s and is skipped without crashing. A populated
+    # `warning` registry section, however, must be mirrored by the section loop.
+    reg = dict(
+        REGISTRY,
+        meta={"version": "8.8.8"},
+        warning={"x.warn": {"file": "warnings/x.md", "anchor": "w"}},
+    )
+    monkeypatch.setitem(REMOTE_FILES, "registry.json", json.dumps(reg).encode())
+    monkeypatch.setitem(REMOTE_FILES, "warnings/x.md", b"# Warn\n")
+
+    docs_sync.sync_docs()
+
+    content = cache_dir / "content"
+    assert (content / "warnings/x.md").is_file()  # warning section enumerated
+    assert not (content / "warnings/index.md").exists()  # absent placeholder skipped
+
+
 def test_sync_noop_when_disabled(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "docs_cache_dir", str(tmp_path / "docscache"))
     monkeypatch.setattr(settings, "docs_remote_base_url", "")
